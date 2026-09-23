@@ -1,0 +1,42 @@
+{
+  "diff": {
+    "scope": "staged",
+    "base": "",
+    "exclude": [
+      ".*package-lock.json",
+      "*.lock",
+      "dist/**",
+      "build/**",
+      "*.min.js",
+      "*.map",
+      "*.png",
+      "*.jpg"
+    ],
+    "maxFileLines": 500
+  },
+  "model": {
+    "baseUrl": "https://api.deepseek.com",
+    "apiKeyEnv": "DEEPSEEK_API_KEY",
+    "model": "deepseek-chat",
+    "timeoutMs": 120000
+  },
+  "severityBlocked": [
+    "blocker"
+  ],
+  "targets": [
+    {
+      "name": "company-git",
+      "remoteUrl": "git@company.internal:group/repo.git",
+      "branch": "main",
+      "auth": "ssh"
+    },
+    {
+      "name": "github",
+      "remoteUrl": "https://github.com/owner/repo.git",
+      "branch": "main",
+      "auth": "token",
+      "user": "git",
+      "tokenEnv": "AI_REVIEW_GITHUB_TOKEN"
+    }
+  ]
+}

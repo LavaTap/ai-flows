@@ -1,0 +1,24 @@
+{
+  "name": "ai-review",
+  "version": "0.1.0",
+  "description": "平台无关的 AI 代码评审链 CLI：抓取 git diff → AI 评审 → 通过后自动推送到任意 Git 远端",
+  "type": "module",
+  "bin": {
+    "ai-review": "./dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "review": "tsx src/index.ts run"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
