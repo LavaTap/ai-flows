@@ -1,22 +1,21 @@
 import { createServer, type Server } from "node:http";
+import { readdirSync, readFileSync, existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 
-const reports = new Map<string, string>();
-const ORDER: string[] = [];
+/** 存放评审 HTML 报告的目录名（在该 git 仓库根下） */
+export const REPORTS_DIR = ".ai-review-reports";
 
-function indexHtml(): string {
-  const items = ORDER.map(
-    (id) => `<li><a href="/reports/${encodeURIComponent(id)}">${escapeHtml(id)}</a></li>`
-  ).join("");
-  const body = ORDER.length
-    ? `<ul>${items}</ul>`
-    : "<p class='muted'>暂无报告。运行 <code>ai-review run --page</code> 生成。</p>";
-  return layout("AI 代码评审 · 报告列表", body);
+function esc(s: string): string {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function layout(title: string, body: string): string {
   return `<!doctype html>
 <html lang="zh"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>${escapeHtml(title)}</title>
+<title>${esc(title)}</title>
 <style>
   :root{--bg:#0b0f1a;--panel:#111827;--border:#1e293b;--text:#e2e8f0;--muted:#94a3b8;--accent:#38bdf8;}
   *{box-sizing:border-box;} body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;}
@@ -28,23 +27,36 @@ function layout(title: string, body: string): string {
 <body class="wrap">${body}</body></html>`;
 }
 
-function escapeHtml(s: string): string {
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function indexHtml(dir: string): string {
+  let files: string[] = [];
+  if (existsSync(dir)) {
+    files = readdirSync(dir).filter((f) => f.endsWith(".html")).sort().reverse();
+  }
+  const items = files
+    .map((f) => {
+      const id = f.slice(0, -5);
+      return `<li><a href="/reports/${encodeURIComponent(id)}">${esc(id)}</a></li>`;
+    })
+    .join("");
+  const body = items.length ? `<ul>${items}</ul>` : "<p class='muted'>暂无报告。</p>";
+  return layout("AI 代码评审 · 报告列表", body);
 }
 
 export interface ReportServer {
   server: Server;
   port: number;
+  host: string;
   url: string;
-  register(id: string, html: string): string;
   close(): Promise<void>;
 }
 
-/** 启动本地评审报告 HTTP 服务。调用 register() 注册报告后，进程会持续存活（可 Ctrl+C 停止）。 */
+/** 以目录为数据源启动报告 HTTP 服务。GET /reports/<id> 读取 <dir>/<id>.html。 */
 export async function startReportServer(
-  opts: { host?: string; port?: number } = {}
+  opts: { host?: string; port?: number; dir?: string } = {}
 ): Promise<ReportServer> {
   const host = opts.host ?? "127.0.0.1";
+  const dir = opts.dir ?? REPORTS_DIR;
+  mkdirSync(dir, { recursive: true });
 
   const server = createServer((req, res) => {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -52,18 +64,21 @@ export async function startReportServer(
     const path = u.pathname;
 
     if (path === "/") {
-      res.end(indexHtml());
-      return;
-    }
-    const m = path.match(/^\/reports\/(.+)$/);
-    if (m && reports.has(m[1])) {
-      res.end(layout(m[1], reports.get(m[1])!));
+      res.end(indexHtml(dir));
       return;
     }
     if (path === "/health") {
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
       res.end("ok");
       return;
+    }
+    const m = path.match(/^\/reports\/([^/\\]+)$/);
+    if (m) {
+      const f = join(dir, m[1] + ".html");
+      if (f.startsWith(dir + "") && existsSync(f)) {
+        res.end(readFileSync(f, "utf8"));
+        return;
+      }
     }
     res.statusCode = 404;
     res.end("not found");
@@ -72,25 +87,16 @@ export async function startReportServer(
   const port = await new Promise<number>((resolve, reject) => {
     server.once("error", reject);
     server.listen(opts.port ?? 0, host, () => {
-      const addr = server.address();
-      resolve(typeof addr === "object" && addr ? addr.port : 0);
+      const a = server.address();
+      resolve(typeof a === "object" && a ? a.port : 0);
     });
   });
-
-  const url = `http://${host}:${port}`;
-  const register = (id: string, html: string): string => {
-    reports.set(id, html);
-    if (!ORDER.includes(id)) ORDER.push(id);
-    return `${url}/reports/${encodeURIComponent(id)}`;
-  };
 
   return {
     server,
     port,
-    url,
-    register,
-    async close() {
-      await new Promise<void>((r) => server.close(() => r()));
-    },
+    host,
+    url: `http://${host}:${port}`,
+    close: () => new Promise<void>((r) => server.close(() => r())),
   };
 }
