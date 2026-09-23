@@ -117,15 +117,29 @@ function usage(): void {
   AI_REVIEW_GITHUB_TOKEN   https 目标远端 token 认证`);
 }
 
-/** 手工解析子命令参数 */
+/** 手工解析子命令参数：--k v 或 --k=v；无值的布尔 flag 置空字符串 */
 function parseArgs(argv: string[]): Record<string, string> {
   const out: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a.startsWith("--")) {
-      const [k, v] = a.slice(2).split("=");
-      out[k] = v ?? argv[i + 1] ?? "";
+    if (!a.startsWith("--")) continue;
+    const eq = a.indexOf("=");
+    let k: string;
+    let v: string;
+    if (eq !== -1) {
+      k = a.slice(2, eq);
+      v = a.slice(eq + 1);
+    } else {
+      k = a.slice(2);
+      const next = argv[i + 1];
+      if (next !== undefined && !next.startsWith("--")) {
+        v = next;
+        i++; // 消费掉被当作值的那一项
+      } else {
+        v = ""; // 布尔 flag（如 --push / --no-push）
+      }
     }
+    out[k] = v;
   }
   return out;
 }
