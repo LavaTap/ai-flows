@@ -6,7 +6,8 @@ import { reviewBatch } from "./reviewer.js";
 import { decideGate, type ReviewIssue } from "./gate.js";
 import { pushToTargets, type PushResult } from "./publisher.js";
 import { isRepo } from "./git.js";
-import { writeReviewReport } from "./reporter.js";
+import { writeReviewReport, buildReviewHtml } from "./reporter.js";
+import { startReportServer } from "./serve.js";
 
 const CWD = process.cwd();
 const RED = "\u001b[31m";
@@ -39,7 +40,7 @@ function printIssues(issues: ReviewIssue[], blocked: Set<string>): void {
 
 async function run(
   cfg: ReviewConfig,
-  opts: { push: boolean; reportOut?: string }
+  opts: { push: boolean; reportOut?: string; page?: boolean }
 ): Promise<number> {
   if (!(await isRepo(CWD))) {
     console.error("当前目录不是 git 仓库。请在 git 仓库内运行。");
@@ -87,6 +88,17 @@ async function run(
 
   const reportPath = writeReviewReport(result, gate, { pushes, outPath: opts.reportOut });
   console.log(`${DIM}已生成报告：${reportPath}${RESET}`);
+
+  if (opts.page) {
+    const html = buildReviewHtml(result, gate, pushes);
+    const srv = await startReportServer({});
+    const reportId = `review-${Date.now()}`;
+    const link = srv.register(reportId, html);
+    console.log(`\n${GREEN}📄 评审结果页面已启动：${link}${RESET}`);
+    console.log(`${DIM}（本地服务，按 Ctrl+C 停止；其他报告见 ${srv.url}/）${RESET}`);
+    await new Promise<void>(() => {}); // 保持服务存活，等待 Ctrl+C
+  }
+
   return exitCode;
 }
 
@@ -106,8 +118,9 @@ function usage(): void {
   console.log(`ai-review — 平台无关的 AI 代码评审链
 
 用法:
-  ai-review run  [--config <path>] [--report <path>] [--push|--no-push]
-                                      采集 diff → AI 评审 → 写 md 报告 → (通过后)推送
+  ai-review run  [--config <path>] [--report <path>] [--push|--no-push] [--page]
+                                      采集 diff → AI 评审 → 写 md/HTML 报告 → (通过后)推送
+                                      --page  评审后启动本地页面，打印可点开的评审结果链接
   ai-review init                                         从 config.example.json 生成配置
   ai-review -h | --help                                  显示帮助
 
@@ -166,6 +179,7 @@ async function main(): Promise<void> {
     process.exitCode = await run(cfg, {
       push,
       reportOut: args["report"] || undefined,
+      page: "page" in args && (args["page"] === "" || args["page"] === "true"),
     });
     return;
   }
