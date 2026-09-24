@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 管线 · AI-FLOWS 平台</title>
+  <link rel="stylesheet" href="./ai-pipeline.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="name">AI-FLOWS · AI 管线平台</span>
+    </div>
+    <div class="top-right">
+      <span class="tab on">AI 管线</span>
+      <span class="tab">团队</span>
+      <span class="tab">运营</span>
+      <span class="user-chip"><span class="avatar" aria-hidden="true"></span>未登录</span>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="head">
+      <div>
+        <h1 class="page-title">
+          <span>研产</span><span class="led-word">AI</span><span>管线</span>
+        </h1>
+        <p class="page-sub">产品调研 → 产品策划 → AI 代码评审 → 运营</p>
+      </div>
+      <span class="hint">悬停节点查看流程详情</span>
+    </section>
+
+    <section class="detail" id="detail" aria-live="polite"></section>
+
+    <section class="pipeline" id="pipeline">
+      <div class="rail" aria-hidden="true"></div>
+
+      <button type="button" class="node" data-idx="0" aria-pressed="false">
+        <span class="n-num">01</span>
+        <span class="n-title">产品调研</span>
+        <span class="n-step">环节 · 产品调研</span>
+        <span class="tag muted">待接入</span>
+      </button>
+
+      <span class="arrow" aria-hidden="true">
+        <svg viewBox="0 0 40 10">
+          <defs>
+            <marker id="am0" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+              <path d="M1 1 L7 4 L1 7 Z" fill="rgba(0,0,0,0.32)"></path>
+            </marker>
+          </defs>
+          <path d="M0 5 H33" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1.5" marker-end="url(#am0)"></path>
+        </svg>
+      </span>
+
+      <button type="button" class="node" data-idx="1" aria-pressed="false">
+        <span class="n-num">02</span>
+        <span class="n-title">AI产品</span>
+        <span class="n-step">环节 · 产品策划案</span>
+        <span class="tag muted">待接入</span>
+      </button>
+
+      <span class="arrow" aria-hidden="true">
+        <svg viewBox="0 0 40 10">
+          <defs>
+            <marker id="am1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+              <path d="M1 1 L7 4 L1 7 Z" fill="rgba(0,0,0,0.32)"></path>
+            </marker>
+          </defs>
+          <path d="M0 5 H33" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1.5" marker-end="url(#am1)"></path>
+        </svg>
+      </span>
+
+      <button type="button" class="node on" data-idx="2" aria-pressed="true">
+        <span class="n-num">03</span>
+        <span class="n-title">程序中台</span>
+        <span class="n-step">环节 · AI 代码评审</span>
+        <span class="tag ok">已就绪</span>
+      </button>
+
+      <span class="arrow" aria-hidden="true">
+        <svg viewBox="0 0 40 10">
+          <defs>
+            <marker id="am2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+              <path d="M1 1 L7 4 L1 7 Z" fill="rgba(0,0,0,0.32)"></path>
+            </marker>
+          </defs>
+          <path d="M0 5 H33" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1.5" marker-end="url(#am2)"></path>
+        </svg>
+      </span>
+
+      <button type="button" class="node" data-idx="3" aria-pressed="false">
+        <span class="n-num">04</span>
+        <span class="n-title">产品运营</span>
+        <span class="n-step">环节 · 运营</span>
+        <span class="tag muted">待接入</span>
+      </button>
+    </section>
+
+    <footer class="foot">
+      <span class="legend"><span class="ldot brand"></span>已就绪</span>
+      <span class="legend"><span class="ldot muted"></span>待接入（先留空）</span>
+      <span class="foot-rule">权限：员工可执行 / 查看工作流 · 部门主管可操控并批准所有节点</span>
+    </footer>
+  </main>
+
+  <!-- 各节点悬停详情模板 -->
+  <template data-idx="0">
+    <div class="d-head">
+      <span class="d-title">产品调研</span>
+      <span class="tag muted">待接入</span>
+    </div>
+    <div class="d-desc">调用自研调研 Skill，对需求与市场先行摸底；能力位先留空，待接入。</div>
+    <div class="d-meta">
+      <span class="d-item"><b>负责部门</b>产品调研</span>
+      <span class="d-item"><b>执行角色</b>用户调研实习生（员工）</span>
+      <span class="d-item"><b>权限</b>可执行 / 查看</span>
+    </div>
+  </template>
+
+  <template data-idx="1">
+    <div class="d-head">
+      <span class="d-title">产品策划案</span>
+      <span class="tag muted">待接入</span>
+    </div>
+    <div class="d-desc">基于调研结论产出产品策划案；生成环节先留空，待接入。</div>
+    <div class="d-meta">
+      <span class="d-item"><b>负责部门</b>AI产品</span>
+      <span class="d-item"><b>执行角色</b>AI 产品实习生（员工）</span>
+      <span class="d-item"><b>权限</b>可执行 / 查看</span>
+    </div>
+  </template>
+
+  <template data-idx="2">
+    <div class="d-head">
+      <span class="d-title">AI 代码评审</span>
+      <span class="tag ok">已就绪</span>
+    </div>
+    <div class="d-desc">基于现有 ai-review 管线：git diff 采集 → LLM 评审 → 门禁判定 → 生成报告并推送。</div>
+    <div class="d-meta">
+      <span class="d-item"><b>负责部门</b>程序中台</span>
+      <span class="d-item"><b>执行角色</b>前端开发设计师（员工）</span>
+      <span class="d-item"><b>审批</b>产品部门主管（可批准全部节点）</span>
+    </div>
+  </template>
+
+  <template data-idx="3">
+    <div class="d-head">
+      <span class="d-title">运营</span>
+      <span class="tag muted">待接入</span>
+    </div>
+    <div class="d-desc">上线后的产品运营动作；能力位先留空，待接入。</div>
+    <div class="d-meta">
+      <span class="d-item"><b>负责部门</b>产品运营</span>
+      <span class="d-item"><b>执行角色</b>初级产品运营（员工）</span>
+      <span class="d-item"><b>权限</b>可执行 / 查看</span>
+    </div>
+  </template>
+
+  <script>
+    (function () {
+      var detail = document.getElementById("detail");
+      var pipeline = document.getElementById("pipeline");
+      var nodes = Array.prototype.slice.call(document.querySelectorAll(".node"));
+      var tpls = Array.prototype.slice.call(document.querySelectorAll("template"));
+      var DEFAULT_IDX = 2; /* 默认展示已就绪的 AI 代码评审节点 */
+      var current = DEFAULT_IDX;
+
+      function show(idx) {
+        if (idx === current) return;
+        current = idx;
+        var tpl = tpls[idx];
+        if (tpl) detail.innerHTML = tpl.innerHTML;
+        nodes.forEach(function (n, i) {
+          var on = i === idx;
+          n.classList.toggle("on", on);
+          n.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+      }
+
+      nodes.forEach(function (n) {
+        n.addEventListener("mouseenter", function () { show(Number(n.getAttribute("data-idx"))); });
+        n.addEventListener("focus", function () { show(Number(n.getAttribute("data-idx"))); });
+      });
+
+      pipeline.addEventListener("mouseleave", function () {
+        var f = document.activeElement;
+        if (f && f.classList && f.classList.contains("node")) return;
+        show(DEFAULT_IDX);
+      });
+
+      show(DEFAULT_IDX);
+    })();
+  </script>
+</body>
+</html>

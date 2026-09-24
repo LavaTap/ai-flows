@@ -1,0 +1,593 @@
+/* ai-pipeline · 视觉参考 "Built for Intelligent Performance"
+   纸灰底 + 玻璃拟态卡片 + Inter 字体 + LED 点阵强调
+   仅参考风格，不参考原模块排版 */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
+
+:root {
+  /* 纸灰基调（取自参考 landing） */
+  --paper: #ececeb;
+  --paper-2: #e4e4e2;
+  --ink: #222222;
+  --ink-soft: #202020;
+  --copy: #4a4a4a;
+  --muted: #6b6b6b;
+  --muted-2: #8a8a8a;
+
+  /* 玻璃 */
+  --glass-line: rgba(255, 255, 255, 0.36);
+  --glass-line-strong: rgba(255, 255, 255, 0.55);
+  --glass-fill: rgba(255, 255, 255, 0.55);
+  --glass-fill-soft: rgba(255, 255, 255, 0.35);
+
+  /* LED 强调色（参考 LED-dot "Intelligent" 的暗红） */
+  --led: #ad314d;
+  --led-soft: rgba(173, 49, 77, 0.12);
+  --led-glow: rgba(173, 49, 77, 0.45);
+
+  /* 几何 */
+  --radius: 10px;
+  --radius-card: 17px;
+  --radius-pill: 999px;
+
+  /* 间距（4/8 节奏） */
+  --s-4: 4px;
+  --s-8: 8px;
+  --s-12: 12px;
+  --s-16: 16px;
+  --s-20: 20px;
+  --s-24: 24px;
+  --s-28: 28px;
+  --s-32: 32px;
+
+  /* 字体 */
+  --font-sans: "Inter", "PingFang SC", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas,
+    monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  letter-spacing: 0;
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
+/* 纸灰纹理叠加（细微颗粒，强化 paper 质感） */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: radial-gradient(
+    rgba(0, 0, 0, 0.025) 1px,
+    transparent 1px
+  );
+  background-size: 3px 3px;
+  opacity: 0.6;
+}
+
+/* ============ 顶栏 ============ */
+.topbar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-16);
+  padding: var(--s-12) var(--s-24);
+  background: var(--glass-fill-soft);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--glass-line);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s-12);
+  min-width: 0;
+}
+
+/* LED 品牌圆点 */
+.brand .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--led);
+  box-shadow: 0 0 6px var(--led-glow), 0 0 12px var(--led-glow);
+  flex: none;
+}
+
+.brand .name {
+  font-weight: 500;
+  font-size: 14px;
+  letter-spacing: 0.01em;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.top-right {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+}
+
+.tab {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--muted);
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  transition: color 150ms ease, background 150ms ease;
+}
+
+.tab.on {
+  color: var(--led);
+  background: var(--led-soft);
+  font-weight: 500;
+}
+
+.user-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  padding: 4px 12px;
+  border: 1px solid var(--glass-line);
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--copy);
+  white-space: nowrap;
+  background: var(--glass-fill);
+}
+
+.user-chip .avatar {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--paper-2);
+  border: 1px solid var(--glass-line);
+}
+
+/* ============ 主体 ============ */
+.shell {
+  position: relative;
+  z-index: 1;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: var(--s-32) var(--s-24) var(--s-24);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-20);
+}
+
+/* 标题区：参考 masthead，细字重大标题 + LED 点阵装饰 */
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-16);
+  flex-wrap: wrap;
+}
+
+.page-title {
+  margin: 0;
+  font-size: clamp(28px, 4vw, 44px);
+  font-weight: 300;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0;
+}
+
+/* LED 点阵 "AI" 装饰词 */
+.led-word {
+  display: inline-block;
+  margin-left: 0.35em;
+  color: var(--led);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  /* LED 点阵纹理 */
+  background-image: radial-gradient(
+    currentColor 1.2px,
+    transparent 1.2px
+  );
+  background-size: 4px 4px;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 1.5px var(--led-glow));
+}
+
+.page-sub {
+  margin: var(--s-8) 0 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--copy);
+  letter-spacing: 0.01em;
+}
+
+.hint {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--led);
+  background: var(--led-soft);
+  padding: 5px 14px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  border: 1px solid rgba(173, 49, 77, 0.18);
+}
+
+/* ============ 详情面板（玻璃卡片） ============ */
+.detail {
+  border: 1px solid var(--glass-line);
+  background: var(--glass-fill);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: var(--radius-card);
+  padding: var(--s-20) var(--s-24);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-8);
+  min-height: 104px;
+  box-shadow: 0 2px 4px rgba(50, 28, 39, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  /* sheen 光泽 */
+  position: relative;
+  overflow: hidden;
+}
+
+.detail::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    102deg,
+    rgba(255, 255, 255, 0.35),
+    transparent 30%,
+    rgba(255, 255, 255, 0.15) 65%,
+    transparent 90%
+  );
+  mix-blend-mode: screen;
+}
+
+.d-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-12);
+  flex-wrap: wrap;
+  position: relative;
+}
+
+.d-title {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  letter-spacing: 0.01em;
+}
+
+.d-desc {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--copy);
+  position: relative;
+}
+
+.d-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8) var(--s-24);
+  flex-wrap: wrap;
+  position: relative;
+}
+
+.d-item {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--muted);
+}
+
+.d-item b {
+  color: var(--ink-soft);
+  font-weight: 500;
+  margin-right: 4px;
+}
+
+/* 标签 */
+.tag {
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  padding: 3px 12px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+
+.tag.muted {
+  color: var(--muted);
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-line);
+}
+
+.tag.ok {
+  color: var(--led);
+  background: var(--led-soft);
+  border: 1px solid rgba(173, 49, 77, 0.22);
+}
+
+/* ============ 管线 ============ */
+.pipeline {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: var(--s-8) 0;
+}
+
+/* 贯穿直线 */
+.rail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  margin-top: -0.5px;
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.06),
+    rgba(0, 0, 0, 0.16) 20%,
+    rgba(0, 0, 0, 0.16) 80%,
+    rgba(0, 0, 0, 0.06)
+  );
+  z-index: 0;
+}
+
+/* 节点：玻璃卡片 */
+.node {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-8);
+  padding: var(--s-20) var(--s-12);
+  background: var(--glass-fill);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--glass-line);
+  border-radius: var(--radius-card);
+  font: inherit;
+  color: inherit;
+  text-align: center;
+  cursor: pointer;
+  outline: none;
+  box-shadow: 0 2px 4px rgba(50, 28, 39, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 200ms ease, border-color 200ms ease,
+    background 200ms ease;
+}
+
+/* 玻璃卡片的 sheen 光泽 */
+.node::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    102deg,
+    rgba(255, 255, 255, 0.4),
+    transparent 28%,
+    rgba(255, 255, 255, 0.18) 62%,
+    transparent 88%
+  );
+  mix-blend-mode: screen;
+}
+
+.node:hover,
+.node:focus-visible {
+  transform: translateY(-2px) scale(1.015);
+  box-shadow: 0 8px 20px rgba(50, 28, 39, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  border-color: var(--glass-line-strong);
+}
+
+/* 已就绪 / 选中节点：LED 强调 */
+.node.on {
+  border-color: rgba(173, 49, 77, 0.35);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 4px 10px rgba(173, 49, 77, 0.12),
+    0 0 0 1px rgba(173, 49, 77, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+.node.on:hover,
+.node.on:focus-visible {
+  transform: translateY(-2px) scale(1.015);
+  box-shadow: 0 10px 24px rgba(173, 49, 77, 0.2),
+    0 0 0 1px rgba(173, 49, 77, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+/* 节点编号圆圈 */
+.n-num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--glass-fill-soft);
+  border: 1px solid var(--glass-line);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  position: relative;
+}
+
+/* 已就绪节点编号：LED 点阵质感 */
+.node.on .n-num {
+  background: var(--led);
+  border-color: var(--led);
+  color: #fff;
+  box-shadow: 0 0 0 3px var(--led-soft), 0 0 10px var(--led-glow);
+}
+
+.n-title {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  letter-spacing: 0.01em;
+}
+
+.node.on .n-title {
+  color: var(--ink);
+}
+
+.n-step {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--muted);
+}
+
+.node.on .n-step {
+  color: var(--led);
+  font-weight: 500;
+}
+
+/* 节点间箭头 */
+.arrow {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 40px;
+  width: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.arrow svg {
+  display: block;
+  width: 40px;
+  height: 10px;
+}
+
+/* ============ 底部说明 ============ */
+.foot {
+  display: flex;
+  align-items: center;
+  gap: var(--s-20);
+  flex-wrap: wrap;
+  padding-top: var(--s-4);
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.legend .ldot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.legend .ldot.brand {
+  background: var(--led);
+  box-shadow: 0 0 6px var(--led-glow);
+}
+
+.legend .ldot.muted {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.foot-rule {
+  margin-left: auto;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--muted-2);
+}
+
+/* ============ 响应式 ============ */
+@media (max-width: 720px) {
+  .shell {
+    padding: var(--s-20) var(--s-16);
+  }
+
+  .page-title {
+    font-size: clamp(22px, 6vw, 30px);
+  }
+
+  .arrow {
+    flex-basis: 16px;
+    width: 16px;
+  }
+
+  .arrow svg {
+    width: 16px;
+  }
+
+  .n-step {
+    display: none;
+  }
+
+  .node {
+    padding: var(--s-16) var(--s-8);
+  }
+
+  .foot-rule {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node,
+  .tab,
+  .user-chip {
+    transition: none;
+  }
+
+  .node:hover,
+  .node:focus-visible {
+    transform: none;
+  }
+}

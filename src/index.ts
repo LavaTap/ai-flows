@@ -55,14 +55,14 @@ async function run(
   const files = await collectDiff(cfg.diff, CWD);
   console.log(`${DIM}待评审文件 ${files.length} 个（降级 ${files.filter((f) => f.degraded).length} 个）${RESET}`);
 
-  console.log(`${DIM}AI 评审中...${RESET}`);
+  console.log(`${DIM}AI 评审链接生成中...${RESET}`);
   const result = await reviewBatch(files, cfg.model);
 
   console.log(`\n${DIM}── 评审摘要 ──${RESET}`);
   console.log(result.summary);
-  console.log(`\n${DIM}── 问题列表 (${result.issues.length}) ──${RESET}`);
-  const blockedSet = new Set(cfg.severityBlocked);
-  printIssues(result.issues, blockedSet);
+  // console.log(`\n${DIM}── 问题列表 (${result.issues.length}) ──${RESET}`);
+  // const blockedSet = new Set(cfg.severityBlocked);
+  // printIssues(result.issues, blockedSet);
 
   const gate = decideGate(result, cfg);
   console.log("");
@@ -87,7 +87,7 @@ async function run(
     }
     exitCode = allOk ? 0 : 2;
   } else if (gate.passed && !opts.push) {
-    console.log(`${DIM}(未推送：如需评审通过后自动提交到目标服务器，请加 --push)${RESET}`);
+    console.log(`${DIM}(未推送：评审通过后请在评审页面输入 commit 信息并点「确认提交」按钮提交，或加 --push 由命令行直接推送)${RESET}`);
   }
 
   const reportPath = writeReviewReport(result, gate, { pushes, outPath: opts.reportOut });
@@ -219,9 +219,11 @@ function usage(): void {
   console.log(`ai-review — 平台无关的 AI 代码评审链
 
 用法:
-  ai-review run  [--config <path>] [--report <path>] [--push|--no-push] [--page]
-                                      采集 diff → AI 评审 → 写 md 报告 + 评审数据(JSON) → (通过后)推送
-                                      --page  后台拉起服务，打印可点开的评审结果链接（服务按 JSON 动态渲染）
+  ai-review run  [--config <path>] [--report <path>] [--push] [--no-push] [--page]
+                                      采集 diff → AI 评审 → 写 md 报告 + 评审数据(JSON)
+                                      缺省不推送（--push 才由命令行直接推送）；
+                                      --page 后台拉起服务，打印可点开的评审结果链接
+                                      评审页面需输入 commit 信息并点「确认提交」才会提交+推送
   ai-review serve [--port <n> [--dir]]  常驻评审报告服务（GET /reports/<id>）
   ai-review install-hook                装 pre-push hook：git push 自动评审，有 blocker 则拦截
   ai-review init                         从 config.example.json 生成配置
@@ -306,10 +308,10 @@ async function main(): Promise<void> {
   if (sub === "run") {
     const args = parseArgs(process.argv.slice(3));
     const cfg = loadConfig(args.config || undefined);
-    // --push 裸参数或 --push=true 视为开启；--no-push 强制关闭；缺省开启
+    // --push 裸参数或 --push=true 视为开启；--no-push 强制关闭；缺省关闭（避免误触发自动提交）
     const pushTrue = "push" in args && (args["push"] === "" || args["push"] === "true");
     const noPush = "no-push" in args && args["no-push"] !== "false";
-    const push = !noPush && (pushTrue || !("push" in args));
+    const push = pushTrue && !noPush;
     process.exitCode = await run(cfg, {
       push,
       reportOut: args["report"] || undefined,

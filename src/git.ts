@@ -61,3 +61,47 @@ export async function isRepo(cwd?: string): Promise<boolean> {
     return false;
   }
 }
+
+/** 列出已暂存（cached）的变更文件相对路径，空数组表示无暂存变更 */
+export async function stagedFiles(cwd?: string): Promise<string[]> {
+  const out = await git(["diff", "--cached", "--name-only", "--relative"], cwd);
+  return out ? out.split("\n") : [];
+}
+
+/** 用指定提交信息提交已暂存的变更（execFile 直传参数，无 shell 注入风险） */
+export async function commitStaged(message: string, cwd?: string): Promise<void> {
+  await git(["commit", "-m", message], cwd);
+}
+
+/** 最近一次提交的元信息，供评审页面展示与改写 */
+export interface CommitInfo {
+  /** 完整 hash */
+  hash: string;
+  /** 短 hash */
+  short: string;
+  /** 作者 */
+  author: string;
+  /** 提交时间（ISO 8601） */
+  date: string;
+  /** 首行描述 */
+  subject: string;
+  /** 完整提交信息（含 body） */
+  message: string;
+}
+
+/** 读取 HEAD 最近一次提交元信息；空仓库 / 非 git 目录返回 null */
+export async function headCommit(cwd?: string): Promise<CommitInfo | null> {
+  const out = await git(
+    ["log", "-1", "--date=iso-strict", "--pretty=format:%H%x1f%h%x1f%an%x1f%ad%x1f%s%x1f%B"],
+    cwd
+  ).catch(() => null);
+  if (!out) return null;
+  const [hash = "", short = "", author = "", date = "", subject = "", ...body] = out.split("\x1f");
+  if (!hash || !subject) return null;
+  return { hash, short, author, date, subject, message: (body.join("\x1f") || subject).trim() };
+}
+
+/** 改写最近一次提交的提交信息（amend，仅改信息不改变更内容；失败抛错） */
+export async function amendCommitMessage(message: string, cwd?: string): Promise<void> {
+  await git(["commit", "--amend", "-m", message], cwd);
+}

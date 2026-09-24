@@ -21,7 +21,7 @@
 | 开发运行 | `npm run dev`（= `tsx src/index.ts`，直接执行 TS 源码） |
 | 构建 | `npm run build`（= `tsc`，产出 `dist/`） |
 | **类型检查（唯一自动化门禁）** | `npx tsc --noEmit` |
-| 手工端到端验证 | `npx tsx src/index.ts run --no-push --page`（需 `ai-review.config.json` + `DEEPSEEK_API_KEY`） |
+| 手工端到端验证 | `npx tsx src/index.ts run --page`（需 `ai-review.config.json` + `DEEPSEEK_API_KEY`；`run` 缺省不推送，评审页面需输入 commit 信息并点「确认提交」才提交+推送） |
 | 报告服务 | `npx tsx src/index.ts serve --port 4310` |
 | 安装 pre-push hook | `npx tsx src/index.ts install-hook` |
 
@@ -40,7 +40,7 @@
 | `reviewer.ts` | 调模型 + 解析 JSON + 并发池；**格式化接口** `formatReport()` |
 | `gate.ts` | 门禁判定 `decideGate()`：命中 `severityBlocked` 即不通过 |
 | `reporter.ts` | Markdown 报告 + HTML 模板渲染 `renderTemplate()` |
-| `serve.ts` | 报告 HTTP 服务（`node:http`）+ 报告列表页 |
+| `serve.ts` | 报告 HTTP 服务（`node:http`）+ 报告列表页 + `POST /reports/<id>/push` 确认提交（需带 commit message，有暂存先 commit 再 push；无暂存且信息与 HEAD 不同则 amend 改写） |
 | `publisher.ts` | 多目标远端推送、https token 注入 |
 
 约束：
@@ -59,6 +59,8 @@
 | 降级逻辑不可绕过 | 变更行数超 `maxFileLines`（默认 500）的文件只保留最严重一条问题 |
 | 评审规范从 config 注入 | 评审维度 / 团队规范不得硬编码在 `buildPrompt`，应经 `config` 注入 |
 | 模型调用带退避重试 | 429 / 5xx 需指数退避重试，避免单个文件失败导致整批评审失败 |
+| 确认提交需 commit message | `POST /reports/<id>/push` 必须带非空 `message`，否则 400；有暂存变更先 `commitStaged` 再 `pushToTargets`，杜绝评审通过即自动推送；无暂存且 `message` 与 HEAD 不同时先 `amendCommitMessage` 改写最近一次提交。页面提交栏展示 HEAD 提交描述并预填完整信息（serve 渲染时实时注入 `view.head`） |
+| `run` 缺省不推送 | `run` 不带 `--push` 时一律不推送；推送只走页面「确认提交」或显式 `--push` |
 
 ### ESM 相对导入
 
@@ -157,4 +159,4 @@ CLI --config <path>  >  环境变量 AI_REVIEW_CONFIG  >  默认 ./ai-review.con
 
 ---
 
-**红线：** ESM 相对导入必带 `.js` · 零运行时依赖 · 退出码 0/1/2 契约不可改 · 渲染层只认 `ReportView` · HTML 插值一律走 `esc()` · 凭据只从环境变量读
+**红线：** ESM 相对导入必带 `.js` · 零运行时依赖 · 退出码 0/1/2 契约不可改 · 渲染层只认 `ReportView` · HTML 插值一律走 `esc()` · 凭据只从环境变量读 · 确认提交必须带非空 commit message · `run` 缺省不推送

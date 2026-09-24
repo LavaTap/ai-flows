@@ -1,6 +1,7 @@
 import { resolveApiKey, type ModelConfig, type TargetRemote } from "./config.js";
 import type { DiffFile } from "./collector.js";
 import type { ReviewIssue, ReviewResult, Severity } from "./gate.js";
+import type { CommitInfo } from "./git.js";
 import type { PushResult } from "./publisher.js";
 import { maskSecrets } from "./redact.js";
 
@@ -283,6 +284,8 @@ export interface ReportView {
   repoCwd?: string;
   /** 推送目标配置（脱敏：只含 tokenEnv 名，不含 token 明文；供页面按钮触发推送） */
   targets?: TargetRemote[];
+  /** 仓库 HEAD 提交元信息（报告服务渲染时实时注入，供提交栏展示与改写预填；可能缺省） */
+  head?: CommitInfo;
   /** 代码变更视图：按文件拆分的 hunks，供右侧 diff 面板渲染 */
   diffFiles: DiffFileView[];
 }
