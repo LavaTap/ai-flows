@@ -85,7 +85,7 @@ if (!gate.passed) process.exit(1);
 
 ```ts
 // ✅ AI JSON → ReviewResult → formatReport → ReportView → renderTemplate
-const view = buildReportView(result, gate, pushes, { ref });
+const view = buildReportView(result, files, gate, pushes, { ref });
 writeFileSync(join(dir, `${id}.json`), JSON.stringify(view, null, 2));
 
 // ❌ 禁止：把模型原始 JSON 直接丢给模板/落盘，跳过视图模型

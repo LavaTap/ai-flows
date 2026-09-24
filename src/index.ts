@@ -103,7 +103,7 @@ async function run(
     } catch {
       /* detached HEAD 等场景忽略 */
     }
-    const view = buildReportView(result, gate, pushes, { ref });
+    const view = buildReportView(result, files, gate, pushes, { ref });
     writeFileSync(join(dir, `${id}.json`), JSON.stringify(view, null, 2), "utf8");
     const base = await ensureReportServer();
     console.log(`\n${GREEN}📄 评审结果页面：${base}/reports/${id}${RESET}`);
@@ -118,21 +118,26 @@ async function ensureReportServer(): Promise<string> {
   const dir = join(CWD, REPORTS_DIR);
   const serverFile = join(dir, ".server");
 
-  // 已有可用的服务？(校验 /health 返回体必须为 ok，防止被无关进程误判)
+  // 已有可用的服务？(同时校验 dir 一致 + /health 返回 ok，防止同端口别的 ai-review 实例被误信)
   if (existsSync(serverFile)) {
     try {
       const m = JSON.parse(readFileSync(serverFile, "utf8"));
-      const r = await fetch(`${m.url}/health`, { signal: AbortSignal.timeout(700) });
-      if (r.ok && (await r.text()).trim() === "ok") return m.url;
+      if (m.dir === dir) {
+        const r = await fetch(`${m.url}/health`, { signal: AbortSignal.timeout(700) });
+        if (r.ok && (await r.text()).trim() === "ok") return m.url;
+      }
     } catch {
       /* 失效，重新拉起 */
     }
   }
 
-  // 后台拉起 serve 守护进程（detached），落位改端口会自动写入 .server
+  // 后台拉起 serve 守护进程（detached），落位改端口会自动写入 .server。
+  // 关键：复用 process.execArgv，让 tsx 的 ESM loader 一并传给子进程；
+  // 否则裸 node 无法解析 .ts 源文件，子进程立即崩溃，.server 永远写不出。
+  // dist 构建产物（.js）场景下 execArgv 为空，不影响。
   spawn(
     process.execPath,
-    [THIS_FILE, "serve", "--port", String(DEFAULT_PORT)],
+    [...process.execArgv, THIS_FILE, "serve", "--port", String(DEFAULT_PORT)],
     { detached: true, stdio: "ignore", cwd: CWD }
   ).unref();
 
@@ -141,8 +146,10 @@ async function ensureReportServer(): Promise<string> {
     if (!existsSync(serverFile)) continue;
     try {
       const m = JSON.parse(readFileSync(serverFile, "utf8"));
-      const r = await fetch(`${m.url}/health`, { signal: AbortSignal.timeout(600) });
-      if (r.ok && (await r.text()).trim() === "ok") return m.url;
+      if (m.dir === dir) {
+        const r = await fetch(`${m.url}/health`, { signal: AbortSignal.timeout(600) });
+        if (r.ok && (await r.text()).trim() === "ok") return m.url;
+      }
     } catch {
       /* keep waiting */
     }
@@ -277,7 +284,7 @@ async function main(): Promise<void> {
       console.error(`${RED}✖ 无法启动服务：端口 ${base}-${base + 9} 均被占用${RESET}`);
       return;
     }
-    writeFileSync(join(dir, ".server"), JSON.stringify({ port: srv.port, url: srv.url }));
+    writeFileSync(join(dir, ".server"), JSON.stringify({ port: srv.port, url: srv.url, dir }));
     console.log(`${GREEN}评审报告服务已启动：${srv.url}${RESET}`);
     console.log(`${DIM}（Ctrl+C 停止）${RESET}`);
     await new Promise<void>(() => {});

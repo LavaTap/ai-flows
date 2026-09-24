@@ -5,8 +5,10 @@ export type Severity = "blocker" | "warning" | "info";
 export interface ReviewIssue {
   /** 相对仓库根的文件路径 */
   file: string;
-  /** 问题所在行号（约数即可） */
+  /** 问题起始行号（约数即可） */
   line: number;
+  /** 问题结束行号（缺省 = line，即单行问题） */
+  lineEnd?: number;
   severity: Severity;
   category: string;
   message: string;

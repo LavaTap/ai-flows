@@ -16,7 +16,7 @@ function buildPrompt(file: DiffFile): string {
   return [
     `你是一名资深代码评审工程师。请评审以下 git diff。`,
     ``,
-    `评审维度（每项问题必须落到具体行号，禁止空泛评价）：`,
+    `评审维度（每项问题必须落到具体行号范围 lineStart/lineEnd，禁止空泛评价）：`,
     `1) 正确性：空指针、资源泄露、并发、明显逻辑错误、边界条件`,
     `2) 安全：注入、XSS、硬编码密钥、越权、路径穿越`,
     `3) 可维护性：命名、重复代码、魔法数字、注释缺失`,
@@ -28,8 +28,9 @@ function buildPrompt(file: DiffFile): string {
     `- 只输出一个合法的 JSON，不要任何其他文字、代码块标记或解释。`,
     `- JSON 结构：`,
     `{"summary": "<本文件改动的一句话总结>", "issues": [`,
-    `  {"file": "<相对路径>", "line": <行号>, "severity": "blocker|warning|info", "category": "<所属维度>", "message": "<问题描述>", "suggestion": "<修改建议>"}`,
+    `  {"file": "<相对路径>", "lineStart": <起始行号>, "lineEnd": <结束行号>, "severity": "blocker|warning|info", "category": "<所属维度>", "message": "<问题描述>", "suggestion": "<修改建议>"}`,
     `]}`,
+    `- 行号取「变更后（新文件）」的行号。问题若跨多行，lineStart/lineEnd 表示起止行号；单行问题二者相等。`,
     `- 没有问题时 issues 返回空数组。没把握就别说，宁缺毋滥，降低误报。`,
     degradedNote,
     ``,
@@ -110,9 +111,13 @@ function normalizeIssues(parsed: any, path: string): ReviewIssue[] {
     .map((raw: any) => {
       if (!raw || typeof raw !== "object") return null;
       const sev = String(raw.severity || "warning") as Severity;
+      // 兼容 lineStart/lineEnd 与旧 line 字段
+      const lineStart = Number(raw.lineStart ?? raw.line) || 0;
+      const lineEnd = Number(raw.lineEnd ?? raw.lineStart ?? raw.line) || lineStart;
       return {
         file: raw.file || path,
-        line: Number(raw.line) || 0,
+        line: lineStart,
+        lineEnd: lineEnd !== lineStart ? lineEnd : undefined,
         severity: sev,
         category: raw.category || "其他",
         message: String(raw.message || ""),
@@ -218,11 +223,40 @@ export async function reviewBatch(
 /** 单条问题的渲染视图 */
 export interface ReportIssueView {
   severity: Severity;
-  /** "文件:行号"（无行号时仅文件） */
+  /** "文件:行号" 或 "文件:起始-结束"（无行号时仅文件），用于展示 */
   loc: string;
+  /** 联动定位用：文件路径 */
+  file: string;
+  /** 联动定位用：起始行号 */
+  lineStart: number;
+  /** 联动定位用：结束行号 */
+  lineEnd: number;
   category: string;
   message: string;
   suggestion?: string;
+}
+
+/** diff 视图按行拆分的结构，供 reporter 直接渲染 */
+export interface DiffLineView {
+  type: "add" | "del" | "ctx";
+  /** 新增/上下文行的新文件行号；删除行为 undefined */
+  newNo?: number;
+  /** 删除/上下文行的旧文件行号；新增行为 undefined */
+  oldNo?: number;
+  text: string;
+}
+
+export interface DiffHunkView {
+  oldStart: number;
+  oldEnd: number;
+  newStart: number;
+  newEnd: number;
+  lines: DiffLineView[];
+}
+
+export interface DiffFileView {
+  path: string;
+  hunks: DiffHunkView[];
 }
 
 /** 评审报告视图模型：模板渲染的唯一输入 */
@@ -245,11 +279,73 @@ export interface ReportView {
   issues: ReportIssueView[];
   /** 可选的推送结果（有 target 时展示） */
   pushes?: PushResult[];
+  /** 代码变更视图：按文件拆分的 hunks，供右侧 diff 面板渲染 */
+  diffFiles: DiffFileView[];
 }
 
 function formatTime(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** 拼接问题位置文案：单行 "file:N"，跨行 "file:S-E"，无行号 "file" */
+function formatLoc(file: string, line: number, lineEnd?: number): string {
+  if (!line) return file;
+  return lineEnd && lineEnd !== line ? `${file}:${line}-${lineEnd}` : `${file}:${line}`;
+}
+
+/**
+ * 解析 git unified diff 文本为按行拆分的 hunks。
+ * 纯函数，无副作用：按 `@@ -a,b +c,d @@` 切 hunk，逐行推进新旧行号。
+ * - ' ' 上下文行（oldNo + newNo 同时推进）
+ * - '+' 新增行（只推进 newNo）
+ * - '-' 删除行（只推进 oldNo）
+ * - '\' No newline 行跳过
+ */
+export function parseDiff(diffText: string): DiffHunkView[] {
+  const hunks: DiffHunkView[] = [];
+  const lines = diffText.split("\n");
+  let cur: DiffHunkView | null = null;
+  let oldNo = 0;
+  let newNo = 0;
+  for (const line of lines) {
+    const h = line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
+    if (h) {
+      const oldStart = Number(h[1]);
+      const newStart = Number(h[3]);
+      const oldCount = h[2] !== undefined ? Number(h[2]) : 1;
+      const newCount = h[4] !== undefined ? Number(h[4]) : 1;
+      oldNo = oldStart;
+      newNo = newStart;
+      cur = {
+        oldStart,
+        oldEnd: oldStart + oldCount - 1,
+        newStart,
+        newEnd: newStart + newCount - 1,
+        lines: [],
+      };
+      hunks.push(cur);
+      continue;
+    }
+    if (!cur) continue; // hunk 外的文件头（diff --git / index / --- / +++）跳过
+    const c = line[0];
+    if (c === "+") {
+      cur.lines.push({ type: "add", newNo, text: line.slice(1) });
+      newNo++;
+    } else if (c === "-") {
+      cur.lines.push({ type: "del", oldNo, text: line.slice(1) });
+      oldNo++;
+    } else if (c === "\\") {
+      // "No newline at end of file" 标记，跳过不渲染
+      continue;
+    } else if (c === " ") {
+      cur.lines.push({ type: "ctx", oldNo, newNo, text: line.slice(1) });
+      oldNo++;
+      newNo++;
+    }
+    // 其余（含空行，hunk 内真正的空上下文行是 " "）跳过，避免行号错乱
+  }
+  return hunks;
 }
 
 /**
@@ -258,6 +354,7 @@ function formatTime(d: Date): string {
  */
 export function formatReport(
   result: ReviewResult,
+  files: DiffFile[],
   gate: { passed: boolean; blockers: ReviewIssue[] },
   meta: { repo?: string; ref?: string; generatedAt?: Date; pushes?: PushResult[] } = {}
 ): ReportView {
@@ -281,11 +378,15 @@ export function formatReport(
     summary: result.summary,
     issues: result.issues.map((i) => ({
       severity: i.severity,
-      loc: i.line ? `${i.file}:${i.line}` : i.file,
+      file: i.file,
+      lineStart: i.line,
+      lineEnd: i.lineEnd ?? i.line,
+      loc: formatLoc(i.file, i.line, i.lineEnd),
       category: i.category,
       message: i.message,
       suggestion: i.suggestion,
     })),
     pushes: meta.pushes,
+    diffFiles: files.map((f) => ({ path: f.path, hunks: parseDiff(f.diff) })),
   };
 }

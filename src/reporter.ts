@@ -1,6 +1,7 @@
 import { writeFileSync } from "node:fs";
 import type { ReviewResult, ReviewIssue } from "./gate.js";
 import type { PushResult } from "./publisher.js";
+import type { DiffFile } from "./collector.js";
 import { formatReport, type ReportView } from "./reviewer.js";
 
 export type { ReportView } from "./reviewer.js";
@@ -137,7 +138,7 @@ body {
 }
 a { color:var(--info); text-decoration:none; }
 a:hover { text-decoration:underline; }
-.topbar { max-width:1040px; margin:0 auto; padding:22px 28px; display:flex; align-items:center; justify-content:space-between; gap:16px; border-bottom:1px solid var(--border); }
+.topbar { max-width:1320px; margin:0 auto; padding:22px 28px; display:flex; align-items:center; justify-content:space-between; gap:16px; border-bottom:1px solid var(--border); }
 .brand { display:inline-flex; align-items:center; gap:10px; font-weight:700; letter-spacing:-.2px; font-size:15px; }
 .brand-mark { width:22px; height:22px; border-radius:6px; background:linear-gradient(145deg,#ff9a71 0%,#ff724c 60%,#e95235 100%); box-shadow:0 0 12px rgba(255,112,69,.45), inset 0 1px 0 rgba(255,255,255,.3); position:relative; }
 .brand-mark::before, .brand-mark::after { content:""; position:absolute; left:50%; transform:translateX(-50%); border-left:4px solid transparent; border-right:4px solid transparent; }
@@ -148,7 +149,7 @@ a:hover { text-decoration:underline; }
 .crumbs .here { color:var(--muted); }
 .back-link { font-size:13px; color:var(--muted); padding:6px 12px; border:1px solid var(--border); border-radius:8px; transition:all 150ms ease; }
 .back-link:hover { color:var(--text); border-color:var(--border-strong); background:var(--surface); text-decoration:none; }
-.main { max-width:1040px; margin:0 auto; padding:36px 28px 80px; }
+.main { max-width:1320px; margin:0 auto; padding:36px 28px 80px; }
 .verdict { display:flex; align-items:center; gap:22px; padding:26px 28px; background:linear-gradient(180deg, rgba(122,220,192,.06), rgba(122,220,192,.02)); border:1px solid rgba(122,220,192,.22); border-radius:14px; position:relative; overflow:hidden; }
 .verdict::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--ok); box-shadow:0 0 18px rgba(122,220,192,.5); }
 .verdict-icon { width:52px; height:52px; flex:0 0 auto; border-radius:50%; display:grid; place-items:center; background:var(--ok-soft); border:1px solid rgba(122,220,192,.4); }
@@ -202,6 +203,32 @@ code { font-family:var(--mono); font-size:.92em; }
 .pushes .row { display:flex; gap:10px; align-items:baseline; font-family:var(--mono); font-size:13px; padding:3px 0; }
 .pushes .ok { color:var(--ok); } .pushes .bad { color:var(--block); }
 .footer { margin-top:50px; padding-top:20px; border-top:1px solid var(--border); font-size:12px; color:var(--dim); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+/* 左右分栏布局 */
+.split { display:grid; grid-template-columns:4fr 6fr; gap:24px; align-items:start; margin-top:8px; }
+.split-left, .split-right { min-width:0; }
+.diff-panel { position:sticky; top:20px; max-height:calc(100vh - 40px); overflow:auto; background:var(--surface); border:1px solid var(--border); border-radius:12px; }
+.diff-panel-head { padding:14px 18px; border-bottom:1px solid var(--border); display:flex; align-items:baseline; justify-content:space-between; background:var(--surface-2); border-radius:12px 12px 0 0; }
+.diff-panel-head h2 { margin:0; font-size:14px; font-weight:700; }
+.diff-panel-head .count { font-family:var(--mono); font-size:12px; color:var(--dim); }
+.diff-file { border-bottom:1px solid var(--border); }
+.diff-file:last-child { border-bottom:none; }
+.diff-file-head { display:flex; align-items:center; gap:10px; padding:8px 14px; font-family:var(--mono); font-size:12.5px; color:var(--accent); background:var(--surface-2); }
+.diff-file-head .badge { color:var(--dim); font-size:11px; }
+.diff-hunk-head { padding:4px 14px; font-family:var(--mono); font-size:11px; color:var(--dim); background:rgba(255,196,148,.04); }
+.diff-line { display:flex; align-items:flex-start; font-family:var(--mono); font-size:12.5px; line-height:1.55; }
+.diff-line .gutter { flex:0 0 42px; padding:0 6px; text-align:right; color:var(--dim); background:var(--surface-2); user-select:none; border-right:1px solid var(--border); }
+.diff-line .content { flex:1; padding:0 10px; white-space:pre-wrap; word-break:break-word; min-width:0; }
+.diff-line.add { background:rgba(122,220,192,.09); }
+.diff-line.add .content { color:var(--ok); }
+.diff-line.del { background:rgba(240,85,69,.09); }
+.diff-line.del .content { color:var(--block); }
+.diff-line.ctx .content { color:var(--muted); }
+.diff-line.target { animation:flash 1.4s ease-out; box-shadow:inset 3px 0 0 var(--warn); }
+@keyframes flash { 0%{background:rgba(255,212,98,.35);} 100%{background:transparent;} }
+.diff-empty { padding:32px 20px; text-align:center; color:var(--dim); font-size:13px; }
+.issue { cursor:pointer; }
+.issue[data-file]:focus { outline:none; border-color:var(--accent); }
+@media (max-width:980px) { .split { grid-template-columns:1fr; } .diff-panel { position:static; max-height:none; } }
 @media (max-width:860px) { .stats { grid-template-columns:repeat(3,1fr); } }
 @media (max-width:560px) {
   .topbar { flex-wrap:wrap; padding:16px 18px; } .crumbs { order:3; width:100%; }
@@ -252,7 +279,7 @@ function issueList(v: ReportView): string {
   if (!v.issues.length) return `<div class="empty">未发现问题。</div>`;
   return v.issues
     .map(
-      (i) => `<article class="issue ${i.severity}">
+      (i) => `<article class="issue ${i.severity}" data-file="${esc(i.file)}" data-line-start="${i.lineStart}" data-line-end="${i.lineEnd}" tabindex="0">
     <div class="issue-body">
       <div class="issue-head">
         <span class="sev ${i.severity}">${esc(i.severity)}</span>
@@ -272,6 +299,50 @@ function issueList(v: ReportView): string {
   </article>`
     )
     .join("\n\n  ");
+}
+
+/** 右侧 diff 面板：按文件渲染 hunks，新增绿、删除红、上下文灰，行号对应 AI 报告行号 */
+function diffPanel(v: ReportView): string {
+  if (!v.diffFiles || !v.diffFiles.length) {
+    return `<div class="diff-empty">无代码变更数据。</div>`;
+  }
+  return v.diffFiles
+    .map((f) => {
+      let addCount = 0;
+      let delCount = 0;
+      const body = f.hunks
+        .map((h) => {
+          const head = `<div class="diff-hunk-head">@@ -${h.oldStart},${h.oldEnd - h.oldStart + 1} +${h.newStart},${h.newEnd - h.newStart + 1} @@</div>`;
+          const lines = h.lines
+            .map((l) => {
+              if (l.type === "add") addCount++;
+              else if (l.type === "del") delCount++;
+              const oldG = l.oldNo !== undefined ? String(l.oldNo) : "";
+              const newG = l.newNo !== undefined ? String(l.newNo) : "";
+              // 仅 add/ctx 行带 data-line（newNo），供左侧问题联动定位；del 行无 newNo 不参与
+              const dataLine =
+                l.newNo !== undefined
+                  ? ` data-file="${esc(f.path)}" data-line="${l.newNo}"`
+                  : "";
+              return `      <div class="diff-line ${l.type}"${dataLine}>
+        <span class="gutter">${oldG}</span>
+        <span class="gutter">${newG}</span>
+        <code class="content">${esc(l.text)}</code>
+      </div>`;
+            })
+            .join("\n");
+          return `    ${head}\n${lines}`;
+        })
+        .join("\n");
+      return `  <div class="diff-file">
+    <div class="diff-file-head">
+      <span>${esc(f.path)}</span>
+      <span class="badge">+${addCount} / -${delCount}</span>
+    </div>
+${body}
+  </div>`;
+    })
+    .join("\n");
 }
 
 function pushSection(v: ReportView): string {
@@ -344,12 +415,22 @@ export function renderTemplate(v: ReportView): string {
 
   ${pushSection(v)}
 
-  <div class="section-head">
-    <h2>问题明细</h2>
-    <span class="count">${countText(v)}</span>
+  <div class="split">
+    <section class="split-left">
+      <div class="section-head">
+        <h2>问题明细</h2>
+        <span class="count">${countText(v)}</span>
+      </div>
+      ${issueList(v)}
+    </section>
+    <section class="split-right diff-panel">
+      <div class="diff-panel-head">
+        <h2>代码变更</h2>
+        <span class="count">${v.diffFiles?.length ?? 0} 个文件</span>
+      </div>
+      ${diffPanel(v)}
+    </section>
   </div>
-
-  ${issueList(v)}
 
   <footer class="footer">
     <span>ai-review · AI 代码评审工作流</span>
@@ -357,6 +438,34 @@ export function renderTemplate(v: ReportView): string {
   </footer>
 
 </main>
+<script>
+(function(){
+  var issues = document.querySelectorAll('.issue[data-file]');
+  var panel = document.querySelector('.diff-panel');
+  if(!issues.length || !panel) return;
+  issues.forEach(function(el){
+    el.addEventListener('click', function(){
+      var file = el.getAttribute('data-file');
+      var ls = parseInt(el.getAttribute('data-line-start'),10) || 0;
+      var le = parseInt(el.getAttribute('data-line-end'),10) || ls;
+      if(!ls) return;
+      var lines = panel.querySelectorAll('.diff-line[data-line]');
+      lines.forEach(function(l){ l.classList.remove('target'); });
+      var hit = null;
+      lines.forEach(function(l){
+        if(hit) return;
+        if(l.getAttribute('data-file') !== file) return;
+        var n = parseInt(l.getAttribute('data-line'),10);
+        if(n >= ls && n <= le) hit = l;
+      });
+      if(hit){
+        hit.classList.add('target');
+        hit.scrollIntoView({behavior:'smooth', block:'center'});
+      }
+    });
+  });
+})();
+</script>
 </body>
 </html>`;
 }
@@ -364,9 +473,10 @@ export function renderTemplate(v: ReportView): string {
 /** 组装报告视图模型（落盘为 JSON，由报告服务按需渲染成 HTML） */
 export function buildReportView(
   result: ReviewResult,
+  files: DiffFile[],
   gate: GateSummary,
   pushes?: PushResult[],
   meta?: { repo?: string; ref?: string }
 ): ReportView {
-  return formatReport(result, gate, { ...meta, pushes });
+  return formatReport(result, files, gate, { ...meta, pushes });
 }
