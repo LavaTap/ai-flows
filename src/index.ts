@@ -1,6 +1,6 @@
-import { copyFileSync, existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loadConfig, type ReviewConfig } from "./config.js";
 import { collectDiff } from "./collector.js";
@@ -9,10 +9,10 @@ import { decideGate, type ReviewIssue } from "./gate.js";
 import { pushToTargets, type PushResult } from "./publisher.js";
 import { isRepo, currentBranch } from "./git.js";
 import { writeReviewReport, buildReportView } from "./reporter.js";
-import { startReportServer, REPORTS_DIR } from "./serve.js";
+import { startReportServer, ensureReportServer, REPORTS_DIR, DEFAULT_REPORT_PORT } from "./serve.js";
+import { startPlatformServer, DEFAULT_PLATFORM_PORT } from "./platform.js";
 
 const CWD = process.cwd();
-const DEFAULT_PORT = Number(process.env.AI_REVIEW_PORT || 4310);
 const THIS_FILE = fileURLToPath(import.meta.url);
 const RED = "\u001b[31m";
 const YELLOW = "\u001b[33m";
@@ -59,7 +59,7 @@ async function run(
   const result = await reviewBatch(files, cfg.model);
 
   console.log(`\n${DIM}── 评审摘要 ──${RESET}`);
-  console.log(result.summary);
+  // console.log(result.summary);
   // console.log(`\n${DIM}── 问题列表 (${result.issues.length}) ──${RESET}`);
   // const blockedSet = new Set(cfg.severityBlocked);
   // printIssues(result.issues, blockedSet);
@@ -105,56 +105,12 @@ async function run(
     }
     const view = buildReportView(result, files, gate, pushes, { ref, repoCwd: CWD, targets: cfg.targets });
     writeFileSync(join(dir, `${id}.json`), JSON.stringify(view, null, 2), "utf8");
-    const base = await ensureReportServer();
+    const base = await ensureReportServer(CWD);
     console.log(`\n${GREEN}📄 评审结果页面：${base}/reports/${id}${RESET}`);
     console.log(`${DIM}（全部报告列表：${base}/）${RESET}`);
   }
 
   return exitCode;
-}
-
-/** 确保本地报告服务在跑，返回其 base URL（不阻塞本进程）。用 .server 握手文件取得真实（可用）端口。 */
-async function ensureReportServer(): Promise<string> {
-  const dir = join(CWD, REPORTS_DIR);
-  const serverFile = join(dir, ".server");
-
-  // 已有可用的服务？(同时校验 dir 一致 + /health 返回 ok，防止同端口别的 ai-review 实例被误信)
-  if (existsSync(serverFile)) {
-    try {
-      const m = JSON.parse(readFileSync(serverFile, "utf8"));
-      if (m.dir === dir) {
-        const r = await fetch(`${m.url}/health`, { signal: AbortSignal.timeout(700) });
-        if (r.ok && (await r.text()).trim() === "ok") return m.url;
-      }
-    } catch {
-      /* 失效，重新拉起 */
-    }
-  }
-
-  // 后台拉起 serve 守护进程（detached），落位改端口会自动写入 .server。
-  // 关键：复用 process.execArgv，让 tsx 的 ESM loader 一并传给子进程；
-  // 否则裸 node 无法解析 .ts 源文件，子进程立即崩溃，.server 永远写不出。
-  // dist 构建产物（.js）场景下 execArgv 为空，不影响。
-  spawn(
-    process.execPath,
-    [...process.execArgv, THIS_FILE, "serve", "--port", String(DEFAULT_PORT)],
-    { detached: true, stdio: "ignore", cwd: CWD }
-  ).unref();
-
-  for (let i = 0; i < 40; i++) {
-    await new Promise((r) => setTimeout(r, 150));
-    if (!existsSync(serverFile)) continue;
-    try {
-      const m = JSON.parse(readFileSync(serverFile, "utf8"));
-      if (m.dir === dir) {
-        const r = await fetch(`${m.url}/health`, { signal: AbortSignal.timeout(600) });
-        if (r.ok && (await r.text()).trim() === "ok") return m.url;
-      }
-    } catch {
-      /* keep waiting */
-    }
-  }
-  return `http://127.0.0.1:${DEFAULT_PORT}`;
 }
 
 /** 安装 pre-push hook：git push 前自动 AI 评审并出页面；始终拦截本次 push，
@@ -225,6 +181,10 @@ function usage(): void {
                                       --page 后台拉起服务，打印可点开的评审结果链接
                                       评审页面需输入 commit 信息并点「确认提交」才会提交+推送
   ai-review serve [--port <n> [--dir]]  常驻评审报告服务（GET /reports/<id>）
+  ai-review platform [--port <n>] [--repo <path>]
+                                       启动 AI 管线平台（登录 + 管线页 + 节点执行/批准）
+                                       节点 03 执行时在 --repo 仓库（缺省当前目录）触发真实 AI 评审
+                                       账号见 db/users.json（演示密码统一 123456）
   ai-review install-hook                装 pre-push hook：git push 自动评审，有 blocker 则拦截
   ai-review init                         从 config.example.json 生成配置
   ai-review -h | --help                  显示帮助
@@ -279,7 +239,7 @@ async function main(): Promise<void> {
     const args = parseArgs(process.argv.slice(3));
     const dir = join(CWD, REPORTS_DIR);
     mkdirSync(dir, { recursive: true });
-    const base = Number(args.port || process.env.AI_REVIEW_PORT || DEFAULT_PORT);
+    const base = Number(args.port || process.env.AI_REVIEW_PORT || DEFAULT_REPORT_PORT);
     let srv;
     for (let p = base; p < base + 10; p++) {
       try {
@@ -295,6 +255,33 @@ async function main(): Promise<void> {
     }
     writeFileSync(join(dir, ".server"), JSON.stringify({ port: srv.port, url: srv.url, dir }));
     console.log(`${GREEN}评审报告服务已启动：${srv.url}${RESET}`);
+    console.log(`${DIM}（Ctrl+C 停止）${RESET}`);
+    await new Promise<void>(() => {});
+    return;
+  }
+
+  if (sub === "platform") {
+    const args = parseArgs(process.argv.slice(3));
+    const base = Number(args.port || process.env.AI_FLOWS_PORT || DEFAULT_PLATFORM_PORT);
+    // 节点 03 AI 代码评审的目标仓库：--repo 指定，缺省当前目录
+    const repo = args.repo ? resolve(args.repo) : CWD;
+    let srv;
+    for (let p = base; p < base + 10; p++) {
+      try {
+        srv = await startPlatformServer({ host: "127.0.0.1", port: p, repo });
+        break;
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== "EADDRINUSE") throw e;
+      }
+    }
+    if (!srv) {
+      console.error(`${RED}✖ 无法启动平台服务：端口 ${base}-${base + 9} 均被占用${RESET}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`${GREEN}AI 管线平台已启动：${srv.url}${RESET}`);
+    console.log(`${DIM}登录页：${srv.url}/login（账号见 db/users.json，演示密码统一 123456）${RESET}`);
+    console.log(`${DIM}节点 03 执行触发真实 AI 评审，目标仓库：${repo}${RESET}`);
     console.log(`${DIM}（Ctrl+C 停止）${RESET}`);
     await new Promise<void>(() => {});
     return;

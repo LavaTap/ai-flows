@@ -65,33 +65,37 @@
 ```
 ai-flows/
 ├── web/
-│   ├── ai-pipeline.html      # DONE：管线静态页预览
-│   ├── login.html            # TODO：登录页
-│   └── assets/               # TODO：样式/脚本抽取
+│   ├── ai-pipeline.html      # DONE：管线静态页（平台态由 platform 服务注入 bootstrap）
+│   ├── ai-pipeline.css       # DONE：管线页样式（纸灰 + 玻璃 + LED 风）
+│   ├── ai-pipeline-app.js    # DONE：平台增强脚本（登录态 + 执行/批准按钮，静态预览不生效）
+│   ├── login.html            # DONE：登录页
+│   └── login.css             # DONE：登录页样式
 ├── db/
-│   └── users.json            # TODO：账号库（种子数据）
+│   ├── users.json            # DONE：账号库（6 个种子账号，不开放注册）
+│   └── pipeline.json         # DONE：节点运行时状态（执行/批准写回）
 └── src/
-    ├── serve.ts              # 扩展现有报告服务
-    ├── auth.ts               # TODO：登录会话 + 角色判定（零依赖，签名 cookie）
-    └── platform.ts           # TODO：管线页路由 + 节点执行/批准 API
+    ├── db.ts                 # DONE：账号/节点读写 + authenticate（JSON + node:fs）
+    ├── auth.ts               # DONE：内存会话 + cookie（HttpOnly，24h）
+    ├── platform.ts           # DONE：平台 HTTP 服务（路由 + 权限 + 注入渲染）
+    └── index.ts              # DONE：新增 platform 子命令
 ```
 
 ### 7.2 实施步骤
 
 1. **P0 静态页**（已完成）：`web/ai-pipeline.html` 预览确认。
-2. **P1 账号入库**：建 `db/users.json` 种子数据（6 个账号），`db.ts` 读写封装（JSON + `node:fs`）。
-3. **P2 登录**：`login.html` + `/api/login`（email + 密码验证，签名 cookie）；零依赖实现，密码先明文→后续换 `node:crypto` scrypt。
-4. **P3 角色渲染**：`/pipeline` 路由渲染管线页；员工登录只能看/执行本部门节点，主管看到"批准/操控"按钮。
-5. **P4 节点动作**：`POST /api/nodes/:id/approve` 等；批准流把节点状态推进到下一环节。
-6. **P5 接能力**：节点 03 已就绪挂 ai-review 管线；节点 01/02/04 按用户后续 Skill 接入。
-7. **P6 服务整合**：并入 `src/index.ts` 子命令（如 `ai-review platform`），仍走 `dist/` 构建产物。
+2. **P1 账号入库**（已完成）：`db/users.json` 6 个账号 + `db/pipeline.json` 节点状态 + `src/db.ts`。
+3. **P2 登录**（已完成）：`login.html` + `POST /api/login`（邮箱+密码，会话 cookie）；零依赖，密码暂明文。
+4. **P3 角色渲染**（已完成）：`GET /pipeline` 注入 `window.__PIPELINE__`（用户 + 节点权限）；员工仅本部门可执行，主管有批准按钮。
+5. **P4 节点动作**（已完成）：`POST /api/nodes/:id/execute|approve`；员工限本部门、主管全节点，待接入节点拒绝执行；状态落 `db/pipeline.json`。
+6. **P5 接能力**（已完成）：节点 03（`runner: ai-review`）执行时在目标仓库（`--repo` 指定，缺省平台启动目录）真正触发 ai-review 评审链：状态 `todo → running → done`（失败回 `todo` 并记录原因），评审配置随目标仓库的 `ai-review.config.json`；完成后详情面板展示门禁结果与「查看评审报告」链接（报告服务复用 4310 端口自动拉起，前端 2s 轮询刷新）；空 diff / 非仓库等异常回滚并提示。节点 01/02/04 按用户后续 Skill 接入。
+7. **P6 服务整合**（已完成）：`ai-review platform [--port 4311] [--repo <path>]` 子命令，走 `dist/` 构建产物；冒烟测试 22 项全过（登录/权限/执行/批准/穿越防护），P5 后另做真实评审端到端验证（执行 → LLM 评审 → 报告页 200）。
 
-## 8. 待确认事项
+## 8. 待确认事项（实施时已按默认处理）
 
-- [ ] 6 个账号的真实姓名拼音
-- [ ] 主管是否也需要区分部门（产品部门主管管全部，还是每部门一个主管）
-- [ ] 密码是否演示期即做哈希
-- [ ] 平台入口：独立端口还是并入 `serve` 报告服务同一端口
+- [x] 6 个账号姓名拼音：沿用占位拼音（zhaoli/wangxinyi/lixiang/chenyu/liuyang/liyun），改 `db/users.json` 即可
+- [x] 主管不区分部门：`supervisor` 角色直接放开全部节点的操控+批准（权限最高）
+- [x] 密码演示期明文存 JSON（统一 123456），上线前再换 `node:crypto` scrypt
+- [x] 平台入口：独立子命令 `platform` + 独立端口 4311，不与 `serve` 报告服务（4310）混跑
 
 ## 9. 约束（对齐 AGENTS.md 红线）
 

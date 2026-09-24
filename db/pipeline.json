@@ -1,0 +1,33 @@
+{
+  "nodes": [
+    {
+      "id": "01",
+      "department": "产品调研",
+      "step": "产品调研",
+      "ready": false,
+      "status": "todo"
+    },
+    {
+      "id": "02",
+      "department": "AI产品",
+      "step": "产品策划案",
+      "ready": false,
+      "status": "todo"
+    },
+    {
+      "id": "03",
+      "department": "程序中台",
+      "step": "AI 代码评审",
+      "ready": true,
+      "status": "todo",
+      "runner": "ai-review"
+    },
+    {
+      "id": "04",
+      "department": "产品运营",
+      "step": "运营",
+      "ready": false,
+      "status": "todo"
+    }
+  ]
+}

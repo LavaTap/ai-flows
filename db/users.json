@@ -1,0 +1,46 @@
+{
+  "users": [
+    {
+      "email": "zhaoli@ai-flows.com",
+      "password": "123456",
+      "role": "supervisor",
+      "title": "产品部门主管",
+      "department": "产品"
+    },
+    {
+      "email": "wangxinyi@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "用户调研实习生",
+      "department": "产品调研"
+    },
+    {
+      "email": "lixiang@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "前端开发设计师",
+      "department": "程序中台"
+    },
+    {
+      "email": "chenyu@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "AI 产品实习生",
+      "department": "AI产品"
+    },
+    {
+      "email": "liuyang@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "初级产品运营",
+      "department": "产品运营"
+    },
+    {
+      "email": "liyun@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "用户调研实习生",
+      "department": "产品调研"
+    }
+  ]
+}

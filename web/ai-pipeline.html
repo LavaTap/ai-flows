@@ -165,7 +165,7 @@
       var nodes = Array.prototype.slice.call(document.querySelectorAll(".node"));
       var tpls = Array.prototype.slice.call(document.querySelectorAll("template"));
       var DEFAULT_IDX = 2; /* 默认展示已就绪的 AI 代码评审节点 */
-      var current = DEFAULT_IDX;
+      var current = -1; /* -1 保证首屏渲染一次（平台脚本监听 pipeline-show 重建动作区） */
 
       function show(idx) {
         if (idx === current) return;
@@ -177,6 +177,8 @@
           n.classList.toggle("on", on);
           n.setAttribute("aria-pressed", on ? "true" : "false");
         });
+        /* 广播给平台增强脚本（静态预览无监听者，无副作用） */
+        window.dispatchEvent(new CustomEvent("pipeline-show", { detail: idx }));
       }
 
       nodes.forEach(function (n) {

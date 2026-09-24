@@ -5,6 +5,8 @@ dist/
 .DS_Store
 ai-review.config.json
 .env
+.ai-review-reports/
+review-report.md
 
 # 其他的agents
 .agents/ui-ux-pro-max/
