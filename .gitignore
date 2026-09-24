@@ -5,3 +5,7 @@ dist/
 .DS_Store
 ai-review.config.json
 .env
+
+# 其他的agents
+.agents/ui-ux-pro-max/
+.agents/writing-claude-md/

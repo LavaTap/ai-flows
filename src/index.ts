@@ -7,7 +7,7 @@ import { collectDiff } from "./collector.js";
 import { reviewBatch } from "./reviewer.js";
 import { decideGate, type ReviewIssue } from "./gate.js";
 import { pushToTargets, type PushResult } from "./publisher.js";
-import { isRepo } from "./git.js";
+import { isRepo, currentBranch } from "./git.js";
 import { writeReviewReport, buildReviewHtml } from "./reporter.js";
 import { startReportServer, REPORTS_DIR } from "./serve.js";
 
@@ -97,7 +97,17 @@ async function run(
     const id = `review-${Date.now().toString(36)}`;
     const dir = join(CWD, REPORTS_DIR);
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, `${id}.html`), buildReviewHtml(result, gate, pushes), "utf8");
+    let ref: string | undefined;
+    try {
+      ref = await currentBranch(CWD);
+    } catch {
+      /* detached HEAD 等场景忽略 */
+    }
+    writeFileSync(
+      join(dir, `${id}.html`),
+      buildReviewHtml(result, gate, pushes, { ref }),
+      "utf8"
+    );
     const base = await ensureReportServer();
     console.log(`\n${GREEN}📄 评审结果页面：${base}/reports/${id}${RESET}`);
     console.log(`${DIM}（全部报告列表：${base}/）${RESET}`);

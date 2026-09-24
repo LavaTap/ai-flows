@@ -1,6 +1,7 @@
 import { resolveApiKey, type ModelConfig } from "./config.js";
 import type { DiffFile } from "./collector.js";
 import type { ReviewIssue, ReviewResult, Severity } from "./gate.js";
+import type { PushResult } from "./publisher.js";
 
 const SEVERITY_DEF = `- "blocker": 阻塞级。会造成 bug / 崩溃 / 安全问题 / 明显逻辑错误，或与本次变更直接相关的严重缺陷。
 - "warning": 需要注意。潜在风险、可维护性差、命名混乱、遗漏边界处理，但不必然导致故障。
@@ -182,5 +183,85 @@ export async function reviewBatch(
       filesReviewed: files.length,
       degradedCount: perFile.reduce((n, r) => n + r.stats.degradedCount, 0),
     },
+  };
+}
+
+// ────────────────────────────────────────────────────────────────
+// 报告格式化接口
+// 把 AI 返回的结构化 JSON 整理成「视图模型」，供 reporter 直接注入 HTML 模板。
+// ────────────────────────────────────────────────────────────────
+
+/** 单条问题的渲染视图 */
+export interface ReportIssueView {
+  severity: Severity;
+  /** "文件:行号"（无行号时仅文件） */
+  loc: string;
+  category: string;
+  message: string;
+  suggestion?: string;
+}
+
+/** 评审报告视图模型：模板渲染的唯一输入 */
+export interface ReportView {
+  passed: boolean;
+  /** 生成时间（本地化 "YYYY-MM-DD HH:mm"） */
+  generatedAt: string;
+  /** 面包屑：仓库名 */
+  repo?: string;
+  /** 面包屑：分支 / 提交 */
+  ref?: string;
+  filesReviewed: number;
+  degradedCount: number;
+  /** 问题总数 */
+  total: number;
+  counts: { blocker: number; warning: number; info: number };
+  /** 问题涉及的去重类别，用于页脚「规则集」 */
+  categories: string[];
+  summary: string;
+  issues: ReportIssueView[];
+  /** 可选的推送结果（有 target 时展示） */
+  pushes?: PushResult[];
+}
+
+function formatTime(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/**
+ * 【格式化接口】把 AI 返回的评审结果 + 门禁判定整理成 ReportView。
+ * reporter 只需消费该视图模型即可渲染 HTML / Markdown，无需关心原始 JSON 结构。
+ */
+export function formatReport(
+  result: ReviewResult,
+  gate: { passed: boolean; blockers: ReviewIssue[] },
+  meta: { repo?: string; ref?: string; generatedAt?: Date; pushes?: PushResult[] } = {}
+): ReportView {
+  const counts = { blocker: 0, warning: 0, info: 0 };
+  for (const i of result.issues) {
+    if (i.severity === "blocker") counts.blocker++;
+    else if (i.severity === "warning") counts.warning++;
+    else counts.info++;
+  }
+  const categories = [...new Set(result.issues.map((i) => i.category).filter(Boolean))];
+  return {
+    passed: gate.passed,
+    generatedAt: formatTime(meta.generatedAt ?? new Date()),
+    repo: meta.repo,
+    ref: meta.ref,
+    filesReviewed: result.stats.filesReviewed,
+    degradedCount: result.stats.degradedCount,
+    total: result.issues.length,
+    counts,
+    categories,
+    summary: result.summary,
+    issues: result.issues.map((i) => ({
+      severity: i.severity,
+      loc: i.line ? `${i.file}:${i.line}` : i.file,
+      category: i.category,
+      message: i.message,
+      suggestion: i.suggestion,
+    })),
+    pushes: meta.pushes,
   };
 }
