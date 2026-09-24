@@ -1,8 +1,9 @@
 import { createServer, type Server } from "node:http";
 import { readdirSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { renderTemplate, type ReportView } from "./reporter.js";
 
-/** 存放评审 HTML 报告的目录名（在该 git 仓库根下） */
+/** 存放评审报告数据（JSON）的目录名（在该 git 仓库根下） */
 export const REPORTS_DIR = ".ai-review-reports";
 
 function esc(s: string): string {
@@ -23,22 +24,76 @@ function layout(title: string, body: string): string {
   h1{font-size:24px;margin:0 0 16px;} ul{line-height:2;}
   a{color:var(--accent);} code{font-family:ui-monospace,Menlo,monospace;font-size:12px;}
   .muted{color:var(--muted);}
+  .reports{list-style:none;padding:0;margin:0;}
+  .reports li{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 0;border-bottom:1px solid var(--border);}
+  .pill{font-size:11px;font-weight:700;letter-spacing:1px;padding:2px 9px;border-radius:999px;}
+  .pill.pass{color:#7adcc0;background:rgba(122,220,192,.12);}
+  .pill.block{color:#f05545;background:rgba(240,85,69,.12);}
 </style></head>
 <body class="wrap">${body}</body></html>`;
 }
 
-function indexHtml(dir: string): string {
-  let files: string[] = [];
-  if (existsSync(dir)) {
-    files = readdirSync(dir).filter((f) => f.endsWith(".html")).sort().reverse();
-  }
-  const items = files
+interface ReportSummary {
+  id: string;
+  passed: boolean;
+  generatedAt: string;
+  total: number;
+  blocker: number;
+  warning: number;
+  info: number;
+  ref?: string;
+}
+
+/** 读取目录下全部报告 JSON 的摘要（按 id 倒序，即新的在前） */
+function readSummaries(dir: string): ReportSummary[] {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".json"))
+    .sort()
+    .reverse()
     .map((f) => {
       const id = f.slice(0, -5);
-      return `<li><a href="/reports/${encodeURIComponent(id)}">${esc(id)}</a></li>`;
+      const base: ReportSummary = {
+        id,
+        passed: false,
+        generatedAt: "",
+        total: 0,
+        blocker: 0,
+        warning: 0,
+        info: 0,
+      };
+      try {
+        const v = JSON.parse(readFileSync(join(dir, f), "utf8")) as ReportView;
+        return {
+          ...base,
+          passed: !!v.passed,
+          generatedAt: v.generatedAt ?? "",
+          total: v.total ?? 0,
+          blocker: v.counts?.blocker ?? 0,
+          warning: v.counts?.warning ?? 0,
+          info: v.counts?.info ?? 0,
+          ref: v.ref,
+        };
+      } catch {
+        return base;
+      }
+    });
+}
+
+function indexHtml(dir: string): string {
+  const items = readSummaries(dir);
+  const rows = items
+    .map((s) => {
+      const meta = [s.generatedAt, s.ref].filter(Boolean).map((x) => esc(String(x))).join(" · ");
+      return `<li>
+      <a href="/reports/${encodeURIComponent(s.id)}">${esc(s.id)}</a>
+      <span class="pill ${s.passed ? "pass" : "block"}">${s.passed ? "PASS" : "BLOCK"}</span>
+      <span class="muted">${meta}</span>
+      <span class="muted">blocker ${s.blocker} · warning ${s.warning} · info ${s.info}</span>
+    </li>`;
     })
     .join("");
-  const body = items.length ? `<ul>${items}</ul>` : "<p class='muted'>暂无报告。</p>";
+  const body = items.length ? `<ul class="reports">${rows}</ul>` : "<p class='muted'>暂无报告。</p>";
   return layout("AI 代码评审 · 报告列表", body);
 }
 
@@ -50,7 +105,7 @@ export interface ReportServer {
   close(): Promise<void>;
 }
 
-/** 以目录为数据源启动报告 HTTP 服务。GET /reports/<id> 读取 <dir>/<id>.html。 */
+/** 以目录为数据源启动报告 HTTP 服务。GET /reports/<id> 读取 <dir>/<id>.json 并动态渲染。 */
 export async function startReportServer(
   opts: { host?: string; port?: number; dir?: string } = {}
 ): Promise<ReportServer> {
@@ -74,9 +129,15 @@ export async function startReportServer(
     }
     const m = path.match(/^\/reports\/([^/\\]+)$/);
     if (m) {
-      const f = join(dir, m[1] + ".html");
+      const f = join(dir, m[1] + ".json");
       if (f.startsWith(dir + "") && existsSync(f)) {
-        res.end(readFileSync(f, "utf8"));
+        try {
+          const view = JSON.parse(readFileSync(f, "utf8")) as ReportView;
+          res.end(renderTemplate(view));
+        } catch {
+          res.statusCode = 500;
+          res.end("报告数据无法解析");
+        }
         return;
       }
     }

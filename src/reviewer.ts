@@ -2,6 +2,7 @@ import { resolveApiKey, type ModelConfig } from "./config.js";
 import type { DiffFile } from "./collector.js";
 import type { ReviewIssue, ReviewResult, Severity } from "./gate.js";
 import type { PushResult } from "./publisher.js";
+import { maskSecrets } from "./redact.js";
 
 const SEVERITY_DEF = `- "blocker": 阻塞级。会造成 bug / 崩溃 / 安全问题 / 明显逻辑错误，或与本次变更直接相关的严重缺陷。
 - "warning": 需要注意。潜在风险、可维护性差、命名混乱、遗漏边界处理，但不必然导致故障。
@@ -167,17 +168,40 @@ async function mapConcurrent<T, R>(
   return results;
 }
 
+/**
+ * 汇总各文件的一句话总结：按描述去重，相同描述的文件合并为一行。
+ * 避免同一类改动（如批量生成的报告文件）产生大段重复摘要。
+ */
+function buildSummary(files: DiffFile[], perFile: ReviewResult[]): string {
+  const groups = new Map<string, string[]>();
+  perFile.forEach((r, i) => {
+    const s = (r.summary || `已评审 ${files[i].path}`).trim();
+    const paths = groups.get(s) ?? [];
+    paths.push(files[i].path);
+    groups.set(s, paths);
+  });
+  const lines = [...groups.entries()].map(([s, paths]) =>
+    paths.length > 1 ? `- ${s}（共 ${paths.length} 个文件）` : `- ${s}（${paths[0]}）`
+  );
+  return `共 ${files.length} 个文件参与评审：\n${lines.join("\n")}`;
+}
+
 /** 对整批文件评审，合并为一条结果 */
 export async function reviewBatch(
   files: DiffFile[],
   model: ModelConfig
 ): Promise<ReviewResult> {
   const perFile = await mapConcurrent(files, 3, (f) => reviewFile(model, f));
-  const issues = perFile.flatMap((r) => r.issues);
-  const summary = perFile.map((r) => r.summary).join(" ");
+  const issues = perFile
+    .flatMap((r) => r.issues)
+    .map((i) => ({
+      ...i,
+      message: maskSecrets(i.message),
+      suggestion: i.suggestion ? maskSecrets(i.suggestion) : undefined,
+    }));
   return {
     passed: !issues.some((i) => i.severity === "blocker"),
-    summary,
+    summary: maskSecrets(buildSummary(files, perFile)),
     issues,
     stats: {
       filesReviewed: files.length,

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/shen3/.claude/skills/writing-claude-md/references/**)",
+      "Read(//c/Users/shen3/.claude/skills/writing-claude-md/**)",
+      "Bash(git check-ignore *)"
+    ]
+  }
+}

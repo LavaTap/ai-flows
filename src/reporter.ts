@@ -3,6 +3,8 @@ import type { ReviewResult, ReviewIssue } from "./gate.js";
 import type { PushResult } from "./publisher.js";
 import { formatReport, type ReportView } from "./reviewer.js";
 
+export type { ReportView } from "./reviewer.js";
+
 export interface GateSummary {
   passed: boolean;
   blockers: ReviewIssue[];
@@ -52,7 +54,9 @@ export function buildReviewMarkdown(
   L.push(`| 🟡 warning | ${counts.warning} |`);
   L.push(`| 🔵 info | ${counts.info} |`);
   L.push("");
-  L.push(`**评审摘要**：${result.summary}`);
+  L.push(`**评审摘要**：`);
+  L.push("");
+  L.push(result.summary);
 
   if (pushes) {
     L.push("");
@@ -161,7 +165,7 @@ a:hover { text-decoration:underline; }
 .verdict-pill.block { color:var(--block); background:var(--block-soft); border-color:rgba(240,85,69,.38); }
 .summary { margin-top:18px; padding:18px 22px; background:var(--surface); border:1px solid var(--border); border-radius:12px; }
 .summary h2 { margin:0 0 6px; font-size:12px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:var(--dim); }
-.summary p { margin:0; color:var(--text); font-size:14.5px; }
+.summary p { margin:0; color:var(--text); font-size:14.5px; white-space:pre-line; }
 .stats { margin-top:26px; display:grid; grid-template-columns:repeat(6,1fr); gap:12px; }
 .stat { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; position:relative; overflow:hidden; }
 .stat .num { font-size:28px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-1px; line-height:1.1; }
@@ -287,7 +291,7 @@ function pushSection(v: ReportView): string {
 }
 
 /** 把评审视图模型注入参考 HTML 模板（自包含单文件） */
-function renderTemplate(v: ReportView): string {
+export function renderTemplate(v: ReportView): string {
   const passIcon = `<polyline points="4 12 10 18 20 6"></polyline>`;
   const blockIcon = `<line x1="6" y1="6" x2="18" y2="18"></line><line x1="18" y1="6" x2="6" y2="18"></line>`;
   const rules = v.categories.length ? v.categories.join(" · ") : "default";
@@ -357,13 +361,12 @@ function renderTemplate(v: ReportView): string {
 </html>`;
 }
 
-/** 把评审结果渲染成自包含的 HTML 页面（参考模板） */
-export function buildReviewHtml(
+/** 组装报告视图模型（落盘为 JSON，由报告服务按需渲染成 HTML） */
+export function buildReportView(
   result: ReviewResult,
   gate: GateSummary,
   pushes?: PushResult[],
   meta?: { repo?: string; ref?: string }
-): string {
-  const view = formatReport(result, gate, { ...meta, pushes });
-  return renderTemplate(view);
+): ReportView {
+  return formatReport(result, gate, { ...meta, pushes });
 }

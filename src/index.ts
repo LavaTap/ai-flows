@@ -8,7 +8,7 @@ import { reviewBatch } from "./reviewer.js";
 import { decideGate, type ReviewIssue } from "./gate.js";
 import { pushToTargets, type PushResult } from "./publisher.js";
 import { isRepo, currentBranch } from "./git.js";
-import { writeReviewReport, buildReviewHtml } from "./reporter.js";
+import { writeReviewReport, buildReportView } from "./reporter.js";
 import { startReportServer, REPORTS_DIR } from "./serve.js";
 
 const CWD = process.cwd();
@@ -103,11 +103,8 @@ async function run(
     } catch {
       /* detached HEAD 等场景忽略 */
     }
-    writeFileSync(
-      join(dir, `${id}.html`),
-      buildReviewHtml(result, gate, pushes, { ref }),
-      "utf8"
-    );
+    const view = buildReportView(result, gate, pushes, { ref });
+    writeFileSync(join(dir, `${id}.json`), JSON.stringify(view, null, 2), "utf8");
     const base = await ensureReportServer();
     console.log(`\n${GREEN}📄 评审结果页面：${base}/reports/${id}${RESET}`);
     console.log(`${DIM}（全部报告列表：${base}/）${RESET}`);
@@ -209,8 +206,8 @@ function usage(): void {
 
 用法:
   ai-review run  [--config <path>] [--report <path>] [--push|--no-push] [--page]
-                                      采集 diff → AI 评审 → 写 md/HTML 报告 → (通过后)推送
-                                      --page  后台拉起服务，打印可点开的评审结果链接
+                                      采集 diff → AI 评审 → 写 md 报告 + 评审数据(JSON) → (通过后)推送
+                                      --page  后台拉起服务，打印可点开的评审结果链接（服务按 JSON 动态渲染）
   ai-review serve [--port <n> [--dir]]  常驻评审报告服务（GET /reports/<id>）
   ai-review install-hook                装 pre-push hook：git push 自动评审，有 blocker 则拦截
   ai-review init                         从 config.example.json 生成配置
