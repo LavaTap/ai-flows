@@ -148,7 +148,11 @@ command -v node >/dev/null 2>&1 || exit 0
 cd "$repo" || exit 0
 node "${cli}" run --config ai-review.config.json --no-push --page
 rc=$?
-echo "[ai-review] 评审完成（退出码=$rc）。请打开上述评审页面，点击「确认提交」按钮推送到远端。"
+if [ "$rc" = "0" ]; then
+  echo "[ai-review] 评审通过（退出码=$rc）。请打开上述评审页面，点击「确认提交」按钮推送到远端。"
+else
+  echo "[ai-review] 评审未通过（退出码=$rc），已拦截，未进入提交环节。请打开上述评审页面查看阻塞问题。"
+fi
 echo "[ai-review] 本次 git push 已被拦截：评审通过后需在页面确认提交，由评审服务推送。"
 exit 1
 `;
