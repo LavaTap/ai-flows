@@ -10,7 +10,7 @@
   <header class="topbar">
     <div class="brand">
       <span class="dot" aria-hidden="true"></span>
-      <span class="name">AI-FLOWS · AI 管线平台</span>
+      <h1 class="brand-title"><span>研产</span><span class="led-word">AI</span><span>管线</span></h1>
     </div>
     <div class="top-right">
       <span class="tab on">AI 管线</span>
@@ -21,16 +21,6 @@
   </header>
 
   <main class="shell">
-    <section class="head">
-      <div>
-        <h1 class="page-title">
-          <span>研产</span><span class="led-word">AI</span><span>管线</span>
-        </h1>
-        <p class="page-sub">产品调研 → 产品规划 → 程序执行 → 产品运营</p>
-      </div>
-      <span class="hint">悬停节点查看详情 · 滚轮缩放管线 · 双击复位</span>
-    </section>
-
     <section class="pipeline" id="pipeline">
       <div class="rail" aria-hidden="true"></div>
 
@@ -99,6 +89,7 @@
     <footer class="foot">
       <span class="legend"><span class="ldot brand"></span>已就绪</span>
       <span class="legend"><span class="ldot muted"></span>待接入（先留空）</span>
+      <span class="foot-hint">悬停看详情 · 滚轮缩放 · 左键拖拽移动 · 双击复位</span>
       <span class="foot-rule">权限：员工可执行 / 查看工作流 · 部门主管可操控并批准所有节点</span>
     </footer>
   </main>
@@ -164,10 +155,24 @@
       var tpls = Array.prototype.slice.call(document.querySelectorAll("template"));
       var current = -1; /* -1 表示当前无选中节点 */
 
-      /* 滚轮缩放管线（以中心为锚点），双击复位 */
+      /* 缩放（中心锚点）+ 左键拖拽平移，双击复位 */
       var scale = 1;
+      var tx = 0;
+      var ty = 0;
       var MIN_SCALE = 0.5;
-      var MAX_SCALE = 4; /* 提高到 4×，可更仔细放大查看 */
+      var MAX_SCALE = 3; /* 放大上限 3× */
+      var dragging = false; /* 是否处于拖拽中 */
+      var dragMoved = false; /* 本次按下是否已产生位移（用于吞掉误触的 click） */
+      var startX = 0;
+      var startY = 0;
+      var baseX = 0;
+      var baseY = 0;
+
+      function applyTransform() {
+        pipeline.style.transform =
+          "translate(" + tx + "px, " + ty + "px) scale(" + scale + ")";
+      }
+
       pipeline.addEventListener("wheel", function (e) {
         if (e.ctrlKey) return; /* 保留浏览器自身的 Ctrl+滚轮缩放 */
         /* 评审记录列表内：让滚轮上下滚动列表，而不是缩放管线 */
@@ -175,10 +180,53 @@
         e.preventDefault();
         var k = e.deltaY < 0 ? 1.1 : 1 / 1.1;
         scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, +(scale * k).toFixed(3)));
-        pipeline.style.transform = "scale(" + scale + ")";
+        applyTransform();
       }, { passive: false });
+
+      /* 左键按下开始拖拽；tooltip 内（按钮/记录）不触发拖拽 */
+      pipeline.addEventListener("mousedown", function (e) {
+        if (e.button !== 0) return;
+        if (e.target && e.target.closest && e.target.closest(".tip")) return;
+        dragging = true;
+        dragMoved = false;
+        startX = e.clientX;
+        startY = e.clientY;
+        baseX = tx;
+        baseY = ty;
+        pipeline.classList.add("dragging");
+        e.preventDefault(); /* 阻止拖拽时选中文字/拖出按钮 */
+      });
+
+      window.addEventListener("mousemove", function (e) {
+        if (!dragging) return;
+        var dx = e.clientX - startX;
+        var dy = e.clientY - startY;
+        if (!dragMoved && Math.abs(dx) + Math.abs(dy) < 4) return; /* 4px 内视为点击 */
+        if (!dragMoved) hide(); /* 开始拖动即收起详情 */
+        dragMoved = true;
+        tx = baseX + dx;
+        ty = baseY + dy;
+        applyTransform();
+      });
+
+      window.addEventListener("mouseup", function () {
+        if (!dragging) return;
+        dragging = false;
+        pipeline.classList.remove("dragging");
+      });
+
+      /* 拖拽结束时吞掉随后的 click，避免误触发节点 */
+      pipeline.addEventListener("click", function (e) {
+        if (!dragMoved) return;
+        dragMoved = false;
+        e.stopPropagation();
+        e.preventDefault();
+      }, true);
+
       pipeline.addEventListener("dblclick", function () {
         scale = 1;
+        tx = 0;
+        ty = 0;
         pipeline.style.transform = "";
       });
 
@@ -213,6 +261,7 @@
 
       function show(idx) {
         cancelHide();
+        if (dragging) return; /* 拖拽平移过程中不响应悬停 */
         if (idx === current) return;
         /* 收起上一个 tooltip */
         if (current !== -1) {
