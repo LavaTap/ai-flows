@@ -1,8 +1,8 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadNodes, saveNodes, authenticate, type NodeState, type UserAccount } from "./db.js";
+import { loadNodes, saveNodes, authenticate, loadReviews, appendReview, type ReviewRecord, type NodeState, type UserAccount } from "./db.js";
 import { createSession, destroySession, currentUser, sessionCookie, clearCookie, SESSION_COOKIE, parseCookies } from "./auth.js";
 import { loadConfig } from "./config.js";
 import { collectDiff } from "./collector.js";
@@ -26,6 +26,15 @@ export function canExecute(user: UserAccount, node: NodeState): boolean {
 /** 仅部门主管可批准节点（操控并批准所有节点） */
 export function canApprove(user: UserAccount): boolean {
   return user.role === "supervisor";
+}
+
+/** 节点 03（AI 代码评审）所属部门：外部触发（hook/手动 run）的报告无账号归属，统一归到该部门 */
+const AI_REVIEW_DEPT = "程序中台";
+
+/** 按视角过滤评审记录：主管看全部；员工只看本部门；外部触发记录已归到部门，可随部门可见 */
+export function filterReviewsByUser(reviews: ReviewRecord[], user: UserAccount): ReviewRecord[] {
+  if (user.role === "supervisor") return reviews;
+  return reviews.filter((r) => r.department === user.department);
 }
 
 /** 视图层用户模型（不含密码） */
@@ -129,6 +138,7 @@ function updateNode(id: string, mutate: (n: NodeState) => void): void {
 /** 节点 03（AI 代码评审）执行器：在目标仓库上跑完整评审链
  *  diff 采集 → LLM 评审 → 门禁 → 报告落盘，返回报告页链接与门禁结果 */
 async function runAiReviewNode(repo: string): Promise<{
+  id: string;
   reportUrl: string;
   passed: boolean;
   blockers: number;
@@ -162,11 +172,56 @@ async function runAiReviewNode(repo: string): Promise<{
 
   const base = await ensureReportServer(repo);
   return {
+    id,
     reportUrl: `${base}/reports/${id}`,
     passed: gate.passed,
     blockers: gate.blockers.length,
     issues: result.issues.length,
   };
+}
+
+/** 读取目标仓库 .ai-review-reports/ 下由外部触发（hook / 手动 run）落盘的全量报告，
+ *  归为「外部触发」执行角色，嫁接到节点 03 所属部门，供「评审记录」面板聚合展示 */
+async function collectExternalReviews(repo: string): Promise<ReviewRecord[]> {
+  const dir = join(repo, REPORTS_DIR);
+  let files: string[];
+  try {
+    files = readdirSync(dir).filter((f) => f.endsWith(".json") && !f.startsWith("."));
+  } catch {
+    return [];
+  }
+  const records: ReviewRecord[] = [];
+  for (const f of files) {
+    try {
+      const view = JSON.parse(readFileSync(join(dir, f), "utf8")) as {
+        passed?: boolean;
+        generatedAt?: string;
+        counts?: { blocker?: number; warning?: number; info?: number };
+      };
+      records.push({
+        id: f.replace(/\.json$/, ""),
+        source: "external",
+        actor: "外部触发",
+        email: "",
+        department: AI_REVIEW_DEPT,
+        role: "staff",
+        generatedAt: view.generatedAt ?? "",
+        passed: !!view.passed,
+        blockers: view.counts?.blocker ?? 0,
+        issues:
+          (view.counts?.blocker ?? 0) + (view.counts?.warning ?? 0) + (view.counts?.info ?? 0),
+        reportUrl: "",
+      });
+    } catch {
+      /* 单个损坏报告跳过，不影响整体列表 */
+    }
+  }
+  // 报告页地址依赖报告服务，取一次实例
+  if (records.length) {
+    const base = await ensureReportServer(repo);
+    for (const r of records) r.reportUrl = `${base}/reports/${r.id}`;
+  }
+  return records;
 }
 
 export interface PlatformServer {
@@ -272,6 +327,20 @@ export async function startPlatformServer(
       return;
     }
 
+    // 节点 03 评审记录：平台历史 + 外部报告聚合，按视角过滤（主管全量 / 员工本部门）
+    if (path === "/api/reviews" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const all = [...loadReviews(), ...(await collectExternalReviews(repo))].sort(
+        (a, b) => b.generatedAt.localeCompare(a.generatedAt)
+      );
+      sendJson(res, 200, { reviews: filterReviewsByUser(all, user) });
+      return;
+    }
+
     // 管线页（未登录重定向到登录页）
     if (path === "/pipeline" && req.method === "GET") {
       const user = currentUser(req);
@@ -334,6 +403,20 @@ export async function startPlatformServer(
                     ? `评审通过（共 ${r.issues} 个非阻塞提示）`
                     : "评审通过（未发现问题）"
                   : `评审未通过：${r.blockers} 个 blocker，已拦截`;
+              });
+              // 写入平台执行历史，供「评审记录」面板按角色/部门追溯
+              appendReview({
+                id: r.id,
+                source: "platform",
+                actor: user.title,
+                email: user.email,
+                department: user.department,
+                role: user.role,
+                generatedAt: new Date().toISOString(),
+                passed: r.passed,
+                blockers: r.blockers,
+                issues: r.issues,
+                reportUrl: r.reportUrl,
               });
             })
             .catch((err: any) => {

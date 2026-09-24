@@ -72,3 +72,49 @@ export function saveNodes(nodes: NodeState[]): void {
   mkdirSync(DB_DIR, { recursive: true });
   writeFileSync(join(DB_DIR, "pipeline.json"), JSON.stringify({ nodes }, null, 2), "utf8");
 }
+
+/** 节点历史评审记录：一次 AI 评审 = 一条。平台可追溯「谁在何时评了什么」 */
+export interface ReviewRecord {
+  /** 评审产出目录 .ai-review-reports/<id>.json 的 id，报表无法确定时为空串 */
+  id: string;
+  /** 来源：platform=管线页「执行」触发；external=hook / 手动 run 产生 */
+  source: "platform" | "external";
+  /** 执行角色名（岗位/电话），外部触发视为「外部触发」 */
+  actor: string;
+  /** 执行人邮箱（platform 记录有值；external 为空串） */
+  email: string;
+  /** 执行人所属部门节点（platform 记录取账号 department；external 归节点 03 所在部门「程序中台」） */
+  department: string;
+  /** 执行人身份：员工 / 主管（external 无身份，按视角角色展示） */
+  role: Role;
+  /** ISO 时间戳（评审完成时间） */
+  generatedAt: string;
+  /** 门禁是否通过 */
+  passed: boolean;
+  /** 阻塞级问题数 */
+  blockers: number;
+  /** 问题总数 */
+  issues: number;
+  /** 评审报告页地址（平台记录落盘后回写；external 拼接报告服务地址） */
+  reportUrl: string;
+}
+
+/** 读取平台执行历史 */
+export function loadReviews(): ReviewRecord[] {
+  try {
+    const f = join(DB_DIR, "reviews.json");
+    const data = JSON.parse(readFileSync(f, "utf8")) as { reviews?: ReviewRecord[] };
+    return data.reviews ?? [];
+  } catch {
+    // 历史文件尚未创建时按空处理，不视为错误
+    return [];
+  }
+}
+
+/** 写回平台执行历史（追加一条并持久化） */
+export function appendReview(record: ReviewRecord): void {
+  const reviews = loadReviews();
+  reviews.push(record);
+  mkdirSync(DB_DIR, { recursive: true });
+  writeFileSync(join(DB_DIR, "reviews.json"), JSON.stringify({ reviews }, null, 2), "utf8");
+}

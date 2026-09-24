@@ -176,10 +176,12 @@ body::before {
   z-index: 1;
   max-width: 1120px;
   margin: 0 auto;
-  padding: var(--s-32) var(--s-24) var(--s-24);
+  padding: var(--s-24) var(--s-24) 76px; /* 底部留白，避免被固定底栏遮挡 */
   display: flex;
   flex-direction: column;
+  justify-content: center; /* 垂直居中：让管线成为页面中心焦点 */
   gap: var(--s-20);
+  min-height: calc(100vh - 48px); /* 撑满顶栏下方视口，保证居中生效 */
 }
 
 /* 标题区：参考 masthead，细字重大标题 + LED 点阵装饰 */
@@ -242,38 +244,49 @@ body::before {
   border: 1px solid rgba(173, 49, 77, 0.18);
 }
 
-/* ============ 详情面板（玻璃卡片） ============ */
-.detail {
-  border: 1px solid var(--glass-line);
-  background: var(--glass-fill);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-radius: var(--radius-card);
-  padding: var(--s-20) var(--s-24);
+/* ============ 悬停详情 tooltip（玻璃卡片） ============ */
+.cell {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.cell .tip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%) translateY(8px);
+  width: 300px;
+  max-width: 80vw;
+  padding: var(--s-16) var(--s-20);
   display: flex;
   flex-direction: column;
   gap: var(--s-8);
-  min-height: 104px;
-  box-shadow: 0 2px 4px rgba(50, 28, 39, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.35);
-  /* sheen 光泽 */
-  position: relative;
-  overflow: hidden;
+  text-align: left;
+  background: var(--glass-fill);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--glass-line-strong);
+  border-radius: var(--radius-card);
+  box-shadow: 0 16px 40px rgba(34, 34, 34, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: 4;
+  transition: opacity 160ms ease, visibility 160ms ease,
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.detail::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(
-    102deg,
-    rgba(255, 255, 255, 0.35),
-    transparent 30%,
-    rgba(255, 255, 255, 0.15) 65%,
-    transparent 90%
-  );
-  mix-blend-mode: screen;
+.cell .tip.open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
 }
 
 .d-head {
@@ -348,6 +361,8 @@ body::before {
   display: flex;
   align-items: center;
   padding: var(--s-8) 0;
+  transform-origin: 50% 50%; /* 滚轮缩放以管线中心为锚点 */
+  will-change: transform;
 }
 
 /* 贯穿直线 */
@@ -368,18 +383,16 @@ body::before {
   z-index: 0;
 }
 
-/* 节点：玻璃卡片 */
+/* 节点：玻璃卡片（只显示名称） */
 .node {
   position: relative;
   z-index: 1;
-  flex: 1 1 0;
+  flex: 0 1 auto;
   min-width: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--s-8);
-  padding: var(--s-20) var(--s-12);
+  padding: var(--s-12) var(--s-24);
   background: var(--glass-fill);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -439,31 +452,6 @@ body::before {
     inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
-/* 节点编号圆圈 */
-.n-num {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--glass-fill-soft);
-  border: 1px solid var(--glass-line);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--muted);
-  position: relative;
-}
-
-/* 已就绪节点编号：LED 点阵质感 */
-.node.on .n-num {
-  background: var(--led);
-  border-color: var(--led);
-  color: #fff;
-  box-shadow: 0 0 0 3px var(--led-soft), 0 0 10px var(--led-glow);
-}
-
 .n-title {
   font-size: 15px;
   line-height: 22px;
@@ -474,17 +462,6 @@ body::before {
 
 .node.on .n-title {
   color: var(--ink);
-}
-
-.n-step {
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--muted);
-}
-
-.node.on .n-step {
-  color: var(--led);
-  font-weight: 500;
 }
 
 /* 节点间箭头 */
@@ -504,13 +481,24 @@ body::before {
   height: 10px;
 }
 
-/* ============ 底部说明 ============ */
+/* ============ 底部说明（固定底栏，不随管线缩放） ============ */
 .foot {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
-  gap: var(--s-20);
+  justify-content: center;
+  gap: var(--s-24);
   flex-wrap: wrap;
-  padding-top: var(--s-4);
+  padding: var(--s-12) var(--s-24);
+  background: var(--glass-fill);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--glass-line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
 .legend {
@@ -540,16 +528,23 @@ body::before {
 }
 
 .foot-rule {
-  margin-left: auto;
   font-size: 12px;
   line-height: 18px;
   color: var(--muted-2);
 }
 
+/* 程序执行 → 评审记录：限制容器高度，启用上下滚轮 */
+.d-reviews-list {
+  max-height: 36vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+}
+
 /* ============ 响应式 ============ */
 @media (max-width: 720px) {
   .shell {
-    padding: var(--s-20) var(--s-16);
+    padding: var(--s-20) var(--s-16) 76px;
   }
 
   .page-title {
@@ -565,12 +560,12 @@ body::before {
     width: 16px;
   }
 
-  .n-step {
-    display: none;
+  .cell .tip {
+    width: 220px;
   }
 
   .node {
-    padding: var(--s-16) var(--s-8);
+    padding: var(--s-12) var(--s-16);
   }
 
   .foot-rule {

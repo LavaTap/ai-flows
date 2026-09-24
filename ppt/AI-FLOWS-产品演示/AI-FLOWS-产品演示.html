@@ -1218,6 +1218,52 @@
     .theme-ink .media-placeholder { color: rgba(255, 255, 255, 0.5); }
     .theme-ink .media-paper { background: rgba(255, 255, 255, 0.06); }
 
+    /* ---- 图片位：留给你放真实截图 ----
+       把截图按提示里的文件名放进同目录 images/ 即可自动显示；
+       文件还没放时，显示虚线框和提示文字。 */
+    .media-slot {
+      position: relative;
+      display: block;
+      width: 100%;
+      height: var(--slot-h, 220px);
+      margin: 0;
+      overflow: hidden;
+      border: 1px dashed var(--hairline);
+      border-radius: 8px;
+      background: var(--accent-soft);
+    }
+
+    .media-slot img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: top center;
+    }
+
+    .media-slot-hint {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-content: center;
+      gap: 7px;
+      padding: 14px 26px;
+      text-align: center;
+      font-family: var(--font-body);
+      font-size: 20px;
+      line-height: 1.4;
+      color: var(--muted);
+    }
+
+    .media-slot-hint code {
+      font-family: var(--font-mono);
+      font-size: 17px;
+      color: var(--accent);
+    }
+
+    .media-slot.is-filled .media-slot-hint { display: none; }
+
     /* ---- 页码徽标 ---- */
     .page-badge {
       border-radius: 4px;
@@ -1246,71 +1292,71 @@
     <div class="waterfall" aria-label="Slide gallery">
 
       <article class="deck-card">
-        <section class="slide-frame theme-ink" aria-label="封面：让坏代码推不出去">
+        <section class="slide-frame theme-ink" aria-label="封面：AI 评审提质量、带新人">
           <div class="page-badge">1/20</div>
           <span class="halftone-num" aria-hidden="true">1</span>
           <div class="slide-stage no-kicker">
             <div class="slide-content layout-centered-cover" data-density="airy">
               <p class="content-meta">AI-FLOWS · AI 管线平台</p>
-              <h2 class="slide-title title-xl fit-width" style="--title-width: 11ch;">让坏代码，推不出去</h2>
-              <p class="slide-lead">一条本地评审链 + 一个四部门管线平台：评审做在 push 之前，阻塞级问题进不了远端。</p>
+              <h2 class="slide-title title-xl fit-width" style="--title-width: 20ch;">AI 评审能提质量，也能带新人</h2>
+              <p class="slide-lead">评审挪到 push 前头做。标准统一了，新人上手快了，踩过的坑也留下来了。</p>
             </div>
           </div>
         </section>
         <details class="caption" open>
           <summary>演讲逐字稿</summary>
-          <p>开场。今天讲的不是一个工具，而是一条链路加一个平台。先说结论：我们把 AI 代码评审做成了 push 之前的强制门禁——有阻塞级问题，代码就推不出去。同时把这条链路包成了公司内部的管线平台：四个部门节点串成一条直线，员工执行本部门的环节，主管批准后才放行。接下来我用六个要素展开：背景、目标、方案、能力、验证、规划。</p>
+          <p>今天讲两块东西：一个在本地跑的评审链，一个公司内部用的管线平台。以前代码写完直接推，评审是事后才有人看；现在 push 之前先过一遍 AI，有阻塞级问题就推不上去。不过我更想说的是另外三件事：评审标准统一了，新人第一次提交就能拿到完整反馈，团队反复踩的坑能留下来。后面按六块讲：背景、目标、方案、能力、验证、规划。</p>
         </details>
       </article>
 
       <article class="deck-card">
-        <section class="slide-frame theme-ink" aria-label="全景：两条腿">
+        <section class="slide-frame theme-ink" aria-label="全景：评审链与管线平台">
           <div class="page-badge">2/20</div>
           <span class="halftone-num" aria-hidden="true">2</span>
           <div class="slide-stage">
             <div class="slide-kicker">全景</div>
             <div class="slide-content" data-density="standard">
-              <h2 class="slide-title title-md">两条腿：一条评审链，一个管线平台</h2>
+              <h2 class="slide-title title-md">一个本地评审链，一个公司管线平台</h2>
               <div class="flow-grid two">
                 <div class="export-shape-card flow-panel">
-                  <h3>ai-review · 平台无关评审链</h3>
-                  <p>采集 git diff → LLM 评审 → 门禁判定 → 生成报告 → 确认后推送。全程跑在本地，代码不出内网；目标远端可以是 GitHub、Gitee 或内网 GitLab，换平台不用改代码。</p>
+                  <h3>ai-review —— 本地跑的评审链</h3>
+                  <p>抓 git diff → 模型评审 → 判门禁 → 出报告 → 确认后推送。全程在本地，代码不出内网；远端是 GitHub、Gitee 还是内网 GitLab 都行，换平台不用改代码。</p>
                 </div>
                 <div class="export-shape-card flow-panel">
-                  <h3>AI-FLOWS · 公司管线平台</h3>
-                  <p>把四个部门节点串成一条直线：员工执行本部门环节，主管批准全流程。节点 03 已接上真实的评审链，其余节点能力位预留待接入。</p>
+                  <h3>AI-FLOWS —— 公司内部的管线平台</h3>
+                  <p>把四个部门串成一条线：员工做自己部门的环节，主管批准全流程。节点 03 已经接上真实的评审链，其余三个节点先留位置。</p>
                 </div>
               </div>
-              <p class="content-meta">共用同一套能力 · 平台不重复实现评审</p>
+              <p class="content-meta">两边共用同一套能力 · 评审只实现一次</p>
             </div>
           </div>
         </section>
         <details class="caption" open>
           <summary>演讲逐字稿</summary>
-          <p>先看全景，这个系统有两条腿。左腿是 ai-review，一条平台无关的评审链：采集 git diff、调模型评审、门禁判定、生成报告、确认后推送。它完全跑在本地，代码不出内网，目标远端可以是 GitHub、Gitee 或者内网 GitLab，换平台不用改代码。右腿是 AI-FLOWS 平台，把四个部门节点串成一条直线，员工按部门执行、主管批准，节点 03 已经接上了真实的评审链。两条腿共用同一套能力，平台不重复实现评审逻辑——这是后面架构能保持简单的前提。</p>
+          <p>先看整体，这套东西是两部分。左边 ai-review，一条在本地跑的评审链：抓 git diff、调模型评审、判门禁、出报告、确认后推送。它完全跑在本地，代码不出内网；远端接 GitHub、Gitee 或者内网 GitLab 都行，换平台不用改代码。右边 AI-FLOWS，公司内部的管线平台，把四个部门串成一条线，员工按部门干活、主管批准，节点 03 接的就是刚才那条评审链。两边共用同一套能力，评审逻辑只实现一次——这是后面结构能保持简单的前提。</p>
         </details>
       </article>
 
       <article class="deck-card">
-        <section class="slide-frame theme-paper" aria-label="背景：坏代码是怎么推出去的">
+        <section class="slide-frame theme-paper" aria-label="背景：三个真实问题">
           <div class="page-badge">3/20</div>
           <span class="halftone-num" aria-hidden="true">3</span>
           <div class="slide-stage">
-            <div class="slide-kicker">要素 1 · 背景</div>
+            <div class="slide-kicker">背景</div>
             <div class="slide-content layout-argument-grid" data-density="compact">
-              <h2 class="slide-title title-sm">坏代码不是写出来的，是「推出去」的</h2>
+              <h2 class="slide-title title-sm">代码质量上不去，不全是人的问题</h2>
               <div class="flow-grid three">
                 <div class="export-shape-card flow-panel">
-                  <h3>现状</h3>
-                  <p class="content-body">提交即入远端。评审发生在事后——等有人在远端看到，或者等线上出事才发现。</p>
+                  <h3>标准不统一</h3>
+                  <p class="content-body">同一份规范，不同的人松紧不一样。改动一多，风格、命名、边界处理全靠自觉，看不过来就滑过去了。</p>
                 </div>
                 <div class="export-shape-card flow-panel">
-                  <h3>代价</h3>
-                  <p class="content-body">硬编码密钥、SQL 拼接注入、未关闭的文件句柄。任何一条漏到远端，都可能变成安全事故。</p>
+                  <h3>新人上手慢</h3>
+                  <p class="content-body">团队的规范、项目的约定、踩过的坑，散在文档碎片和老同事脑子里。新人得靠几十次评审意见才摸清门道。</p>
                 </div>
                 <div class="export-shape-card flow-panel">
-                  <h3>根因</h3>
-                  <p class="content-body">评审靠自觉、没有统一标准、变更量一大必然漏。所以要把门禁挪到 push 之前。</p>
+                  <h3>经验不沉淀</h3>
+                  <p class="content-body">同一类问题，在不同的人、不同的模块反复出现。评审意见躺在提交记录里，没人整理，成不了团队的共同经验。</p>
                 </div>
               </div>
             </div>
@@ -1318,7 +1364,7 @@
         </section>
         <details class="caption" open>
           <summary>演讲逐字稿</summary>
-          <p>先说为什么做。坏代码不是写出来的，是推出去的。现在的主流流程是：本地写完直接 push，评审发生在事后——等有人在远端看到，或者等线上出事。代价很具体：硬编码的 API 密钥、SQL 拼接注入、没关闭的文件句柄，任何一条漏到远端都可能变成安全事故。根因不是工程师不认真，而是三件事：评审靠自觉、没有统一标准、变更量一大必然漏。所以我们要做的不是「再写一个检查脚本」，而是把门禁挪到 push 之前。</p>
+          <p>先说我们在解决什么。不是「有人写得差」，是三个更实在的问题。第一，标准不统一：同一份规范，不同的人松紧不一样，改动一多，风格、命名、边界处理全靠自觉，看不过来就滑过去了。第二，新人上手慢：团队的规范、项目的约定、踩过的坑，散在文档碎片和老同事脑子里，新人得靠几十次评审意见才摸清门道。第三，经验不沉淀：同一类问题在不同的人、不同的模块反复出现，评审意见躺在提交记录里没人整理，成不了团队的共同经验。所以 AI 评审要做的不是抓谁，是把这三件事一起提上来。</p>
         </details>
       </article>
 
@@ -1327,26 +1373,26 @@
           <div class="page-badge">4/20</div>
           <span class="halftone-num" aria-hidden="true">4</span>
           <div class="slide-stage">
-            <div class="slide-kicker">要素 2 · 目标</div>
+            <div class="slide-kicker">目标</div>
             <div class="slide-content layout-comparison" data-density="compact">
-              <h2 class="slide-title title-sm">目标：门禁做在 push 之前；边界：不碰基础设施</h2>
+              <h2 class="slide-title title-sm">AI 评审做什么，不做什么</h2>
               <div class="flow-grid two" style="--flow-cell-min: 520px;">
                 <div class="export-shape-card flow-panel">
-                  <h3>我们要做到</h3>
+                  <h3>要做到</h3>
                   <ul class="content-list">
-                    <li>push 之前自动完成评审</li>
-                    <li>阻塞级问题直接推不出去</li>
-                    <li>结果可读、可定位、可追溯</li>
-                    <li>组织内按角色分权执行与批准</li>
+                    <li>统一标准 — 一套规则、一种口径，不因人而异</li>
+                    <li>新人上手快 — 第一次提交就拿到完整反馈</li>
+                    <li>经验留下来 — 常见问题和好做法写进配置，新人直接继承</li>
+                    <li>兜住红线 — 阻塞级问题推不上去</li>
                   </ul>
                 </div>
                 <div class="export-shape-card flow-panel">
-                  <h3>我们刻意不做</h3>
+                  <h3>不做</h3>
                   <ul class="content-list">
-                    <li>不引运行时依赖：express、数据库都不引</li>
-                    <li>不绑定任何单一 Git 平台</li>
-                    <li>不开放注册，账号由管理员录入</li>
-                    <li>不自研模型，走兼容接口对接</li>
+                    <li>不替代人 — 架构怎么定还是人说了算</li>
+                    <li>不绑平台 — GitHub、Gitee、内网 GitLab 都能接</li>
+                    <li>不装依赖 — 一个生产依赖都不引</li>
+                    <li>不自研模型 — 走兼容接口，供应商随时能换</li>
                   </ul>
                 </div>
               </div>
@@ -1355,29 +1401,29 @@
         </section>
         <details class="caption" open>
           <summary>演讲逐字稿</summary>
-          <p>我们给自己划了两条线。要做到的四件事：push 之前自动评审；阻塞级问题直接推不出去；评审结果可读、可定位、可追溯；组织内按角色分权。刻意不做的四件事同样重要：不引任何运行时依赖，express 和数据库都不引；不绑定任何单一 Git 平台；不开放注册，账号由管理员录入；不自研模型，用兼容接口对接。为什么先讲边界？因为边界清晰，后面的技术选择才有依据——你马上会看到，几乎所有实现细节都是从这四条边界推出来的。</p>
+          <p>目标很直接：AI 评审是帮忙的，不是替代人。要做到四件事：第一，统一标准，一套规则一种口径，不因人而异；第二，新人上手快，第一次提交就拿到完整反馈，不用等 mentor 排期；第三，经验留下来，常见问题和好做法写进配置，新人直接继承，人不在了经验还在；第四，兜住红线，硬编码密钥、注入风险这类问题，直接拦在 push 之前。不做的也很明确：不替代人、不绑平台、不装依赖、不自研模型——这四条决定了后面所有的技术选择。</p>
         </details>
       </article>
 
       <article class="deck-card">
-        <section class="slide-frame theme-paper" aria-label="总体架构：十三个模块">
+        <section class="slide-frame theme-paper" aria-label="方案：十三个文件的分层">
           <div class="page-badge">5/20</div>
           <span class="halftone-num" aria-hidden="true">5</span>
           <div class="slide-stage">
-            <div class="slide-kicker">要素 3 · 方案</div>
+            <div class="slide-kicker">方案 · 架构</div>
             <div class="slide-content layout-reading" data-density="dense">
               <div class="flow-stack">
-                <h2 class="slide-title title-sm">十三个模块，一层一个关注点</h2>
-                <p class="content-body">源码目录是扁平单层，一个关注点一个文件，靠类型接口衔接。分层的好处很直接：改渲染不动评审逻辑，改权限不动评审链。</p>
-                <p class="content-body">入口层只做编排，不写业务；能力层各自封闭；平台层只关心会话、节点与权限。跨层调用一律走导出的类型化函数。</p>
+                <h2 class="slide-title title-sm">十三个文件，一个文件管一件事</h2>
+                <p class="content-body">源码目录是平的，一个文件管一件事，文件之间靠类型接口对接。好处很直接：改页面不用动评审逻辑，改权限不用动评审链。</p>
+                <p class="content-body">入口只管调度，不写业务；能力层各管一段；平台层只关心登录、节点和权限。层与层之间只通过导出的函数打交道。</p>
               </div>
               <aside class="export-shape-card flow-panel">
-                <h3>四层结构</h3>
+                <h3>四层</h3>
                 <ul class="content-list">
-                  <li>入口与编排：四个子命令 run / serve / platform / install-hook</li>
+                  <li>入口：四个子命令 run / serve / platform / install-hook</li>
                   <li>评审能力：采集、评审、门禁、报告、推送各管一段</li>
-                  <li>平台与权限：登录会话、节点状态、角色判定</li>
-                  <li>数据与视图：JSON 当库，静态页放在 web 目录</li>
+                  <li>平台与权限：登录、节点状态、角色判定</li>
+                  <li>数据与页面：JSON 当库，静态页放在 web 目录</li>
                 </ul>
               </aside>
             </div>
@@ -1385,7 +1431,7 @@
         </section>
         <details class="caption" open>
           <summary>演讲逐字稿</summary>
-          <p>看一下总体结构。十三个模块，一个关注点一个文件，分四层。最上面是入口与编排层，一个文件管四个子命令：run 跑评审、serve 起报告服务、platform 起平台、install-hook 装钩子。中间是评审能力层，采集、评审、门禁、报告、推送各管一段，彼此通过类型接口衔接，没有循环依赖。再往下是平台与权限层，负责登录会话、节点状态、角色判定。最下面是数据和视图，JSON 当数据库，静态页放在 web 目录。分层的收益是可预期的：改页面模板不用碰评审逻辑，改权限模型不用碰评审链。</p>
+          <p>看一下整体结构。十三个文件，一个文件管一件事，分四层。最上面是入口层，一个文件管四个子命令：run 跑评审、serve 起报告服务、platform 起平台、install-hook 装钩子。中间是评审能力层，采集、评审、门禁、报告、推送各管一段，彼此靠类型接口对接，没有循环依赖。再往下是平台与权限层，管登录、节点状态、角色判定。最下面是数据和页面，JSON 当数据库，静态页放在 web 目录。分层的好处很实在：改页面模板不用碰评审逻辑，改权限模型不用碰评审链。</p>
         </details>
       </article>
 
@@ -1394,55 +1440,62 @@
           <div class="page-badge">6/20</div>
           <span class="halftone-num" aria-hidden="true">6</span>
           <div class="slide-stage">
-            <div class="slide-kicker">要素 3 · 方案</div>
+            <div class="slide-kicker">方案 · 链路</div>
             <div class="slide-content" data-density="compact">
-              <h2 class="slide-title title-sm">五步闭环：从 git diff 到远端放行</h2>
-              <p class="slide-lead">全部在本地完成，代码不出内网。</p>
+              <h2 class="slide-title title-sm">从抓 diff 到推上去，一共五步</h2>
+              <p class="slide-lead">整条链都在本地跑，代码不出内网。</p>
               <div class="flow-grid" style="--flow-cols: 5; --flow-cell-min: 260px;">
                 <div class="export-shape-timeline-node flow-panel">
                   <h3>01 采集</h3>
-                  <p>按配置范围抓 diff，按文件拆分；超大文件降级为摘要评审。</p>
+                  <p>按配置范围抓 diff，按文件拆开；改动太大的文件只做摘要评审。</p>
                 </div>
                 <div class="export-shape-timeline-node flow-panel">
                   <h3>02 评审</h3>
-                  <p>调兼容接口的模型，三路并发池控制限流，输出结构化 JSON。</p>
+                  <p>调兼容接口的模型，三路并发，避免被限流；模型必须返回结构化 JSON。</p>
                 </div>
                 <div class="export-shape-timeline-node flow-panel">
                   <h3>03 门禁</h3>
-                  <p>命中阻塞级别即判定不通过，交给退出码表达结果。</p>
+                  <p>命中阻塞级别就判不通过，结果用退出码表达。</p>
                 </div>
                 <div class="export-shape-timeline-node flow-panel">
                   <h3>04 报告</h3>
-                  <p>同时产出 Markdown 与可交互评审页面，数据落盘不落 HTML。</p>
+                  <p>同时出 Markdown 和可点的评审页面；落盘存数据，不存 HTML。</p>
                 </div>
                 <div class="export-shape-timeline-node flow-panel">
                   <h3>05 确认提交</h3>
-                  <p>通过后由人在页面点确认，才真正推送到目标远端。</p>
+                  <p>通过之后，人在页面上点确认，才真正推到远端。</p>
                 </div>
               </div>
+              <figure class="media-slot" style="--slot-h: 230px; width: min(100%, 940px); justify-self: center;">
+                <figcaption class="media-slot-hint">
+                  <span>这里放「评审流程」截图：终端里跑评审的过程</span>
+                  <code>images/review-flow.png</code>
+                </figcaption>
+                <img src="images/review-flow.png" alt="跑评审的过程截图" onload="this.parentElement.classList.add('is-filled')" onerror="this.remove()">
+              </figure>
             </div>
           </div>
         </section>
         <details class="caption" open>
           <summary>演讲逐字稿</summary>
-          <p>核心链路是五步闭环。第一步采集：按配置范围抓 git diff，按文件拆分，变更行数过大的文件降级成摘要评审，避免上下文溢出。第二步评审：调兼容接口的模型，用并发池控制三路并发，避免触发限流，模型必须返回结构化 JSON。第三步门禁：命中阻塞级别的规则就判定不通过。第四步报告：同时产出 Markdown 和可交互的评审页面。第五步确认提交：评审通过不等于自动推送，要由人在页面点确认，才真正推到远端。整条链路全部在本地，代码不出内网——这是客户和投资方最关心的一点。</p>
+          <p>整条链是五步。第一步采集：按配置范围抓 git diff，按文件拆开，改动行数太大的文件降级成摘要评审，避免上下文超了。第二步评审：调兼容接口的模型，用并发池控制三路并发，避免触发限流，模型必须返回结构化 JSON。第三步门禁：命中阻塞级别就判不通过。第四步报告：同时出 Markdown 和可点的评审页面。第五步确认提交：评审通过不等于自动推送，得有人在页面上点确认，才真正推到远端。整条链都在本地，代码不出内网——这一点客户和投资方最关心。</p>
         </details>
       </article>
 
       <article class="deck-card">
-        <section class="slide-frame theme-paper" aria-label="数据契约：视图模型隔离">
+        <section class="slide-frame theme-paper" aria-label="方案：模型与页面之间的视图模型">
           <div class="page-badge">7/20</div>
           <span class="halftone-num" aria-hidden="true">7</span>
           <div class="slide-stage">
-            <div class="slide-kicker">要素 3 · 契约</div>
+            <div class="slide-kicker">方案 · 数据约定</div>
             <div class="slide-content layout-split" data-density="standard">
               <div class="flow-stack">
-                <h2 class="slide-title title-md">一份视图模型，隔开模型与页面</h2>
-                <p class="slide-lead">AI 返回的原始 JSON 永远不直接进模板。</p>
+                <h2 class="slide-title title-md">模型返回的东西，不直接进页面</h2>
+                <p class="slide-lead">AI 返回的原始 JSON，不直接塞进模板。</p>
                 <ul class="content-list">
-                  <li>换页面模板，不用碰评审逻辑</li>
-                  <li>换模型供应商，不用碰渲染逻辑</li>
-                  <li>渲染层只消费视图模型，不感知原始结构</li>
+                  <li>换页面模板，不用动评审逻辑</li>
+                  <li>换模型供应商，不用动渲染逻辑</li>
+                  <li>渲染层只认视图模型，不知道原始结构长什么样</li>
                 </ul>
               </div>
               <div class="export-shape-panel flow-panel">
@@ -1453,7 +1506,7 @@
         </section>
         <details class="caption" open>
           <summary>演讲逐字稿</summary>
-          <p>这一页讲工程上的一个关键约定：模型输出和页面渲染之间，必须隔一层视图模型。AI 返回的原始 JSON 先经过归一化变成 ReviewResult，再经唯一的格式化接口转成 ReportView，模板只消费 ReportView。这带来三个好处：换页面模板不用碰评审逻辑；换模型不用碰渲染逻辑；渲染层永远不感知模型的原始结构。还有一个落地细节：评审结果落盘存的是数据不是 HTML，页面由常驻服务按需动态渲染。所以同一个报告可以用不同模板呈现，历史报告也不会因为模板升级而失效。</p>
+          <p>这页讲一个工程上的约定：模型输出和页面渲染之间，隔一层视图模型。AI 返回的原始 JSON 先归一化成 ReviewResult，再过唯一的格式化接口变成 ReportView，模板只认 ReportView。好处有三个：换页面模板不用动评审逻辑；换模型不用动渲染逻辑；渲染层永远不知道模型的原始结构长什么样。还有个落地细节：评审结果落盘存的是数据不是 HTML，页面由常驻服务按需渲染。所以同一份报告可以换模板展示，历史报告也不会因为模板升级就打不开了。</p>
         </details>
       </article>
 
@@ -1462,26 +1515,26 @@
           <div class="page-badge">8/20</div>
           <span class="halftone-num" aria-hidden="true">8</span>
           <div class="slide-stage">
-            <div class="slide-kicker">要素 3 · 约束</div>
+            <div class="slide-kicker">方案 · 依赖</div>
             <div class="slide-content layout-kpi-summary" data-density="compact">
               <div class="flow-stack">
-                <h2 class="slide-title title-sm">软件供应链攻击面，收敛到零</h2>
-                <p class="slide-lead">SBOM 生产侧零条目：能力用 Node 内置模块自实现，数据用 JSON 文件，前端不引框架。</p>
+                <h2 class="slide-title title-sm">一个生产依赖都不装</h2>
+                <p class="slide-lead">能力全用 Node 自带模块写，数据存 JSON 文件，前端不用框架。</p>
                 <div class="kpi-strip" style="--kpi-min: 240px;">
                   <div class="export-shape-metric kpi-card">
                     <span class="export-text-label">生产依赖</span>
                     <strong class="export-text-value">0</strong>
-                    <em class="export-text-note">SBOM 零条目 · 无供应链风险敞口</em>
+                    <em class="export-text-note">第三方包一个没有 · 上游被攻破也波及不到我们</em>
                   </div>
                   <div class="export-shape-metric kpi-card">
                     <span class="export-text-label">开发依赖</span>
                     <strong class="export-text-value">3</strong>
-                    <em class="export-text-note">仅类型工具链 · 不进入运行时</em>
+                    <em class="export-text-note">只是编译用的类型工具 · 不跟着上线</em>
                   </div>
                   <div class="export-shape-metric kpi-card">
-                    <span class="export-text-label">源码模块</span>
+                    <span class="export-text-label">源码文件</span>
                     <strong class="export-text-value">13</strong>
-                    <em class="export-text-note">全量可读 · 爆炸半径可控</em>
+                    <em class="export-text-note">全部能读 · 出问题也只在文件内部</em>
                   </div>
                 </div>
               </div>
@@ -1490,7 +1543,7 @@
         </section>
         <details class="caption" open>
           <summary>演讲逐字稿</summary>
-          <p>这一页讲供应链安全。我们把软件供应链的攻击面收敛到了零。生产依赖是 0 个，意味着 SBOM 在生产侧是零条目——没有第三方包，就没有供应链风险敞口，不会出现 xz utils 那种上游被攻破的问题。开发依赖也只有 3 个，全是类型工具链，不进入运行时，所以即使开发依赖有漏洞，也不会传导到生产环境。十三个源码模块，全量可读，任何一个模块出问题，爆炸半径都被限制在模块内部。对一个要进内网、要碰代码仓库的系统，供应链安全不是加分项，是前提——而零依赖就是最彻底的答案。</p>
+          <p>这页讲供应链安全。我们把能砍的都砍了：生产依赖 0 个，意思是第三方包一个没有，上游被攻破这种事波及不到我们，不会出现 xz utils 那种情况。开发依赖也只有 3 个，全是编译用的类型工具，不跟着上线，所以就算它们有漏洞也传不到生产环境。十三个源码文件，全部能读，哪个文件出问题，影响也只在文件内部。对一个要进内网、要碰代码仓库的系统，供应链安全不是加分项，是前提——不装依赖就是最彻底的做法。</p>
         </details>
       </article>
 
@@ -1499,30 +1552,30 @@
           <div class="page-badge">9/20</div>
           <span class="halftone-num" aria-hidden="true">9</span>
           <div class="slide-stage">
-            <div class="slide-kicker">要素 4 · 门禁</div>
+            <div class="slide-kicker">能力 · 门禁</div>
             <div class="slide-content layout-argument-grid" data-density="compact">
-              <h2 class="slide-title title-sm">门禁就是退出码：0 放行 / 1 拦截 / 2 推送失败</h2>
+              <h2 class="slide-title title-sm">放行还是拦截，就看一个退出码</h2>
               <div class="flow-grid three">
                 <div class="export-shape-card flow-panel">
                   <h3>0 · 通过</h3>
-                  <p class="content-body">没有命中阻塞级别的问题，push 继续，代码进入远端。</p>
+                  <p class="content-body">没命中阻塞级问题，push 继续，代码进远端。</p>
                 </div>
                 <div class="export-shape-card flow-panel">
                   <h3>1 · 拦截</h3>
-                  <p class="content-body">存在阻塞级问题，push 被拦下，代码只留在本地。</p>
+                  <p class="content-body">有阻塞级问题，push 被拦下，代码只留在本地。</p>
                 </div>
                 <div class="export-shape-card flow-panel">
                   <h3>2 · 推送失败</h3>
-                  <p class="content-body">评审通过但推送环节失败，与门禁结论区分开，便于排障。</p>
+                  <p class="content-body">评审过了但推送失败，跟门禁结论分开，方便排查。</p>
                 </div>
               </div>
-              <p class="content-meta">哪些级别算阻塞可配置 · 默认只有 blocker · warning / info 只提示不拦截</p>
+              <p class="content-meta">哪些级别算阻塞可以配 · 默认只有 blocker · warning 和 info 只提示，不拦</p>
             </div>
           </div>
         </section>
         <details class="caption" open>
           <summary>演讲逐字稿</summary>
-          <p>门禁的载体是退出码。0 表示通过，push 继续；1 表示存在阻塞级问题，push 被拦下；2 表示评审通过但推送失败，和门禁结论区分开，方便排障。为什么用退出码而不是一个界面提示？因为 git 钩子就认它——门禁不是一个可以被忽略的提醒，而是进程级的强制结果，绕不过去。哪些级别算阻塞是可配置的，默认只有 blocker。warning 和 info 只提示不拦截，这一点很关键：如果把风格问题也变成阻塞，工程师很快就会学会绕过门禁，门禁就失去意义了。</p>
+          <p>门禁靠退出码表达。0 是通过，push 继续；1 是有阻塞级问题，push 被拦下；2 是评审过了但推送失败，跟门禁结论分开，方便排查。为什么用退出码，而不是页面上弹个提示？因为 git 钩子只认这个——门禁不是一个能被忽略的提醒，是进程级的强制结果，绕不过去。哪些级别算阻塞可以配，默认只有 blocker。warning 和 info 只提示不拦，这点很关键：要是把风格问题也变成阻塞，工程师很快就学会绕门禁了，门禁也就没意义了。</p>
         </details>
       </article>
 
@@ -1531,33 +1584,40 @@
           <div class="page-badge">10/20</div>
           <span class="halftone-num" aria-hidden="true">10</span>
           <div class="slide-stage">
-            <div class="slide-kicker">要素 4 · 拦截</div>
+            <div class="slide-kicker">能力 · 拦截</div>
             <div class="slide-content layout-timeline" data-density="compact">
-              <h2 class="slide-title title-sm">push 一律先拦下来，人确认之后才放行</h2>
+              <h2 class="slide-title title-sm">每次 push 都先拦一下，人点了确认才放行</h2>
               <div class="flow-grid four" style="--flow-cell-min: 300px;">
                 <div class="export-shape-timeline-node flow-panel">
                   <h3>1. git push</h3>
-                  <p class="content-body">工程师照常执行推送，不需要记住额外命令。</p>
+                  <p class="content-body">工程师照常推送，不用记额外命令。</p>
                 </div>
                 <div class="export-shape-timeline-node flow-panel">
                   <h3>2. 钩子拦截</h3>
-                  <p class="content-body">本地跑完整评审并打印评审页面链接，本次推送被拦下。</p>
+                  <p class="content-body">本地跑完整评审，打印评审页面链接，这次推送被拦下。</p>
                 </div>
                 <div class="export-shape-timeline-node flow-panel">
                   <h3>3. 人看结果</h3>
-                  <p class="content-body">打开评审页面，看结论、指标与逐条问题。</p>
+                  <p class="content-body">打开评审页面，看结论、指标和逐条问题。</p>
                 </div>
                 <div class="export-shape-timeline-node flow-panel">
                   <h3>4. 确认提交</h3>
-                  <p class="content-body">填写 commit 信息并点确认，由评审服务代为推送。</p>
+                  <p class="content-body">填 commit 信息，点确认，由评审服务代为推送。</p>
                 </div>
               </div>
+              <figure class="media-slot" style="--slot-h: 210px; width: min(100%, 940px); justify-self: center;">
+                <figcaption class="media-slot-hint">
+                  <span>这里放「实时拦截」截图：push 被拦下的终端输出</span>
+                  <code>images/push-blocked.png</code>
+                </figcaption>
+                <img src="images/push-blocked.png" alt="push 被拦下的终端截图" onload="this.parentElement.classList.add('is-filled')" onerror="this.remove()">
+              </figure>
             </div>
           </div>
         </section>
         <details class="caption" open>
           <summary>演讲逐字稿</summary>
-          <p>这里是产品上最反直觉、也最值钱的设计：git push 一律先被拦下来。流程四步。第一，工程师执行 git push，不需要记住任何额外命令。第二，钩子拦截，在本地跑完整评审并打印评审页面链接，本次推送被拦下。第三，人打开评审页面看结果。第四，在页面上填 commit 信息、点确认提交，才由评审服务代为推送。也就是说，评审通过不等于自动推送，必须有人确认——这一步把「工具的判断」和「人的责任」分开了。另外两个工程细节：内部推送会带一个环境变量标记，跳过自己装的钩子，避免死循环；确认提交必须填非空的 commit 信息，否则拒绝，防止误触。</p>
+          <p>这里是产品上最反直觉、也最值钱的一个设计：git push 一律先被拦下来。流程四步：第一，工程师照常执行 git push，不用记任何额外命令；第二，钩子拦截，在本地跑完整评审，打印出评审页面链接，这次推送被拦下；第三，人打开评审页面看结果；第四，在页面上填 commit 信息、点确认提交，才由评审服务代为推送。也就是说，评审通过不等于自动推送，必须有人确认——这一步把工具的判断和人的责任分开了。另外两个细节：内部推送会带一个环境变量标记，跳过自己装的钩子，免得死循环；确认提交必须填非空的 commit 信息，否则拒绝，防止误触。</p>
         </details>
       </article>
 
@@ -1566,88 +1626,30 @@
           <div class="page-badge">11/20</div>
           <span class="halftone-num" aria-hidden="true">11</span>
           <div class="slide-stage">
-            <div class="slide-kicker">要素 4 · 报告</div>
+            <div class="slide-kicker">能力 · 报告</div>
             <div class="slide-content layout-split" data-density="compact">
               <div class="flow-stack">
-                <h2 class="slide-title title-md">评审结果是一页给人看的报告</h2>
+                <h2 class="slide-title title-md">评审结果是一页网页，不是一堆日志</h2>
                 <ul class="content-list">
-                  <li>结论区双态：通过是 PASS，未通过自动切成 BLOCK 并写明拦截条数</li>
-                  <li>六张指标卡：文件数、降级数、问题总数与三级计数</li>
-                  <li>点问题行号，联动右侧 diff 面板精确高亮到那一行</li>
-                  <li>自包含单文件、样式内联，支持日间与夜间双主题</li>
+                  <li>结论区两种状态：过了是 PASS，没过自动变 BLOCK，并写明拦了几条</li>
+                  <li>六张指标卡：文件数、降级数、问题总数，以及三个级别的计数</li>
+                  <li>点问题行号，右边 diff 面板高亮到那一行，不用自己去代码里翻</li>
+                  <li>自包含单文件，样式内联，日间夜间两套主题</li>
                 </ul>
               </div>
-              <div class="flow-panel" style="position: relative; padding: 0; overflow: hidden; border: 1px solid rgba(10,10,10,.15); background: #fff;">
-                <!-- 评审页面线框占位图 —— 替换为真实截图时，将整个 <svg> 换成 <img src="images/report-screenshot.png" style="width:100%;display:block;"> 即可 -->
-                <svg viewBox="0 0 640 420" xmlns="http://www.w3.org/2000/svg" style="display:block; width:100%; height: auto;">
-                  <defs>
-                    <pattern id="dotgrid" width="8" height="8" patternUnits="userSpaceOnUse">
-                      <circle cx="1" cy="1" r="0.8" fill="#e5e5e5"/>
-                    </pattern>
-                  </defs>
-                  <rect width="640" height="420" fill="url(#dotgrid)"/>
-                  <!-- 顶部结论条 -->
-                  <rect x="24" y="24" width="592" height="64" rx="0" fill="#0a0a0a"/>
-                  <rect x="44" y="44" width="60" height="8" rx="0" fill="rgba(255,255,255,.5)"/>
-                  <rect x="44" y="58" width="90" height="16" rx="0" fill="#fff"/>
-                  <rect x="340" y="44" width="80" height="28" rx="0" fill="rgba(255,255,255,.18)"/>
-                  <rect x="440" y="44" width="70" height="28" rx="0" fill="rgba(255,255,255,.18)"/>
-                  <rect x="530" y="44" width="60" height="28" rx="0" fill="rgba(255,255,255,.18)"/>
-                  <!-- 指标卡 6 张 -->
-                  <g>
-                    <rect x="24" y="108" width="92" height="60" rx="0" fill="#fff" stroke="#d4d4d4" stroke-width="1"/>
-                    <rect x="124" y="108" width="92" height="60" rx="0" fill="#fff" stroke="#d4d4d4" stroke-width="1"/>
-                    <rect x="224" y="108" width="92" height="60" rx="0" fill="#fff" stroke="#d4d4d4" stroke-width="1"/>
-                    <rect x="324" y="108" width="92" height="60" rx="0" fill="#fff" stroke="#d4d4d4" stroke-width="1"/>
-                    <rect x="424" y="108" width="92" height="60" rx="0" fill="#fff" stroke="#d4d4d4" stroke-width="1"/>
-                    <rect x="524" y="108" width="92" height="60" rx="0" fill="#fff" stroke="#d4d4d4" stroke-width="1"/>
-                    <rect x="34" y="120" width="40" height="6" rx="0" fill="#a3a3a3"/>
-                    <rect x="34" y="134" width="28" height="18" rx="0" fill="#0a0a0a"/>
-                  </g>
-                  <!-- 问题列表（左）+ diff 面板（右） -->
-                  <rect x="24" y="188" width="300" height="208" rx="0" fill="#fff" stroke="#d4d4d4" stroke-width="1"/>
-                  <rect x="336" y="188" width="280" height="208" rx="0" fill="#fafafa" stroke="#d4d4d4" stroke-width="1"/>
-                  <!-- 问题列表项 -->
-                  <rect x="40" y="204" width="268" height="32" rx="0" fill="#f5f5f5"/>
-                  <rect x="48" y="212" width="48" height="6" rx="0" fill="#737373"/>
-                  <rect x="48" y="222" width="200" height="8" rx="0" fill="#0a0a0a"/>
-                  <rect x="40" y="246" width="268" height="32" rx="0" fill="#fff"/>
-                  <rect x="48" y="254" width="56" height="6" rx="0" fill="#a3a3a3"/>
-                  <rect x="48" y="264" width="180" height="8" rx="0" fill="#262626"/>
-                  <rect x="40" y="288" width="268" height="32" rx="0" fill="#fff"/>
-                  <rect x="48" y="296" width="44" height="6" rx="0" fill="#a3a3a3"/>
-                  <rect x="48" y="306" width="220" height="8" rx="0" fill="#262626"/>
-                  <rect x="40" y="330" width="268" height="32" rx="0" fill="#fff"/>
-                  <rect x="48" y="338" width="52" height="6" rx="0" fill="#a3a3a3"/>
-                  <rect x="48" y="348" width="160" height="8" rx="0" fill="#262626"/>
-                  <!-- diff 面板代码行 -->
-                  <g font-family="monospace" font-size="9" fill="#737373">
-                    <rect x="352" y="204" width="20" height="10" rx="0" fill="#e5e5e5"/>
-                    <rect x="380" y="206" width="120" height="6" rx="0" fill="#d4d4d4"/>
-                    <rect x="352" y="220" width="20" height="10" rx="0" fill="#e5e5e5"/>
-                    <rect x="380" y="222" width="160" height="6" rx="0" fill="#d4d4d4"/>
-                    <rect x="352" y="236" width="20" height="10" rx="0" fill="#fde68a"/>
-                    <rect x="380" y="238" width="180" height="6" rx="0" fill="#fcd34d" opacity="0.5"/>
-                    <rect x="352" y="252" width="20" height="10" rx="0" fill="#e5e5e5"/>
-                    <rect x="380" y="254" width="100" height="6" rx="0" fill="#d4d4d4"/>
-                    <rect x="352" y="268" width="20" height="10" rx="0" fill="#e5e5e5"/>
-                    <rect x="380" y="270" width="140" height="6" rx="0" fill="#d4d4d4"/>
-                    <rect x="352" y="284" width="20" height="10" rx="0" fill="#fecaca"/>
-                    <rect x="380" y="286" width="200" height="6" rx="0" fill="#fca5a5" opacity="0.5"/>
-                    <rect x="352" y="300" width="20" height="10" rx="0" fill="#e5e5e5"/>
-                    <rect x="380" y="302" width="90" height="6" rx="0" fill="#d4d4d4"/>
-                  </g>
-                  <!-- 高亮行标记 -->
-                  <rect x="348" y="282" width="260" height="14" rx="0" fill="none" stroke="#0a0a0a" stroke-width="1.2" stroke-dasharray="3 2"/>
-                </svg>
-                <p class="content-meta" style="margin: 8px 12px 10px; font-size: 12px;">占位示意图 · 替换为真实评审页面截图</p>
-              </div>
+              <figure class="media-slot" style="--slot-h: 360px;">
+                <figcaption class="media-slot-hint">
+                  <span>这里放「评审结果」截图：真实的评审页面</span>
+                  <code>images/report.png</code>
+                </figcaption>
+                <img src="images/report.png" alt="评审结果页面截图" onload="this.parentElement.classList.add('is-filled')" onerror="this.remove()">
+              </figure>
             </div>
           </div>
         </section>
         <details class="caption" open>
           <summary>演讲逐字稿</summary>
-          <p>评审结果是一页给人看的报告，不是一串日志。页面顶部是结论区：通过是 PASS 态，未通过自动切成 BLOCK 态并写明拦截条数。中间是六张指标卡：评审文件数、降级文件数、问题总数，以及阻塞、警告、建议三个级别的计数。下面每条问题都带文件路径与行号，点行号会联动右侧的 diff 面板，精确高亮到那一行——工程师不用自己去代码里找。整页是自包含的，样式内联、可离线打开，并且支持日间和夜间双主题。右边是页面结构的示意，真实页面在演示环节可以直接打开看。</p>
+          <p>评审结果是一页给人看的网页，不是一串日志。页面顶部是结论区：过了是 PASS 态，没过自动切成 BLOCK 态，并写明拦了几条。中间是六张指标卡：评审文件数、降级文件数、问题总数，还有阻塞、警告、建议三个级别的计数。下面每条问题都带文件路径和行号，点行号右边 diff 面板就高亮到那一行，工程师不用自己去代码里翻。整页是自包含的，样式内联，离线也能打开，还支持日间和夜间两套主题。右边放的是真实页面截图，演示的时候可以直接打开评审页面看。</p>
         </details>
       </article>
 
@@ -1656,21 +1658,21 @@
           <div class="page-badge">12/20</div>
           <span class="halftone-num" aria-hidden="true">12</span>
           <div class="slide-stage">
-            <div class="slide-kicker">要素 4 · 安全</div>
+            <div class="slide-kicker">能力 · 安全</div>
             <div class="slide-content layout-argument-grid" data-density="compact">
-              <h2 class="slide-title title-sm">三层防御，防止评审工具自身成为攻击面</h2>
+              <h2 class="slide-title title-sm">评审工具自己不能变成漏洞</h2>
               <div class="flow-grid three">
                 <div class="export-shape-card flow-panel">
-                  <h3>数据最小化 · 脱敏</h3>
-                  <p class="content-body">模型可能原样回显被评审代码中的密钥。产出前对摘要、消息、建议统一打码，密钥仅保留首尾各 4 位，避免报告侧信道泄露。</p>
+                  <h3>密钥不进报告</h3>
+                  <p class="content-body">模型可能把被评审代码里的密钥原样抄回来。所以产出之前，摘要、消息、建议统一打码，密钥只留首尾各 4 位。</p>
                 </div>
                 <div class="export-shape-card flow-panel">
-                  <h3>注入面闭合 · 转义</h3>
-                  <p class="content-body">AI 返回文本一律视为不可信输入，HTML 插值全走转义；注入页面的 bootstrap 数据转义尖括号，杜绝 XSS 与脚本提前闭合。</p>
+                  <h3>AI 的话当外人看</h3>
+                  <p class="content-body">模型返回的文本一律当不可信输入，插进 HTML 全部转义；注入页面的数据也转义尖括号，堵住 XSS。</p>
                 </div>
                 <div class="export-shape-card flow-panel">
-                  <h3>路径白名单 · 隔离</h3>
-                  <p class="content-body">报告与接口的 id 用字符白名单严格限定，静态资源走精确白名单匹配，从路由层天然免疫路径穿越。</p>
+                  <h3>路径写死，不给穿越机会</h3>
+                  <p class="content-body">报告和接口的 id 用字符白名单卡死，静态资源只走精确匹配的白名单，路由层就堵住了路径穿越。</p>
                 </div>
               </div>
             </div>
@@ -1678,7 +1680,7 @@
         </section>
         <details class="caption" open>
           <summary>演讲逐字稿</summary>
-          <p>做安全工具，自己不能先变成攻击面。所以有三层防御，对应三类安全风险。第一层，数据最小化：模型可能原样回显被评审代码里的密钥，这叫侧信道泄露——工具本身不泄密，但它的输出会泄密。所以产出前对摘要、消息、建议统一打码，密钥只留首尾各四位。第二层，注入面闭合：所有 AI 返回文本都视为不可信输入，HTML 插值一律走转义函数；注入页面的 bootstrap 数据也要转义尖括号，杜绝 XSS 和脚本提前闭合。第三层，路径白名单隔离：报告和接口的 id 用字符白名单严格限定，静态资源走精确白名单匹配，从路由层就把路径穿越堵死了。这三条都是默认安全的设计，不是可选项——在一个评审工具里，任何一条漏掉，工具本身就变成了新的攻击向量。</p>
+          <p>做安全工具，自己不能先变成漏洞。所以有三层，对应三类风险。第一层，密钥不进报告：模型可能把被评审代码里的密钥原样抄回来——工具本身不泄密，但它的输出会泄密。所以产出之前，摘要、消息、建议统一打码，密钥只留首尾各四位。第二层，AI 的话当外人看：模型返回的文本一律当不可信输入，插进 HTML 全部走转义；注入页面的数据也要转义尖括号，堵住 XSS 和脚本提前闭合。第三层，路径写死：报告和接口的 id 用字符白名单卡死，静态资源只走精确匹配的白名单，路由层就把路径穿越堵死了。这三条都是默认就该有的，不是可选项——评审工具里漏掉任何一条，工具自己就成了新的攻击入口。</p>
         </details>
       </article>
 
@@ -1687,33 +1689,40 @@
           <div class="page-badge">13/20</div>
           <span class="halftone-num" aria-hidden="true">13</span>
           <div class="slide-stage">
-            <div class="slide-kicker">要素 4 · 管线</div>
+            <div class="slide-kicker">能力 · 平台</div>
             <div class="slide-content layout-timeline" data-density="compact">
-              <h2 class="slide-title title-sm">一条直线，串起四个部门节点</h2>
+              <h2 class="slide-title title-sm">四个部门，串成一条线</h2>
               <div class="flow-grid four" style="--flow-cell-min: 300px;">
                 <div class="export-shape-timeline-node flow-panel">
                   <h3>01 产品调研</h3>
-                  <p class="content-body">调用自研调研 Skill，对需求与市场先行摸底。能力位预留，待接入。</p>
+                  <p class="content-body">调自研调研 Skill，先把需求和市场摸一遍。位置先留着，等接入。</p>
                 </div>
                 <div class="export-shape-timeline-node flow-panel">
                   <h3>02 AI 产品</h3>
-                  <p class="content-body">基于调研结论产出产品策划案。能力位预留，待接入。</p>
+                  <p class="content-body">根据调研结论出产品策划案。位置先留着，等接入。</p>
                 </div>
                 <div class="export-shape-timeline-node flow-panel" style="border-color: var(--accent); background: rgba(0, 200, 243, 0.12);">
                   <h3>03 程序中台</h3>
-                  <p class="content-body">AI 代码评审，已就绪：执行时触发真实的评审链并生成报告。</p>
+                  <p class="content-body">AI 代码评审，已经能用了：点执行就跑真实的评审链，出报告。</p>
                 </div>
                 <div class="export-shape-timeline-node flow-panel">
                   <h3>04 产品运营</h3>
-                  <p class="content-body">上线后的运营动作。能力位预留，待接入。</p>
+                  <p class="content-body">上线之后的运营动作。位置先留着，等接入。</p>
                 </div>
               </div>
+              <figure class="media-slot" style="--slot-h: 200px; width: min(100%, 940px); justify-self: center;">
+                <figcaption class="media-slot-hint">
+                  <span>这里放「管线平台」截图：四个节点那一页</span>
+                  <code>images/pipeline.png</code>
+                </figcaption>
+                <img src="images/pipeline.png" alt="管线平台页面截图" onload="this.parentElement.classList.add('is-filled')" onerror="this.remove()">
+              </figure>
             </div>
           </div>
         </section>
         <details class="caption" open>
           <summary>演讲逐字稿</summary>
-          <p>平台侧是一条直线，串起四个部门节点。01 产品调研，调用自研调研 Skill，能力位先留空。02 AI 产品，产出产品策划案，同样待接入。03 程序中台，也就是 AI 代码评审，已经就绪，接的就是刚才那条真实评审链。04 产品运营，上线后的运营动作，待接入。为什么要做成节点而不是一个孤立的工具？因为评审天然长在研发流程的中间：前面有调研和策划，后面有运营。把位置先固定下来，后面接能力就只是填空，而不是重新设计流程。</p>
+          <p>平台这边是一条线，串起四个部门。01 产品调研，调自研的调研 Skill，位置先留着。02 AI 产品，出产品策划案，也等接入。03 程序中台，也就是 AI 代码评审，已经能用了，接的就是刚才那条真实评审链。04 产品运营，上线之后的运营动作，也等接入。为什么要做成节点，而不是一个单独的工具？因为评审本来就长在研发流程中间：前面有调研和策划，后面有运营。位置先固定下来，后面接能力就只是填空，不用重新设计流程。</p>
         </details>
       </article>
 
@@ -1722,11 +1731,11 @@
           <div class="page-badge">14/20</div>
           <span class="halftone-num" aria-hidden="true">14</span>
           <div class="slide-stage">
-            <div class="slide-kicker">要素 4 · 权限</div>
+            <div class="slide-kicker">能力 · 权限</div>
             <div class="slide-content layout-table-first" data-density="dense">
               <div class="flow-stack" style="--section-gap: 18px;">
                 <h2 class="slide-title title-sm">员工管本部门，主管管全流程</h2>
-                <p class="slide-lead">权限只有两条规则，但足够用：执行权按部门隔离，批准权收在主管手里。</p>
+                <p class="slide-lead">权限就两条规则，但够用：执行按部门分，批准收在主管手里。</p>
               </div>
               <div class="table-panel">
                 <table class="data-table">
@@ -1746,71 +1755,71 @@
         </section>
         <details class="caption" open>
           <summary>演讲逐字稿</summary>
-          <p>权限模型只有两条规则，但足够用。员工可以查看全流程，但只能执行本部门的节点；部门主管不限部门，可以执行所有节点，并且只有主管能批准节点。也就是说，执行权按部门隔离，批准权收在主管手里。账号的唯一来源是数据库文件，不开放注册，一共六个种子账号：一个主管、五个员工，邮箱是姓名拼音加一个虚拟后缀。演示期密码统一，上线前必须换成加盐哈希——这一点我在规划那页会再提。另外，权限判定只有一个入口函数，前端按钮的显隐只是展示，服务端校验才算数。</p>
+          <p>权限模型就两条规则，但够用。员工能看全流程，但只能执行本部门的节点；部门主管不限部门，能执行所有节点，而且只有主管能批准。也就是执行按部门分，批准收在主管手里。账号只有一个来源，就是数据库文件，不开放注册，一共六个种子账号：一个主管、五个员工，邮箱是姓名拼音加一个虚拟后缀。演示期密码是统一的，上线前必须换成加盐哈希——这点我在规划那页还会提。另外，权限判定只有一个入口函数，前端按钮显不显示只是好看，服务端校验才算数。</p>
         </details>
       </article>
 
       <article class="deck-card">
-        <section class="slide-frame theme-ink" aria-label="节点状态机">
+        <section class="slide-frame theme-ink" aria-label="节点的四个状态">
           <div class="page-badge">15/20</div>
           <span class="halftone-num" aria-hidden="true">15</span>
           <div class="slide-stage">
-            <div class="slide-kicker">要素 4 · 状态</div>
+            <div class="slide-kicker">能力 · 节点状态</div>
             <div class="slide-content layout-timeline" data-density="compact">
-              <h2 class="slide-title title-sm">状态机：执行中不卡死，重启能自愈</h2>
+              <h2 class="slide-title title-sm">节点卡住了？重启一下就好</h2>
               <div class="flow-grid four" style="--flow-cell-min: 300px;">
                 <div class="export-shape-timeline-node flow-panel">
                   <h3>待执行</h3>
-                  <p class="content-body">节点初始态。有权限的人可以触发执行。</p>
+                  <p class="content-body">节点的初始状态。有权限的人可以点执行。</p>
                 </div>
                 <div class="export-shape-timeline-node flow-panel">
                   <h3>执行中</h3>
-                  <p class="content-body">先落状态并立即响应，评审在后台跑，页面轮询刷新。</p>
+                  <p class="content-body">先把状态落下来、马上返回，评审在后台跑，页面轮询刷新。</p>
                 </div>
                 <div class="export-shape-timeline-node flow-panel">
                   <h3>已执行</h3>
-                  <p class="content-body">回写结果摘要与报告链接；失败则回滚并记录原因。</p>
+                  <p class="content-body">回写结果摘要和报告链接；失败了就回滚，并记下原因。</p>
                 </div>
                 <div class="export-shape-timeline-node flow-panel">
                   <h3>已批准</h3>
-                  <p class="content-body">主管批准后放行到下一环节，节点不再重复执行。</p>
+                  <p class="content-body">主管批准后放行到下一个环节，节点不再重复执行。</p>
                 </div>
               </div>
-              <p class="content-meta">启动时把残留的「执行中」复位为「待执行」· 防进程中断后永久卡死</p>
+              <p class="content-meta">启动时把残留的「执行中」改回「待执行」· 免得进程断了之后节点一直卡着</p>
             </div>
           </div>
         </section>
         <details class="caption" open>
           <summary>演讲逐字稿</summary>
-          <p>节点状态机是四个状态：待执行、执行中、已执行、已批准。这里有两个工程细节值得说。第一，评审节点是异步执行的：点执行后先把状态落成「执行中」并立即响应，评审在后台跑完再回写结果，页面轮询自动刷新——这样请求不会长时间挂住，也不会因为一次长任务把接口拖死。第二，服务启动时会把残留的「执行中」状态复位成「待执行」，防止进程被中断后节点永久卡死。回写结果前会重新读一次库，避免覆盖期间其它节点的状态变更。</p>
+          <p>节点有四个状态：待执行、执行中、已执行、已批准。这里有两个细节值得说。第一，评审节点是异步跑的：点了执行先把状态落成「执行中」并马上返回，评审在后台跑完再回写结果，页面轮询自动刷新——这样请求不会一直挂着，也不会因为一个长任务把接口拖死。第二，服务启动的时候，会把残留的「执行中」改回「待执行」，免得进程被中断之后节点一直卡着。回写结果之前会重新读一次库，避免覆盖期间其他节点的变更。</p>
         </details>
       </article>
 
       <article class="deck-card">
-        <section class="slide-frame theme-paper" aria-label="技术选型取舍">
+        <section class="slide-frame theme-paper" aria-label="技术选型：为什么不用 express 和数据库">
           <div class="page-badge">16/20</div>
           <span class="halftone-num" aria-hidden="true">16</span>
           <div class="slide-stage">
-            <div class="slide-kicker">要素 4 · 取舍</div>
+            <div class="slide-kicker">取舍</div>
             <div class="slide-content layout-comparison" data-density="compact">
-              <h2 class="slide-title title-sm">技术债务与供应链风险的刻意权衡</h2>
+              <h2 class="slide-title title-sm">为什么不用 express，也不上数据库</h2>
               <div class="flow-grid two" style="--flow-cell-min: 520px;">
                 <div class="export-shape-card flow-panel">
-                  <h3>我们的基线</h3>
+                  <h3>我们用的</h3>
                   <ul class="content-list">
-                    <li>HTTP 服务：Node 内置 http 模块，无框架</li>
-                    <li>数据持久化：JSON 文件读写，无 ORM</li>
-                    <li>会话管理：内存 Map + HttpOnly Cookie</li>
-                    <li>前端：原生 HTML + 单文件增强脚本</li>
+                    <li>HTTP 服务：Node 自带的 http 模块，不用框架</li>
+                    <li>数据存储：直接读写 JSON 文件，不用 ORM</li>
+                    <li>登录状态：内存里的 Map + HttpOnly Cookie</li>
+                    <li>前端：原生 HTML 加一个单文件脚本</li>
                   </ul>
                 </div>
                 <div class="export-shape-card flow-panel">
-                  <h3>债务与收益的对价</h3>
+                  <h3>欠下的和换来的</h3>
                   <ul class="content-list">
-                    <li>技术债务：无 ORM 抽象、服务重启会话全失效</li>
-                    <li>换来的：供应链风险敞口归零、零安装成本</li>
-                    <li>换来的：整套系统可在隔离内网离线部署</li>
-                    <li>结论：对进内网的平台，风险权重远大于便利</li>
+                    <li>欠下的：没有 ORM 的抽象，数据访问要手写</li>
+                    <li>欠下的：服务一重启，登录状态全没了</li>
+                    <li>换来的：第三方包一个不装，上游出问题波及不到</li>
+                    <li>换来的：拷一个目录就能跑，隔离内网也能离线部署</li>
                   </ul>
                 </div>
               </div>
@@ -1819,20 +1828,20 @@
         </section>
         <details class="caption" open>
           <summary>演讲逐字稿</summary>
-          <p>这一页讲技术债务和供应链风险的权衡，我把它摊开讲。常规做法是引 express 做服务、引数据库存数据、引框架做前端。我们全部没引，基线是：服务用 Node 内置的 http，持久化用 JSON 文件，会话放内存，前端是原生页面加一个增强脚本。技术债务是什么？没有 ORM 的抽象层，数据访问要手写；会话存在内存里，服务重启全部失效——这在演示和试点阶段是可接受的债务。换来的是什么？供应链风险敞口归零，没有上游依赖被攻破的可能；零安装成本，拷一个目录就能跑；整套系统可以在隔离内网离线部署。对一个要进内网、要对接代码仓库的平台，风险权重远大于开发便利——所以这笔债务是我们主动选择的，等规模上来再引入数据库也不迟，因为数据访问已经收敛在独立模块里了，替换成本可控。</p>
+          <p>这页讲我们为什么不用 express、不上数据库，摊开说。常规做法是引 express 做服务、引数据库存数据、引框架做前端。我们一个都没引：服务用 Node 自带的 http，存储直接读写 JSON 文件，登录状态放内存，前端是原生页面加一个脚本。欠下的债是什么？没有 ORM 的抽象层，数据访问得手写；登录状态在内存里，服务一重启全没了——这在演示和试点阶段可以接受。换来的是什么？第三方包一个不装，上游出问题波及不到；拷一个目录就能跑；整套系统能在隔离内网离线部署。对一个要进内网、要对接代码仓库的平台，风险比开发方便重要得多。所以这笔债是我们主动欠的，等规模上来了再引数据库也不迟，因为数据访问已经收在一个单独的文件里了，替换成本可控。</p>
         </details>
       </article>
 
       <article class="deck-card">
-        <section class="slide-frame theme-paper" aria-label="实测三档用例">
+        <section class="slide-frame theme-paper" aria-label="实测：三个真实例子">
           <div class="page-badge">17/20</div>
           <span class="halftone-num" aria-hidden="true">17</span>
           <div class="slide-stage">
-            <div class="slide-kicker">要素 5 · 验证</div>
+            <div class="slide-kicker">验证 · 实测</div>
             <div class="slide-content layout-table-first" data-density="dense">
               <div class="flow-stack" style="--section-gap: 18px;">
-                <h2 class="slide-title title-sm">三档用例跑通闭环：通过 / 通过 / 拦截</h2>
-                <p class="slide-lead">不是看代码，是在真实仓库上真跑一遍。</p>
+                <h2 class="slide-title title-sm">拿三个真实例子跑了一遍</h2>
+                <p class="slide-lead">不是看代码，是在真实仓库上真跑。</p>
               </div>
               <div class="table-panel">
                 <table class="data-table">
@@ -1846,12 +1855,19 @@
                   </tbody>
                 </table>
               </div>
+              <figure class="media-slot" style="--slot-h: 200px; width: min(100%, 940px); justify-self: center;">
+                <figcaption class="media-slot-hint">
+                  <span>这里放「实测结果」截图：三档用例的评审报告</span>
+                  <code>images/cases.png</code>
+                </figcaption>
+                <img src="images/cases.png" alt="三档用例的评审结果截图" onload="this.parentElement.classList.add('is-filled')" onerror="this.remove()">
+              </figure>
             </div>
           </div>
         </section>
         <details class="caption" open>
           <summary>演讲逐字稿</summary>
-          <p>验证不是看代码，是真跑。我们在一个真实仓库上造了三档用例。info 档是冗余封装，评审出三条建议，通过并推送。warning 档是键未校验、文件句柄未关闭，评审出三条警告加一条建议，通过。blocker 档是源码里硬编码了真实密钥，评审出两条阻塞级问题，push 被拦截，代码没有进远端。还有一个后续处置值得说：文件已经进过提交历史，只加忽略清单是不够的，要用版本控制命令把文件从索引和提交历史里摘掉，再重新推送。所以「坏代码推不出去」这句话，是有实测数据支撑的。</p>
+          <p>验证不是看代码，是真跑。我们在一个真实仓库上造了三个例子。info 档是冗余封装，评审出三条建议，通过并推送。warning 档是键没校验、文件句柄没关，评审出三条警告加一条建议，通过。blocker 档是源码里硬编码了真实密钥，评审出两条阻塞级问题，push 被拦下，代码没进远端。还有一个后续处置值得说：文件已经进过提交历史，只加忽略清单不够，得用版本控制命令把它从索引和提交历史里摘掉，再重新推送。所以「阻塞级问题推不出去」这句话，是有实测数据撑着的。</p>
         </details>
       </article>
 
@@ -1860,24 +1876,24 @@
           <div class="page-badge">18/20</div>
           <span class="halftone-num" aria-hidden="true">18</span>
           <div class="slide-stage">
-            <div class="slide-kicker">要素 5 · 工程</div>
+            <div class="slide-kicker">验证 · 测试</div>
             <div class="slide-content layout-kpi-summary" data-density="compact">
               <div class="flow-stack">
-                <h2 class="slide-title title-sm">克制地做质量保障：收益优先，不引入新风险</h2>
-                <p class="slide-lead">类型系统是第一道防线；纯函数用内置测试框架覆盖；关键路径靠真实模型端到端验证。</p>
+                <h2 class="slide-title title-sm">测试做得不多，但该测的都测了</h2>
+                <p class="slide-lead">类型检查是第一道关；纯函数用 Node 自带测试模块覆盖；关键路径拿真模型端到端跑一遍。</p>
                 <div class="kpi-strip" style="--kpi-min: 240px;">
                   <div class="export-shape-metric kpi-card">
                     <span class="export-text-label">类型门禁</span>
                     <strong class="export-text-value">tsc</strong>
-                    <em class="export-text-note">strict 模式 · 唯一自动化门禁</em>
+                    <em class="export-text-note">strict 模式 · 唯一的自动化门禁</em>
                   </div>
                   <div class="export-shape-metric kpi-card">
                     <span class="export-text-label">平台冒烟</span>
                     <strong class="export-text-value">22 项</strong>
-                    <em class="export-text-note">登录·权限·执行·批准·穿越防护</em>
+                    <em class="export-text-note">登录·权限·执行·批准·路径穿越</em>
                   </div>
                   <div class="export-shape-metric kpi-card">
-                    <span class="export-text-label">端到端验证</span>
+                    <span class="export-text-label">端到端</span>
                     <strong class="export-text-value">3 档</strong>
                     <em class="export-text-note">info / warning / blocker 全跑通</em>
                   </div>
@@ -1888,34 +1904,34 @@
         </section>
         <details class="caption" open>
           <summary>演讲逐字稿</summary>
-          <p>质量保障这一页，我想讲的是克制。这个项目没有 linter、没有 formatter、没有第三方测试框架，唯一的自动化门禁是 TypeScript 的 strict 模式类型检查。为什么？因为类型系统在这里的收益密度最高，而其它工具引入的供应链风险和配置成本，不足以抵消收益。纯函数仍然有测试，用 Node 内置的测试模块覆盖——门禁判定、路径匹配、JSON 提取这些边界逻辑，全部有单测。平台侧做了二十二项冒烟测试，覆盖认证、鉴权、执行、批准和路径穿越防护；评审链另外用真实模型做了端到端验证，就是上一页那三档用例。这套组合的原则是：不追求覆盖率数字，追求关键路径真的跑通过，并且每引入一样东西都要确认它不会带来新的风险面。</p>
+          <p>质量保障这页，我想说的是克制。这个项目没有 linter、没有 formatter、也没有第三方测试框架，唯一的自动化门禁是 TypeScript 的 strict 类型检查。为什么？因为类型检查在这里性价比最高，其他工具带来的供应链风险和配置成本，不划算。纯函数还是有测试的，用 Node 自带的测试模块覆盖——门禁判定、路径匹配、JSON 提取这些边界逻辑都有单测。平台那边做了二十二项冒烟测试，覆盖登录、鉴权、执行、批准和路径穿越防护；评审链另外拿真模型做了端到端验证，就是上一页那三个例子。原则就一句：不追覆盖率数字，追关键路径真的跑通过，而且每引一样东西都要确认它不会带来新的风险。</p>
         </details>
       </article>
 
       <article class="deck-card">
-        <section class="slide-frame theme-ink" aria-label="路线图">
+        <section class="slide-frame theme-ink" aria-label="规划：接下来要做的事">
           <div class="page-badge">19/20</div>
           <span class="halftone-num" aria-hidden="true">19</span>
           <div class="slide-stage">
-            <div class="slide-kicker">要素 6 · 规划</div>
+            <div class="slide-kicker">规划</div>
             <div class="slide-content layout-timeline" data-density="compact">
-              <h2 class="slide-title title-sm">路线图：补能力、收债务、规模化</h2>
+              <h2 class="slide-title title-sm">接下来要做的事</h2>
               <div class="flow-grid four" style="--flow-cell-min: 300px;">
                 <div class="export-shape-timeline-node flow-panel">
-                  <h3>近期 · 补节点</h3>
-                  <p class="content-body">节点 01 / 02 / 04 接入自研 Skill，链路位置与权限模型已预留。</p>
+                  <h3>近期 · 补齐三个节点</h3>
+                  <p class="content-body">节点 01、02、04 接入自研 Skill。位置和权限都已经留好了。</p>
                 </div>
                 <div class="export-shape-timeline-node flow-panel">
-                  <h3>中期 · 注规范</h3>
-                  <p class="content-body">评审遵循团队代码规范：从配置文件注入起步，升级到规范目录与可复用插件机制。</p>
+                  <h3>中期 · 把团队规范注进去</h3>
+                  <p class="content-body">现在的评审维度是内置的，接下来让评审按团队规范走：先从配置文件注入，再升级到规范目录和可复用的插件。</p>
                 </div>
                 <div class="export-shape-timeline-node flow-panel">
-                  <h3>上线前 · 安全债务清偿</h3>
-                  <p class="content-body">演示密码替换为 scrypt 加盐哈希、清理演示账号、补齐凭据生命周期与权限审计。</p>
+                  <h3>上线前 · 把安全债还掉</h3>
+                  <p class="content-body">演示密码换成 scrypt 加盐哈希、清掉演示账号、补上凭据管理和权限审计。</p>
                 </div>
                 <div class="export-shape-timeline-node flow-panel">
-                  <h3>之后 · 可追溯</h3>
-                  <p class="content-body">报告目录托管为团队共享服务，历史评审可检索、可回溯，形成组织级质量基线。</p>
+                  <h3>之后 · 能查能回溯</h3>
+                  <p class="content-body">把报告目录托管成团队共享服务，历史评审能搜、能回溯，慢慢形成团队自己的质量基线。</p>
                 </div>
               </div>
             </div>
@@ -1923,7 +1939,7 @@
         </section>
         <details class="caption" open>
           <summary>演讲逐字稿</summary>
-          <p>路线图分四步走。近期，把其余三个节点的能力接上：节点 01 接自研调研 Skill，02 接策划案生成，04 接运营动作——链路位置和权限模型都已经预留好了，填空就行。中期，把团队代码规范注入评审：现在的评审维度是内置的，我们要让评审遵循组织规范，从配置文件注入起步，逐步升级到规范目录和可复用的插件机制。上线前，安全债务必须清偿：演示密码替换成 scrypt 加盐哈希、清理全部演示账号、补齐凭据生命周期管理和权限审计日志——这是上线的前置条件，不能带债上线。更远一点，把报告目录托管成团队共享服务，让历史评审可检索、可回溯，逐步形成组织级的质量基线。</p>
+          <p>接下来分四步。近期，把其余三个节点接上：节点 01 接自研调研 Skill，02 接策划案生成，04 接运营动作——位置和权限都已经留好了，填空就行。中期，把团队规范注进评审：现在的评审维度是内置的，我们要让评审按组织规范走，先从配置文件注入起步，再升级到规范目录和可复用的插件。上线前，安全债必须还掉：演示密码换成 scrypt 加盐哈希、清掉所有演示账号、补上凭据管理和权限审计日志——这是上线的前提，不能带债上线。再往后，把报告目录托管成团队共享服务，历史评审能搜、能回溯，慢慢形成团队自己的质量基线。</p>
         </details>
       </article>
 
@@ -1934,12 +1950,12 @@
           <div class="slide-stage">
             <div class="slide-kicker">收尾</div>
             <div class="slide-content layout-split">
-              <h2 class="quote">坏代码推不出去，好代码才走得快。</h2>
+              <h2 class="quote">AI 评审不是监工，是来帮忙的。</h2>
               <div class="flow-stack">
                 <ul class="content-list">
-                  <li>门禁做在 push 之前，坏代码就进不了远端。</li>
-                  <li>评审结果要给人看，所以可读、可定位、可确认。</li>
-                  <li>能力要长在流程里，四个部门节点是给未来留的接口。</li>
+                  <li>标准统一、新人上手快、经验留下来。</li>
+                  <li>评审放在 push 之前，人确认了才推。</li>
+                  <li>一个生产依赖都不装，安全是前提。</li>
                 </ul>
               </div>
             </div>
@@ -1947,7 +1963,7 @@
         </section>
         <details class="caption" open>
           <summary>演讲逐字稿</summary>
-          <p>收尾，三句话。第一，门禁做在 push 之前，坏代码就推不出去——这是整件事的价值锚点。第二，评审结果要给人看，所以要可读、可定位、可确认，而不是一串日志。第三，能力要长在流程里，四个部门节点就是给未来留的接口。一句话总结：坏代码推不出去，好代码才走得快。谢谢，接下来是问答时间。</p>
+          <p>收尾，三句话。第一，AI 评审不抓人，它做的是统一标准、让新人上手快、把经验留下来——这也是跟其他评审工具最大的不同：我们做的是帮忙的，不是监工。第二，评审放在 push 之前，人在里面，确认了才推——AI 会漏判也会误判，最后拍板的必须是人。第三，一个生产依赖都不装，安全是前提，不是加分项。记住这三点，今天的内容就串起来了。谢谢大家，接下来是提问时间。</p>
         </details>
       </article>
 

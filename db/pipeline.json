@@ -19,8 +19,10 @@
       "department": "程序中台",
       "step": "AI 代码评审",
       "ready": true,
-      "status": "todo",
-      "runner": "ai-review"
+      "status": "done",
+      "runner": "ai-review",
+      "lastResult": "评审未通过：7 个 blocker，已拦截",
+      "reportUrl": "http://127.0.0.1:4312/reports/review-mufmg85h"
     },
     {
       "id": "04",

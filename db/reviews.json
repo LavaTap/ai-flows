@@ -1,0 +1,17 @@
+{
+  "reviews": [
+    {
+      "id": "review-mufmg85h",
+      "source": "platform",
+      "actor": "产品部门主管",
+      "email": "zhaoli@ai-flows.com",
+      "department": "产品",
+      "role": "supervisor",
+      "generatedAt": "2026-09-24T14:23:01.537Z",
+      "passed": false,
+      "blockers": 7,
+      "issues": 24,
+      "reportUrl": "http://127.0.0.1:4312/reports/review-mufmg85h"
+    }
+  ]
+}

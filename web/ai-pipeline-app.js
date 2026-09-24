@@ -34,12 +34,38 @@
     ".top-right .logout{font:500 12px/18px var(--font-sans);color:var(--copy);background:var(--glass-fill);",
     "border:1px solid var(--glass-line);border-radius:999px;padding:4px 12px;cursor:pointer;white-space:nowrap;}",
     ".top-right .logout:hover{color:var(--led);border-color:rgba(173,49,77,.3);}",
-    ".user-chip .rname{color:var(--ink-soft);font-weight:500;}"
+    ".user-chip .rname{color:var(--ink-soft);font-weight:500;}",
+    ".d-reviews{margin-top:14px;border-top:1px solid var(--glass-line);padding-top:12px;}",
+    ".d-reviews-head{font:600 13px/20px var(--font-sans);color:var(--ink-soft);margin-bottom:10px;}",
+    ".d-reviews-empty{font:400 12px/18px var(--font-sans);color:var(--muted);}",
+    ".d-reviews-list{list-style:none;margin:0;padding:0;display:grid;gap:8px;}",
+    ".d-reviews-list li{display:flex;align-items:center;gap:12px;padding:10px 12px;",
+    "border:1px solid var(--glass-line);border-radius:12px;background:var(--glass-fill);}",
+    ".dr-main{flex:1;min-width:0;}",
+    ".dr-who{font:500 12px/18px var(--font-sans);color:var(--copy);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+    ".dr-time{font:400 11px/16px var(--font-sans);color:var(--muted);}",
+    ".dr-badge{font:600 11px/16px var(--font-sans);padding:2px 8px;border-radius:999px;white-space:nowrap;}",
+    ".dr-badge.pass{color:var(--ok,#2aa198);background:rgba(42,161,152,.12);}",
+    ".dr-badge.block{color:var(--led);background:rgba(173,49,77,.12);}",
+    ".dr-num{font:600 12px/18px var(--font-sans);color:var(--muted);white-space:nowrap;}",
+    ".dr-actions{min-width:44px;text-align:right;}",
+    ".dr-actions a{font:500 12px/18px var(--font-sans);color:var(--led);text-decoration:none;border:1px solid rgba(173,49,77,.3);border-radius:999px;padding:3px 10px;}",
+    ".dr-actions a:hover{background:var(--led);color:#fff;}"
   ].join("");
   document.head.appendChild(style);
 
-  var detail = document.getElementById("detail");
-  var nodeEls = Array.prototype.slice.call(document.querySelectorAll(".node"));
+  var cells = Array.prototype.slice.call(document.querySelectorAll(".cell"));
+
+  /* 当前 tooltip：取选中（on）节点所在 cell 的 .tip */
+  function currentTip(idx) {
+    var el = idx != null && idx >= 0 ? cells[idx] : document.querySelector(".cell.on");
+    return el ? el.querySelector(".tip") : null;
+  }
+
+  /* 当前打开 tooltip（detailIdx 由 pipeline-show 维护，-1 时为 null） */
+  function tipEl() {
+    return currentTip(detailIdx);
+  }
 
   function post(url) {
     return fetch(url, { method: "POST" }).then(function (r) {
@@ -75,28 +101,107 @@
     }
   })();
 
-  /* 节点状态行：待执行 / 已执行 / 已批准 */
-  function renderNodeStatus() {
-    nodeEls.forEach(function (el, i) {
-      var node = nodes[i];
-      if (!node) return;
-      var line = el.querySelector(".n-status");
-      if (!line) {
-        line = document.createElement("span");
-        line.className = "n-status";
-        el.appendChild(line);
+  /* 平台态内的工具语义：代码评审节点可展开评审记录；详情动作区随 tooltip 重建 */
+
+  /* 评审记录面板：渲染 /api/reviews 返回的列表（含角色/部门/结果/时间/报告入口） */
+  function renderReviews(list) {
+    var tip = tipEl();
+    if (!tip) return;
+    var old = tip.querySelector(".d-reviews");
+    if (old) old.remove();
+    var box = document.createElement("div");
+    box.className = "d-reviews";
+    var head = document.createElement("div");
+    head.className = "d-reviews-head";
+    head.textContent = "评审记录（" + list.length + "）";
+    box.appendChild(head);
+    if (!list.length) {
+      var empty = document.createElement("p");
+      empty.className = "d-reviews-empty";
+      empty.textContent = "暂无评审记录";
+      box.appendChild(empty);
+    } else {
+      var ul = document.createElement("ul");
+      ul.className = "d-reviews-list";
+      list.forEach(function (re) {
+        var li = document.createElement("li");
+        var main = document.createElement("div");
+        main.className = "dr-main";
+        var who = document.createElement("div");
+        who.className = "dr-who";
+        who.textContent = re.actor + " · " + (re.email ? re.department + " · " + re.email : re.department);
+        var time = document.createElement("div");
+        time.className = "dr-time";
+        var d = new Date(re.generatedAt);
+        time.textContent = isNaN(d.getTime()) ? re.generatedAt : d.toLocaleString();
+        main.appendChild(who);
+        main.appendChild(time);
+        var badge = document.createElement("span");
+        badge.className = "dr-badge " + (re.passed ? "pass" : "block");
+        badge.textContent = re.passed ? "PASS · " + re.blockers + " 拦" : "BLOCK · " + re.blockers;
+        var num = document.createElement("span");
+        num.className = "dr-num";
+        num.textContent = re.issues > 0 ? re.issues + " 条" : "—";
+        li.appendChild(main);
+        li.appendChild(badge);
+        li.appendChild(num);
+        var acts = document.createElement("span");
+        acts.className = "dr-actions";
+        if (re.reportUrl) {
+          var a = document.createElement("a");
+          a.href = re.reportUrl;
+          a.target = "_blank";
+          a.rel = "noopener";
+          a.textContent = "报告";
+          acts.appendChild(a);
+        }
+        li.appendChild(acts);
+        ul.appendChild(li);
+      });
+      box.appendChild(ul);
+    }
+    tip.appendChild(box);
+  }
+
+  /* 节点 03「评审记录」按钮：点击拉取并按视角展示所有执行角色的评审历史 */
+  function addReviewsButton(node, wrap) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn ghost";
+    btn.textContent = "评审记录";
+    btn.addEventListener("click", function () {
+      var tip = tipEl();
+      if (!tip) return;
+      if (tip.querySelector(".d-reviews")) {
+        tip.querySelector(".d-reviews").remove();
+        return;
       }
-      line.textContent = "状态 · " + STATUS_TEXT[node.status];
-      line.classList.toggle("approved", node.status === "approved");
+      btn.disabled = true;
+      var origin = btn.textContent;
+      btn.textContent = "加载中…";
+      fetch("/api/reviews").then(function (r) {
+        if (r.status === 401) { location.href = "/login"; return null; }
+        return r.json();
+      }).then(function (d) {
+        btn.disabled = false;
+        if (!d || !d.reviews) { alert((d && d.error) || "加载失败"); return; }
+        renderReviews(d.reviews);
+      }).catch(function () {
+        btn.disabled = false;
+        btn.textContent = origin;
+        alert("网络异常");
+      });
     });
+    wrap.appendChild(btn);
   }
 
   /* 详情面板动作区（每次 pipeline-show / 轮询刷新后重建） */
   var detailIdx = -1;
   function renderActions(idx) {
     var node = nodes[idx];
-    if (!node || !detail) return;
-    var old = detail.querySelector(".d-actions");
+    var panel = currentTip(idx);
+    if (!node || !panel) return;
+    var old = panel.querySelector(".d-actions");
     if (old) old.remove();
 
     var wrap = document.createElement("div");
@@ -133,6 +238,11 @@
       wrap.appendChild(link);
     }
 
+    /* 节点 03（AI 代码评审）：提供「评审记录」入口，查看所有执行角色的评审历史 */
+    if (node.runner === "ai-review") {
+      addReviewsButton(node, wrap);
+    }
+
     function addBtn(label, url, ghost, disabled) {
       var btn = document.createElement("button");
       btn.type = "button";
@@ -146,7 +256,6 @@
         post("/api/nodes/" + node.id + "/" + url).then(function (res) {
           if (res.ok && res.data.node) {
             nodes[idx] = res.data.node;
-            renderNodeStatus();
             renderActions(idx);
             if (res.data.node.status === "running") startPolling();
           } else {
@@ -194,7 +303,7 @@
       }
     }
 
-    detail.appendChild(wrap);
+    panel.appendChild(wrap);
   }
 
   /* 有节点执行中时轮询 /api/nodes，完成后停表并刷新视图 */
@@ -218,7 +327,6 @@
       }).then(function (d) {
         if (!d || !d.nodes) return;
         nodes = d.nodes;
-        renderNodeStatus();
         if (detailIdx >= 0) renderActions(detailIdx);
         var running = nodes.some(function (n) { return n && n.status === "running"; });
         if (!running) stopPolling();
@@ -234,11 +342,9 @@
     renderActions(detailIdx);
   });
 
-  renderNodeStatus();
-
-  /* 首屏：当前选中节点补动作区（defer 脚本晚于页面内联脚本的初始 show） */
-  detailIdx = nodeEls.findIndex(function (el) { return el.classList.contains("on"); });
-  if (detailIdx >= 0) renderActions(detailIdx);
+  /* 首屏：若已有选中的节点（如刷新返回），补动作区 */
+  var firstOn = cells.findIndex(function (c) { return c.classList.contains("on"); });
+  if (firstOn >= 0) { detailIdx = firstOn; renderActions(firstOn); }
 
   /* 首屏即有执行中的节点（如刷新页面）直接开始轮询 */
   if (nodes.some(function (n) { return n && n.status === "running"; })) startPolling();

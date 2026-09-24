@@ -26,22 +26,20 @@
         <h1 class="page-title">
           <span>研产</span><span class="led-word">AI</span><span>管线</span>
         </h1>
-        <p class="page-sub">产品调研 → 产品策划 → AI 代码评审 → 运营</p>
+        <p class="page-sub">产品调研 → 产品规划 → 程序执行 → 产品运营</p>
       </div>
-      <span class="hint">悬停节点查看流程详情</span>
+      <span class="hint">悬停节点查看详情 · 滚轮缩放管线 · 双击复位</span>
     </section>
-
-    <section class="detail" id="detail" aria-live="polite"></section>
 
     <section class="pipeline" id="pipeline">
       <div class="rail" aria-hidden="true"></div>
 
-      <button type="button" class="node" data-idx="0" aria-pressed="false">
-        <span class="n-num">01</span>
-        <span class="n-title">产品调研</span>
-        <span class="n-step">环节 · 产品调研</span>
-        <span class="tag muted">待接入</span>
-      </button>
+      <span class="cell" data-idx="0">
+        <div class="tip" role="dialog" aria-label="产品调研详情"></div>
+        <button type="button" class="node" data-idx="0" aria-pressed="false">
+          <span class="n-title">产品调研</span>
+        </button>
+      </span>
 
       <span class="arrow" aria-hidden="true">
         <svg viewBox="0 0 40 10">
@@ -54,12 +52,12 @@
         </svg>
       </span>
 
-      <button type="button" class="node" data-idx="1" aria-pressed="false">
-        <span class="n-num">02</span>
-        <span class="n-title">AI产品</span>
-        <span class="n-step">环节 · 产品策划案</span>
-        <span class="tag muted">待接入</span>
-      </button>
+      <span class="cell" data-idx="1">
+        <div class="tip" role="dialog" aria-label="产品规划详情"></div>
+        <button type="button" class="node" data-idx="1" aria-pressed="false">
+          <span class="n-title">产品规划</span>
+        </button>
+      </span>
 
       <span class="arrow" aria-hidden="true">
         <svg viewBox="0 0 40 10">
@@ -68,16 +66,16 @@
               <path d="M1 1 L7 4 L1 7 Z" fill="rgba(0,0,0,0.32)"></path>
             </marker>
           </defs>
-          <path d="M0 5 H33" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1.5" marker-end="url(#am1)"></path>
+          <path d="M0 5 H33" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1.5" marker-end="url(#am0)"></path>
         </svg>
       </span>
 
-      <button type="button" class="node on" data-idx="2" aria-pressed="true">
-        <span class="n-num">03</span>
-        <span class="n-title">程序中台</span>
-        <span class="n-step">环节 · AI 代码评审</span>
-        <span class="tag ok">已就绪</span>
-      </button>
+      <span class="cell" data-idx="2">
+        <div class="tip" role="dialog" aria-label="程序执行详情"></div>
+        <button type="button" class="node" data-idx="2" aria-pressed="false">
+          <span class="n-title">程序执行</span>
+        </button>
+      </span>
 
       <span class="arrow" aria-hidden="true">
         <svg viewBox="0 0 40 10">
@@ -86,16 +84,16 @@
               <path d="M1 1 L7 4 L1 7 Z" fill="rgba(0,0,0,0.32)"></path>
             </marker>
           </defs>
-          <path d="M0 5 H33" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1.5" marker-end="url(#am2)"></path>
+          <path d="M0 5 H33" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1.5" marker-end="url(#am0)"></path>
         </svg>
       </span>
 
-      <button type="button" class="node" data-idx="3" aria-pressed="false">
-        <span class="n-num">04</span>
-        <span class="n-title">产品运营</span>
-        <span class="n-step">环节 · 运营</span>
-        <span class="tag muted">待接入</span>
-      </button>
+      <span class="cell" data-idx="3">
+        <div class="tip" role="dialog" aria-label="产品运营详情"></div>
+        <button type="button" class="node" data-idx="3" aria-pressed="false">
+          <span class="n-title">产品运营</span>
+        </button>
+      </span>
     </section>
 
     <footer class="foot">
@@ -126,7 +124,7 @@
     </div>
     <div class="d-desc">基于调研结论产出产品策划案；生成环节先留空，待接入。</div>
     <div class="d-meta">
-      <span class="d-item"><b>负责部门</b>AI产品</span>
+      <span class="d-item"><b>负责部门</b>产品规划</span>
       <span class="d-item"><b>执行角色</b>AI 产品实习生（员工）</span>
       <span class="d-item"><b>权限</b>可执行 / 查看</span>
     </div>
@@ -139,7 +137,7 @@
     </div>
     <div class="d-desc">基于现有 ai-review 管线：git diff 采集 → LLM 评审 → 门禁判定 → 生成报告并推送。</div>
     <div class="d-meta">
-      <span class="d-item"><b>负责部门</b>程序中台</span>
+      <span class="d-item"><b>负责部门</b>程序执行</span>
       <span class="d-item"><b>执行角色</b>前端开发设计师（员工）</span>
       <span class="d-item"><b>审批</b>产品部门主管（可批准全部节点）</span>
     </div>
@@ -160,39 +158,97 @@
 
   <script>
     (function () {
-      var detail = document.getElementById("detail");
       var pipeline = document.getElementById("pipeline");
+      var cells = Array.prototype.slice.call(document.querySelectorAll(".cell"));
       var nodes = Array.prototype.slice.call(document.querySelectorAll(".node"));
       var tpls = Array.prototype.slice.call(document.querySelectorAll("template"));
-      var DEFAULT_IDX = 2; /* 默认展示已就绪的 AI 代码评审节点 */
-      var current = -1; /* -1 保证首屏渲染一次（平台脚本监听 pipeline-show 重建动作区） */
+      var current = -1; /* -1 表示当前无选中节点 */
+
+      /* 滚轮缩放管线（以中心为锚点），双击复位 */
+      var scale = 1;
+      var MIN_SCALE = 0.5;
+      var MAX_SCALE = 4; /* 提高到 4×，可更仔细放大查看 */
+      pipeline.addEventListener("wheel", function (e) {
+        if (e.ctrlKey) return; /* 保留浏览器自身的 Ctrl+滚轮缩放 */
+        /* 评审记录列表内：让滚轮上下滚动列表，而不是缩放管线 */
+        if (e.target && e.target.closest && e.target.closest(".d-reviews-list")) return;
+        e.preventDefault();
+        var k = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+        scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, +(scale * k).toFixed(3)));
+        pipeline.style.transform = "scale(" + scale + ")";
+      }, { passive: false });
+      pipeline.addEventListener("dblclick", function () {
+        scale = 1;
+        pipeline.style.transform = "";
+      });
+
+      function tipOf(i) {
+        var cell = cells[i];
+        return cell ? cell.querySelector(".tip") : null;
+      }
+
+      var hideTimer = null;
+      function cancelHide() {
+        if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+      }
+      function scheduleHide() {
+        cancelHide();
+        hideTimer = setTimeout(hide, 160);
+      }
+
+      /* 收起当前 tooltip，并把节点移出选中态 */
+      function hide() {
+        cancelHide();
+        if (current === -1) return;
+        current = -1;
+        nodes.forEach(function (n, i) {
+          n.classList.remove("on");
+          n.setAttribute("aria-pressed", "false");
+          cells[i].classList.remove("on");
+          var t = tipOf(i);
+          if (t) { t.classList.remove("open"); t.innerHTML = ""; }
+        });
+        window.dispatchEvent(new CustomEvent("pipeline-show", { detail: -1 }));
+      }
 
       function show(idx) {
+        cancelHide();
         if (idx === current) return;
-        current = idx;
-        var tpl = tpls[idx];
-        if (tpl) detail.innerHTML = tpl.innerHTML;
+        /* 收起上一个 tooltip */
+        if (current !== -1) {
+          var old = tipOf(current);
+          if (old) { old.classList.remove("open"); old.innerHTML = ""; }
+        }
         nodes.forEach(function (n, i) {
           var on = i === idx;
           n.classList.toggle("on", on);
           n.setAttribute("aria-pressed", on ? "true" : "false");
+          cells[i].classList.toggle("on", on);
         });
+        var tpl = tpls[idx];
+        var t = tipOf(idx);
+        if (tpl && t) t.innerHTML = tpl.innerHTML;
+        if (t) t.classList.add("open");
+        current = idx;
         /* 广播给平台增强脚本（静态预览无监听者，无副作用） */
         window.dispatchEvent(new CustomEvent("pipeline-show", { detail: idx }));
       }
 
-      nodes.forEach(function (n) {
-        n.addEventListener("mouseenter", function () { show(Number(n.getAttribute("data-idx"))); });
-        n.addEventListener("focus", function () { show(Number(n.getAttribute("data-idx"))); });
+      cells.forEach(function (cell, i) {
+        cell.addEventListener("mouseenter", function () { show(i); });
+        cell.addEventListener("mouseleave", scheduleHide);
+        /* 从节点移入 tooltip 继续停留：悬停 tooltip 期间暂缓收起 */
+        var t = tipOf(i);
+        if (t) {
+          t.addEventListener("mouseenter", cancelHide);
+          t.addEventListener("mouseleave", scheduleHide);
+        }
       });
 
-      pipeline.addEventListener("mouseleave", function () {
-        var f = document.activeElement;
-        if (f && f.classList && f.classList.contains("node")) return;
-        show(DEFAULT_IDX);
+      nodes.forEach(function (n, i) {
+        n.addEventListener("focus", function () { show(i); });
+        n.addEventListener("blur", scheduleHide);
       });
-
-      show(DEFAULT_IDX);
     })();
   </script>
 </body>

@@ -44,8 +44,8 @@
 | `reporter.ts` | Markdown 报告 + HTML 模板渲染 `renderTemplate()` |
 | `serve.ts` | 报告 HTTP 服务（`node:http`）+ 报告列表页 + `POST /reports/<id>/push` 确认提交（需带 commit message，有暂存先 commit 再 push；无暂存且信息与 HEAD 不同则 amend 改写） |
 | `publisher.ts` | 多目标远端推送、https token 注入；内部推送置 `AI_REVIEW_INTERNAL_PUSH=1`，防被 pre-push hook 循环拦截 |
-| `platform.ts` | 平台 HTTP 服务：登录会话 + 管线页注入 `window.__PIPELINE__` + 节点执行/批准 API；权限判定 `canExecute` / `canApprove`；节点 03 后台跑评审链 |
-| `db.ts` | JSON 库读写（`db/users.json` / `db/pipeline.json`）、`authenticate` 邮箱+密码校验 |
+| `platform.ts` | 平台 HTTP 服务：登录会话 + 管线页注入 `window.__PIPELINE__` + 节点执行/批准 API + `GET /api/reviews` 评审记录（平台历史 + 外部报告聚合，按视角过滤）；权限判定 `canExecute` / `canApprove` / `filterReviewsByUser`；节点 03 后台跑评审链 |
+| `db.ts` | JSON 库读写（`db/users.json` / `db/pipeline.json` / `db/reviews.json`）、`authenticate` 邮箱+密码校验、`appendReview` 评审历史追加 |
 | `auth.ts` | 内存会话 + cookie 签发/解析（`HttpOnly` `SameSite=Lax`，24h，重启即失效） |
 | `redact.ts` | `maskSecrets()`：评审产出前对 `summary` / `message` / `suggestion` 打码（密钥只留首尾各 4 位） |
 
@@ -73,6 +73,7 @@
 | 节点状态机 | `todo → running → done → approved`；仅主管可 `approve`；服务启动时把残留 `running` 复位为 `todo`，防进程中断后永久卡死 |
 | 评审节点异步执行 | `runner=ai-review` 先落 `running` 并立即响应，评审在后台跑完再回写 `lastResult` / `reportUrl`（回写前重读库，避免覆盖期间其他节点变更） |
 | 注入 bootstrap 必须转义 | `window.__PIPELINE__` 注入用 `jsonForScript()`（转义 `<`）；节点顺序与 `web/ai-pipeline-app.js` 的 `data-idx` 一一对应，改注入结构必须同步该脚本 |
+| 评审记录按视角过滤 | `GET /api/reviews` 只用 `filterReviewsByUser`（主管全量 / 员工限本部门）；外部触发（hook/手动 run）报告无账号归属，统一归到节点 03 部门「程序中台」；平台触发记录写 `db/reviews.json` |
 
 ### ESM 相对导入
 
@@ -153,7 +154,7 @@ export default function main() {}
 | `reviewer.ts` | `extractJson` | 带围栏、带前后缀文字、非法 JSON 抛错 |
 | `publisher.ts` | `injectToken` | https 注入、已有凭据剥离、ssh 地址不动 |
 | `serve.ts` | `/reports/<id>` 路由 | `../` 等路径穿越必须 404 |
-| `platform.ts` | `canExecute` / `canApprove` | 员工限本部门、主管全节点可执行；员工不可批准 |
+| `platform.ts` | `canExecute` / `canApprove` / `filterReviewsByUser` | 员工限本部门、主管全节点可执行；员工不可批准；评审记录主管全量、员工本部门 |
 
 不要求覆盖：`index.ts` 的 CLI 编排、HTTP 服务生命周期、真实模型调用（涉及网络与凭据）。
 端到端回归用手工三档用例（info / warning / blocker）验证，方法见 `评审链路与说明.md` §3。
