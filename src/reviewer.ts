@@ -1,4 +1,4 @@
-import { resolveApiKey, type ModelConfig } from "./config.js";
+import { resolveApiKey, type ModelConfig, type TargetRemote } from "./config.js";
 import type { DiffFile } from "./collector.js";
 import type { ReviewIssue, ReviewResult, Severity } from "./gate.js";
 import type { PushResult } from "./publisher.js";
@@ -279,6 +279,10 @@ export interface ReportView {
   issues: ReportIssueView[];
   /** 可选的推送结果（有 target 时展示） */
   pushes?: PushResult[];
+  /** 仓库根路径，供报告服务在「确认提交」时作为 git 推送的工作目录 */
+  repoCwd?: string;
+  /** 推送目标配置（脱敏：只含 tokenEnv 名，不含 token 明文；供页面按钮触发推送） */
+  targets?: TargetRemote[];
   /** 代码变更视图：按文件拆分的 hunks，供右侧 diff 面板渲染 */
   diffFiles: DiffFileView[];
 }
@@ -356,7 +360,7 @@ export function formatReport(
   result: ReviewResult,
   files: DiffFile[],
   gate: { passed: boolean; blockers: ReviewIssue[] },
-  meta: { repo?: string; ref?: string; generatedAt?: Date; pushes?: PushResult[] } = {}
+  meta: { repo?: string; ref?: string; generatedAt?: Date; pushes?: PushResult[]; repoCwd?: string; targets?: TargetRemote[] } = {}
 ): ReportView {
   const counts = { blocker: 0, warning: 0, info: 0 };
   for (const i of result.issues) {
@@ -387,6 +391,8 @@ export function formatReport(
       suggestion: i.suggestion,
     })),
     pushes: meta.pushes,
+    repoCwd: meta.repoCwd,
+    targets: meta.targets,
     diffFiles: files.map((f) => ({ path: f.path, hunks: parseDiff(f.diff) })),
   };
 }

@@ -49,6 +49,8 @@ export async function pushToTargets(
   if (targets.length === 0) {
     throw new Error("配置里没有 targets，无法推送。");
   }
+  // 标记为 ai-review 内部推送，跳过自身安装的 pre-push hook，避免「页面确认提交」时再次被拦截
+  process.env.AI_REVIEW_INTERNAL_PUSH = "1";
   const results: PushResult[] = [];
   for (const t of targets) {
     results.push(await pushOne(t, cwd));

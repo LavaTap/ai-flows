@@ -1,0 +1,12 @@
+# 忽略 .codebuddy/skills/gameui-screenshot/scripts 目录下的图片文件
+.codebuddy/skills/gameui-screenshot/scripts/**/*.jpg
+.codebuddy/skills/gameui-screenshot/scripts/**/*.jpeg
+.codebuddy/skills/gameui-screenshot/scripts/**/*.png
+.codebuddy/skills/gameui-screenshot/scripts/**/*.gif
+.codebuddy/skills/gameui-screenshot/scripts/**/*.bmp
+.codebuddy/skills/gameui-screenshot/scripts/**/*.webp
+.codebuddy/skills/gameui-screenshot/scripts/**/*.svg
+
+# 忽略截图目录
+截图/
+game_concepts/

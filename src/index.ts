@@ -103,7 +103,7 @@ async function run(
     } catch {
       /* detached HEAD 等场景忽略 */
     }
-    const view = buildReportView(result, files, gate, pushes, { ref });
+    const view = buildReportView(result, files, gate, pushes, { ref, repoCwd: CWD, targets: cfg.targets });
     writeFileSync(join(dir, `${id}.json`), JSON.stringify(view, null, 2), "utf8");
     const base = await ensureReportServer();
     console.log(`\n${GREEN}📄 评审结果页面：${base}/reports/${id}${RESET}`);
@@ -157,7 +157,8 @@ async function ensureReportServer(): Promise<string> {
   return `http://127.0.0.1:${DEFAULT_PORT}`;
 }
 
-/** 安装 pre-push hook：每次 git push 前自动跑 AI 评审并出页面；有 blocker 则阻断推送 */
+/** 安装 pre-push hook：git push 前自动 AI 评审并出页面；始终拦截本次 push，
+ * 引导用户去评审页面点「确认提交」按钮，由评审服务代为推送。ai-review 内部推送会跳过本 hook。 */
 function installPrePushHook(): number {
   const repo = spawnSync("git", ["rev-parse", "--show-toplevel"], {
     cwd: CWD,
@@ -180,19 +181,25 @@ function installPrePushHook(): number {
 
   const cli = THIS_FILE.replace(/\\/g, "/");
   const script = `#!/bin/sh
-# ai-review pre-push hook：push 前自动 AI 评审并出页面；有 blocker 则阻断推送
+# ai-review pre-push hook：push 前自动 AI 评审并出页面；始终拦截本次 git push，
+# 引导用户到评审页面点「确认提交」按钮，由评审服务代为推送到远端。
+# ai-review 内部推送（页面按钮触发）会设 AI_REVIEW_INTERNAL_PUSH=1 跳过本 hook。
+[ "$AI_REVIEW_INTERNAL_PUSH" = "1" ] && exit 0
+
 repo="$(git rev-parse --show-toplevel)" || exit 0
 [ -f "$repo/ai-review.config.json" ] || exit 0
 command -v node >/dev/null 2>&1 || exit 0
 cd "$repo" || exit 0
 node "${cli}" run --config ai-review.config.json --no-push --page
 rc=$?
-echo "[ai-review] 评审退出码=$rc（非0：存在阻塞问题，已拦截推送）"
-exit $rc
+echo "[ai-review] 评审完成（退出码=$rc）。请打开上述评审页面，点击「确认提交」按钮推送到远端。"
+echo "[ai-review] 本次 git push 已被拦截：评审通过后需在页面确认提交，由评审服务推送。"
+exit 1
 `;
   writeFileSync(hookPath, script, { encoding: "utf8", mode: 0o755 });
   console.log(`${GREEN}✔ 已安装 pre-push hook：${hookPath.replace(/\\/g, "/")}${RESET}`);
-  console.log(`${DIM}现在每次 git push 都会先跑 AI 评审；要求仓库根目录存在 ai-review.config.json。${RESET}`);
+  console.log(`${DIM}现在每次 git push 都会被拦截：先跑 AI 评审，再到评审页面点「确认提交」由服务代为推送。${RESET}`);
+  console.log(`${DIM}要求仓库根目录存在 ai-review.config.json。${RESET}`);
   return 0;
 }
 

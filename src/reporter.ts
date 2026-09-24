@@ -2,6 +2,7 @@ import { writeFileSync } from "node:fs";
 import type { ReviewResult, ReviewIssue } from "./gate.js";
 import type { PushResult } from "./publisher.js";
 import type { DiffFile } from "./collector.js";
+import type { TargetRemote } from "./config.js";
 import { formatReport, type ReportView } from "./reviewer.js";
 
 export type { ReportView } from "./reviewer.js";
@@ -202,6 +203,15 @@ code { font-family:var(--mono); font-size:.92em; }
 .pushes h2 { margin:0 0 10px; font-size:12px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:var(--dim); }
 .pushes .row { display:flex; gap:10px; align-items:baseline; font-family:var(--mono); font-size:13px; padding:3px 0; }
 .pushes .ok { color:var(--ok); } .pushes .bad { color:var(--block); }
+.submit-bar { margin-top:22px; padding:18px 22px; background:var(--surface); border:1px solid var(--border); border-radius:12px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+.push-btn { appearance:none; border:1px solid var(--accent); background:linear-gradient(180deg, rgba(255,114,76,.20), rgba(255,114,76,.08)); color:var(--accent); font-family:var(--sans); font-size:14px; font-weight:700; letter-spacing:.3px; padding:10px 22px; border-radius:10px; cursor:pointer; transition:all 150ms ease; }
+.push-btn:hover:not(:disabled) { background:linear-gradient(180deg, rgba(255,114,76,.30), rgba(255,114,76,.14)); box-shadow:0 0 0 3px var(--accent-soft); }
+.push-btn:active:not(:disabled) { transform:translateY(1px); }
+.push-btn:disabled { opacity:.6; cursor:not-allowed; border-color:var(--border-strong); color:var(--muted); background:var(--surface-2); }
+.push-hint { font-size:12.5px; color:var(--dim); }
+.push-result { flex:1; min-width:200px; font-family:var(--mono); font-size:12.5px; }
+.push-result .row { display:flex; gap:8px; align-items:baseline; padding:2px 0; flex-wrap:wrap; }
+.push-result .ok { color:var(--ok); } .push-result .bad { color:var(--block); }
 .footer { margin-top:50px; padding-top:20px; border-top:1px solid var(--border); font-size:12px; color:var(--dim); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; }
 /* 左右分栏布局 */
 .split { display:grid; grid-template-columns:4fr 6fr; gap:24px; align-items:start; margin-top:8px; }
@@ -361,6 +371,25 @@ function pushSection(v: ReportView): string {
   </section>`;
 }
 
+/** 确认提交栏：仅评审通过且配置了目标远端时启用按钮；有 blocker 时置灰禁用 */
+function submitBar(v: ReportView): string {
+  if (!v.targets || v.targets.length === 0) {
+    return `<section class="submit-bar"><span class="push-hint">未配置推送目标远端（config.targets 为空）。</span></section>`;
+  }
+  if (!v.passed) {
+    return `<section class="submit-bar">
+      <button type="button" class="push-btn" disabled>评审未通过 · 禁止推送</button>
+      <span class="push-hint">存在阻塞级问题，请先修复后再提交。</span>
+    </section>`;
+  }
+  const names = v.targets.map((t) => t.name).join(" / ");
+  return `<section class="submit-bar">
+    <button type="button" class="push-btn" id="pushBtn">确认提交到远端</button>
+    <span class="push-hint">目标：${esc(names)} · 点击后由评审服务推送到远端仓库</span>
+    <span class="push-result" id="pushResult"></span>
+  </section>`;
+}
+
 /** 把评审视图模型注入参考 HTML 模板（自包含单文件） */
 export function renderTemplate(v: ReportView): string {
   const passIcon = `<polyline points="4 12 10 18 20 6"></polyline>`;
@@ -413,6 +442,8 @@ export function renderTemplate(v: ReportView): string {
     ${statCards(v)}
   </section>
 
+  ${submitBar(v)}
+
   ${pushSection(v)}
 
   <div class="split">
@@ -440,30 +471,61 @@ export function renderTemplate(v: ReportView): string {
 </main>
 <script>
 (function(){
+  function escS(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   var issues = document.querySelectorAll('.issue[data-file]');
   var panel = document.querySelector('.diff-panel');
-  if(!issues.length || !panel) return;
-  issues.forEach(function(el){
-    el.addEventListener('click', function(){
-      var file = el.getAttribute('data-file');
-      var ls = parseInt(el.getAttribute('data-line-start'),10) || 0;
-      var le = parseInt(el.getAttribute('data-line-end'),10) || ls;
-      if(!ls) return;
-      var lines = panel.querySelectorAll('.diff-line[data-line]');
-      lines.forEach(function(l){ l.classList.remove('target'); });
-      var hit = null;
-      lines.forEach(function(l){
-        if(hit) return;
-        if(l.getAttribute('data-file') !== file) return;
-        var n = parseInt(l.getAttribute('data-line'),10);
-        if(n >= ls && n <= le) hit = l;
+  if(issues.length && panel){
+    issues.forEach(function(el){
+      el.addEventListener('click', function(){
+        var file = el.getAttribute('data-file');
+        var ls = parseInt(el.getAttribute('data-line-start'),10) || 0;
+        var le = parseInt(el.getAttribute('data-line-end'),10) || ls;
+        if(!ls) return;
+        var lines = panel.querySelectorAll('.diff-line[data-line]');
+        lines.forEach(function(l){ l.classList.remove('target'); });
+        var hit = null;
+        lines.forEach(function(l){
+          if(hit) return;
+          if(l.getAttribute('data-file') !== file) return;
+          var n = parseInt(l.getAttribute('data-line'),10);
+          if(n >= ls && n <= le) hit = l;
+        });
+        if(hit){
+          hit.classList.add('target');
+          hit.scrollIntoView({behavior:'smooth', block:'center'});
+        }
       });
-      if(hit){
-        hit.classList.add('target');
-        hit.scrollIntoView({behavior:'smooth', block:'center'});
+    });
+  }
+  var btn = document.getElementById('pushBtn');
+  if(btn){
+    btn.addEventListener('click', async function(){
+      var out = document.getElementById('pushResult');
+      var id = encodeURIComponent((location.pathname.split('/').filter(Boolean).pop()) || '');
+      btn.disabled = true;
+      var orig = btn.textContent;
+      btn.textContent = '推送中...';
+      out.innerHTML = '<span class="push-hint">正在推送，请稍候...</span>';
+      try{
+        var r = await fetch('/reports/' + id + '/push', { method:'POST' });
+        var data = await r.json();
+        var h = '';
+        if(Array.isArray(data.pushes)){
+          data.pushes.forEach(function(p){
+            h += '<div class="row"><span class="' + (p.ok ? 'ok' : 'bad') + '">' + (p.ok ? '✔ ' : '✖ ') + escS(p.name) + '</span><span>' + escS(p.message) + '</span></div>';
+          });
+        } else if(data.error){
+          h = '<span class="bad">' + escS(data.error) + '</span>';
+        }
+        out.innerHTML = h || '<span class="push-hint">无返回内容</span>';
+      } catch(e){
+        out.innerHTML = '<span class="bad">推送请求失败：' + escS(e && e.message ? e.message : String(e)) + '</span>';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = orig;
       }
     });
-  });
+  }
 })();
 </script>
 </body>
@@ -476,7 +538,7 @@ export function buildReportView(
   files: DiffFile[],
   gate: GateSummary,
   pushes?: PushResult[],
-  meta?: { repo?: string; ref?: string }
+  meta?: { repo?: string; ref?: string; repoCwd?: string; targets?: TargetRemote[] }
 ): ReportView {
   return formatReport(result, files, gate, { ...meta, pushes });
 }

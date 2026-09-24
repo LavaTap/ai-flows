@@ -1,5 +1,5 @@
 GitHub 仓库 AI 评审平台实现事先计划
-‌结论先行：完全可以实现。‌ GitHub 生态有成熟的分支保护、Actions 工作流、Webhook、PR Review API 等基础设施，可以 1:1 复刻百度内部那套「提交拦截 → 评审链接 → AI评审 → 合并放行」的闭环流程。
+‌结论先行：完全可以实现。‌ GitHub 生态有成熟的分支保护、Actions 工作流、Webhook、PR Review API 等基础设施
 
 以下是完整的事先实施计划。
 
@@ -8,7 +8,6 @@ GitHub 仓库 AI 评审平台实现事先计划
 对应你描述的四个环节，在 GitHub 上的映射关系：
 
 表格
-百度内部流程	GitHub 对应实现	核心机制
 提交代码拦截	分支保护规则（Branch Protection）	禁止直接 push 到 main/master，必须走 PR
 生成评审链接	PR 自动创建 + 状态检查	每个 PR 就是天然的评审入口，附带 diff/上下文
 AI 评审	GitHub Actions + 大模型 API	PR 事件触发，调用模型分析后回写评论

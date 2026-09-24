@@ -1,7 +1,8 @@
 import { createServer, type Server } from "node:http";
-import { readdirSync, readFileSync, existsSync, mkdirSync } from "node:fs";
+import { readdirSync, readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderTemplate, type ReportView } from "./reporter.js";
+import { pushToTargets } from "./publisher.js";
 
 /** 存放评审报告数据（JSON）的目录名（在该 git 仓库根下） */
 export const REPORTS_DIR = ".ai-review-reports";
@@ -113,7 +114,7 @@ export async function startReportServer(
   const dir = opts.dir ?? REPORTS_DIR;
   mkdirSync(dir, { recursive: true });
 
-  const server = createServer((req, res) => {
+  const server = createServer(async (req, res) => {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     const u = new URL(req.url ?? "/", `http://${host}`);
     const path = u.pathname;
@@ -125,6 +126,37 @@ export async function startReportServer(
     if (path === "/health") {
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
       res.end("ok");
+      return;
+    }
+    // 确认提交：页面按钮 POST 触发，读 JSON 拿仓库路径+目标远端，推送后写回 pushes
+    const pm = path.match(/^\/reports\/([^/\\]+)\/push$/);
+    if (pm && req.method === "POST") {
+      const f = join(dir, pm[1] + ".json");
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      if (!f.startsWith(dir + "") || !existsSync(f)) {
+        res.statusCode = 404;
+        res.end(JSON.stringify({ error: "报告不存在" }));
+        return;
+      }
+      try {
+        const view = JSON.parse(readFileSync(f, "utf8")) as ReportView;
+        if (!view.passed) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: "评审未通过，禁止推送" }));
+          return;
+        }
+        if (!view.targets || !view.targets.length || !view.repoCwd) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: "未配置推送目标或仓库路径" }));
+          return;
+        }
+        const pushes = await pushToTargets(view.targets, view.repoCwd);
+        writeFileSync(f, JSON.stringify({ ...view, pushes }, null, 2), "utf8");
+        res.end(JSON.stringify({ pushes }));
+      } catch (err: any) {
+        res.statusCode = 500;
+        res.end(JSON.stringify({ error: err?.message || String(err) }));
+      }
       return;
     }
     const m = path.match(/^\/reports\/([^/\\]+)$/);
