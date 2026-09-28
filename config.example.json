@@ -27,6 +27,13 @@
     "scanRoots": ["."],
     "gitHubTokenEnv": "GH_TOKEN"
   },
+  "crawler": {
+    "root": "D:/code/private/Research-Crawler",
+    "command": "claude",
+    "args": ["-p", "--permission-mode", "bypassPermissions"],
+    "outputDir": "output",
+    "timeoutMs": 600000
+  },
   "targets": [
     {
       "name": "company-git",

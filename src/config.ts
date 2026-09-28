@@ -47,6 +47,20 @@ export interface ReviewsConfig {
   gitHubTokenEnv?: string;
 }
 
+/** 节点 01「产品调研」调用的外部调研 agent（Research-Crawler）配置 */
+export interface CrawlerConfig {
+  /** agent 项目根目录（绝对路径，或相对当前工作目录）；agent 在该目录内运行 */
+  root?: string;
+  /** agent CLI 可执行文件，缺省 claude */
+  command?: string;
+  /** 传给 agent CLI 的参数；需求文本经 stdin 传入，不拼进命令行 */
+  args?: string[];
+  /** agent 产出目录名（相对 root），打包成 zip 的对象，缺省 output */
+  outputDir?: string;
+  /** agent 执行超时毫秒，缺省 600000（10 分钟） */
+  timeoutMs?: number;
+}
+
 export interface ReviewConfig {
   diff: DiffConfig;
   model: ModelConfig;
@@ -57,6 +71,8 @@ export interface ReviewConfig {
   rules?: Record<string, unknown>;
   /** 评审平台相关配置（聚合扫描、目录树数据源等） */
   reviews?: ReviewsConfig;
+  /** 节点 01 产品调研的调研 agent 配置 */
+  crawler?: CrawlerConfig;
 }
 
 const DEFAULT_CONFIG_PATH = "ai-review.config.json";
@@ -88,5 +104,11 @@ export function loadConfig(configPath?: string): ReviewConfig {
   cfg.reviews = cfg.reviews ?? {};
   cfg.reviews.scanRoots = cfg.reviews.scanRoots ?? ["."];
   cfg.reviews.gitHubTokenEnv = cfg.reviews.gitHubTokenEnv ?? "GH_TOKEN";
+  cfg.crawler = cfg.crawler ?? {};
+  cfg.crawler.root = cfg.crawler.root ?? "";
+  cfg.crawler.command = cfg.crawler.command ?? "claude";
+  cfg.crawler.args = cfg.crawler.args ?? ["-p", "--permission-mode", "bypassPermissions"];
+  cfg.crawler.outputDir = cfg.crawler.outputDir ?? "output";
+  cfg.crawler.timeoutMs = cfg.crawler.timeoutMs ?? 600000;
   return cfg;
 }

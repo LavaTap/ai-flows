@@ -57,7 +57,7 @@
 
 | 节点 | 部门 | 环节 | runner | 状态 | 说明 |
 |---|---|---|---|---|---|
-| 01 | 产品调研 | 产品调研 | `skill:research-crawler` | 已接入 | 需求文字 + 附件 → LLM 生成调研文档；另有「需求分析」按钮（`product-analysis` skill） |
+| 01 | 产品调研 | 产品调研 | `research-crawler` | 已接入 | 需求文字直接作 prompt → 调外部调研 agent（Research-Crawler，`crawler.root` 配置）跑 skill；产物为 agent `output/` 目录打包的 zip（不再产出 md） |
 | 02 | AI产品 | 产品策划案 | `skill:product-manager` | 已接入 | 需求文字 + 附件 → LLM 生成产品规划 |
 | 03 | 程序中台 | AI 代码评审 | `ai-review` | 已就绪 | 接现有 ai-review 管线（统一四态，执行完成保持执行中待提交） |
 | 04 | 产品运营 | 运营 | — | 留空待接入 | — |
@@ -98,6 +98,8 @@ ai-flows/
 7. **P6 服务整合**（已完成）：`ai-review platform [--port 4311] [--repo <path>]` 子命令，走 `dist/` 构建产物；冒烟测试 22 项全过（登录/权限/执行/批准/穿越防护），P5 后另做真实评审端到端验证（执行 → LLM 评审 → 报告页 200）。
 8. **P7 角色卡片 + 四态工作流 + Skill 接入**（已完成）：状态机改四态 `todo → running → in_review → done`（新增 `submit`/`reject` 动作；approve/reject 非 `in_review` 返回 409；旧 `approved` 启动自动迁移为 `done`）；详情面板角色卡片（首字头像按邮箱哈希 6 色取色 + 悬停浮层显示姓名/岗位）；节点 01/02 接入 `.agents` 自研 skill（SKILL.md 剥 frontmatter 作系统提示 → 平台内 LLM 生成 Markdown 产物，写入用户经目录弹窗选定的输出目录，进度 10/35/70/95/100 回写 db，产物可下载）；节点 01 另有「需求分析」按钮（`product-analysis` skill）；需求文字编辑 + 附件上传 + busy 并发防护。设计详见 `docs/superpowers/specs/2026-09-24-character-skill-design.md`。
 9. **P8 评审记录跨仓库聚合 + 报告页改造**（已完成）：`ai-review.config.json` 新增 `reviews.scanRoots`（默认 `["."]`）+ `reviews.gitHubTokenEnv`（默认 `GH_TOKEN`）；`collectExternalReviews` 改递归遍历 scanRoots（限 3 层深度，跳过 `.git`/`node_modules`/`dist` 等），跨仓库报告带 `repo` 字段标记来源仓库名；`reportUrl` 仅在报告 JSON 存在于平台当前仓库时回填（跨仓库报告留空，详情面板显示来源仓库标签）；启动时加载平台自身配置的 scanRoots（加载失败回退到只扫本仓库）。报告页布局重排：左侧新建「仓库面板」（上半仓库目录树 + 中变更文件目录 + 下问题列表，整面板可折叠为窄条）；目录树数据源 auto fallback：优先 GitHub Trees API（`git remote get-url origin` 解析 owner/repo + `GET /repos/{o}/{r}/git/trees/{branch}?recursive=1`，token 从环境变量读，零依赖走全局 `fetch`），失败回退 `node:fs` 本地递归；问题列表精简为一行（severity + 条例 ID + 行号区间），完整内容通过 `<script type="application/json" id="issueStore">` 注入；点击问题项 → 在 diff 区间末尾行后展开堆叠菜单（含完整错误 + 修复建议，同区间多问题堆叠）+ 高亮区间按 severity 配色（blocker 红 / warning 琥珀 / info 青绿，遵守禁蓝色约束）。
+
+10. **P9 节点 01 改接外部调研 agent**（已完成）：`ai-review.config.json` 新增 `crawler` 段（`root` 调研 agent 项目根 / `command` 缺省 `claude` / `args` / `outputDir` 缺省 `output` / `timeoutMs`）；节点 01 runner 由 `skill:research-crawler` 改为 `research-crawler`，执行时把「调研需求内容」文本经 stdin 直接作为 agent prompt，在该项目内跑完 skill 后把 `output/` 整目录打包为 zip（`src/crawler.ts` 零依赖 zip：CRC32 + `zlib.deflateRawSync`）落盘到节点输出目录，作为可下载产物；不再产出 Markdown，节点 01 的「需求分析」（`product-analysis`）按钮同步移除。
 
 ## 8. 待确认事项（实施时已按默认处理）
 

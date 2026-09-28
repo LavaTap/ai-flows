@@ -12,8 +12,8 @@
     .page-title em{font-style:normal;color:var(--led);font-weight:500;}
     .page-sub{font:400 13px/20px var(--font-sans);color:var(--muted);margin:0 0 28px;}
     .card{background:var(--glass-fill);border:1px solid var(--glass-line);border-radius:var(--radius-card);
-      backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:24px 28px;margin-bottom:20px;
-      box-shadow:0 1px 2px rgba(0,0,0,.03);}
+      padding:24px 28px;margin-bottom:20px;
+      box-shadow:0 1px 2px rgba(15,23,42,.04),0 1px 3px rgba(15,23,42,.06);}
     .card h2{margin:0 0 16px;font:600 15px/22px var(--font-sans);color:var(--ink-soft);
       display:flex;align-items:center;gap:8px;}
     .card h2 .dot{width:6px;height:6px;border-radius:50%;background:var(--led);box-shadow:0 0 6px var(--led-glow);}
@@ -40,15 +40,15 @@
       border-radius:8px;padding:8px 12px;font:400 12px/18px var(--font-sans);}
     .gh-input-row{display:flex;gap:8px;}
     .gh-input-row input{flex:1;padding:8px 12px;border:1px solid var(--glass-line);border-radius:8px;
-      background:rgba(255,255,255,.7);font:400 13px/20px var(--font-sans);color:var(--ink);font-family:var(--font-mono);}
-    .gh-input-row input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-soft);}
+      background:#ffffff;font:400 13px/20px var(--font-sans);color:var(--ink);font-family:var(--font-mono);}
+    .gh-input-row input:focus{outline:none;border-color:var(--led);box-shadow:0 0 0 3px var(--led-soft);}
     .btn{padding:8px 16px;border-radius:8px;font:500 12px/18px var(--font-sans);cursor:pointer;
       border:1px solid var(--glass-line);background:var(--glass-fill);color:var(--ink-soft);white-space:nowrap;}
-    .btn:hover{background:rgba(255,255,255,.8);}
+    .btn:hover{background:var(--paper-2);}
     .btn.primary{background:var(--teal);color:#fff;border-color:var(--teal);}
-    .btn.primary:hover{background:#21887f;}
-    .btn.danger{background:var(--led-soft);color:var(--led);border-color:rgba(173,49,77,.2);}
-    .btn.danger:hover{background:rgba(173,49,77,.18);}
+    .btn.primary:hover{background:#059669;}
+    .btn.danger{background:var(--block-soft);color:var(--block);border-color:rgba(239,68,68,.2);}
+    .btn.danger:hover{background:rgba(239,68,68,.18);}
     .btn:disabled{opacity:.5;cursor:not-allowed;}
     .breadcrumb{display:flex;align-items:center;gap:8px;font:400 12px/18px var(--font-sans);color:var(--muted);margin-bottom:16px;}
     .breadcrumb a{color:var(--muted);text-decoration:none;}

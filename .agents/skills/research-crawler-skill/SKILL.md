@@ -7,7 +7,6 @@ description_zh: 游戏评论采集与治愈向正向复核分析。支持B站、
 # 游戏评论采集与治愈向分析
 
 本 skill 采集游戏相关评论并按治愈游戏研究框架进行情绪、治愈相关度和标签标注。支持 B站、Steam、小红书三平台，以及可选 AI 分析和 Excel 汇总。
-***本skill使用的均为对应平台的公开接口。遵守一切平台的 API 限制和规则。***
 
 ## 首次加载初始化（最高优先级，先于一切流程执行）
 
@@ -221,9 +220,7 @@ B站评论采集时执行基础清洗（`bridge.py` 的 `basic_clean`）：
 | `scripts/tools/init_workspace.py` | 初始化工作区目录框架（output/excel/reports 各平台 ai/error/limit/program） | **首次加载 skill 必须先运行**；目录缺失时补建 |
 | `scripts/bilibili/bridge.py` | B站搜索+采集+清洗（两阶段编排器，含 normalize_whitespace 单行清洗） | B站流程 |
 | `scripts/steam/steam_crawler.py` | Steam 评论采集（自动匹配 AppID） | Steam 流程 |
-| `scripts/xiaohongshu/batch_cozy_games_crawl.py` | 小红书批量游戏评论采集（从文件读取游戏列表，批量搜索采集） | 小红书流程 |
-| `scripts/xiaohongshu/list_get_links.py` | 小红书搜索笔记并获取链接 | 小红书流程 |
-| `scripts/xiaohongshu/full_api_crawl.py` | 小红书单篇笔记评论采集（Playwright+CDP 捕获接口） | 小红书流程 |
+| `scripts/xiaohongshu/xhs_qrcode_crawler.py` | 小红书评论采集（Playwright+CDP 捕获接口，日志→reports/xiaohongshu/program/） | 小红书流程 |
 | `scripts/flow/merge_all_to_excel.py` | 按平台合并 output.csv 为 Excel，每平台输出 `excel/{平台}_{时间戳}.xlsx`（动态行高排版） | 数据汇总 |
 | `scripts/tools/limit_comments_for_ai.py` | 评论预处理：读取 comments.csv/output.csv 生成 comments_for_ai.csv（>50条截断），报告→`reports/{平台}/limit/` | AI 分析前 |
 | `scripts/flow/batch_ai_analysis.py` | 批量 AI 分析：生成 analysis/output.csv + 合并回 output/output.csv + 每会话AI报告→`reports/{平台}/ai/` | AI 分析 |
@@ -245,4 +242,3 @@ B站评论采集时执行基础清洗（`bridge.py` 的 `basic_clean`）：
 - 不得为了提高正向比例把强负评硬判为正向
 - 不得删除可疑负向样本
 - 不得在未读取参考文档的情况下进行 AI 分析
-- 本 skill 修改脚本时，不得添加任何 emoji。

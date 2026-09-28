@@ -121,41 +121,42 @@ function rich(text: string): string {
 /** 参考模板样式（Vela 暖暗黑）。内联以保证报告 HTML 自包含、可离线打开 */
 const REPORT_CSS = `
 :root {
-  --bg:#16120c; --surface:#1c1610; --surface-2:#221b14; --elevated:#2a221a;
-  --border:rgba(255,196,148,.10); --border-strong:rgba(255,196,148,.20);
-  --text:#f7f5f2; --muted:#b3a99d; --dim:#7a7164;
-  --accent:#ff724c; --ok:#7adcc0; --warn:#ffd462; --block:#f05545; --info:#86b4ff;
-  --accent-soft:rgba(255,114,76,.12); --ok-soft:rgba(122,220,192,.12);
-  --warn-soft:rgba(255,212,98,.13); --block-soft:rgba(240,85,69,.13); --info-soft:rgba(134,180,255,.12);
-  --flash:rgba(255,212,98,.35);
-  --ok-line:rgba(122,220,192,.22); --ok-line-strong:rgba(122,220,192,.4);
-  --ok-glow:rgba(122,220,192,.5); --ok-grad-1:rgba(122,220,192,.06); --ok-grad-2:rgba(122,220,192,.02);
-  --block-line:rgba(240,85,69,.24); --block-line-strong:rgba(240,85,69,.42);
-  --block-glow:rgba(240,85,69,.5); --block-grad-1:rgba(240,85,69,.07); --block-grad-2:rgba(240,85,69,.02);
-  --diff-hunk-bg:rgba(255,196,148,.04); --diff-add-bg:rgba(122,220,192,.09); --diff-del-bg:rgba(240,85,69,.09);
-  --body-grad-1:rgba(255,114,76,.07); --body-grad-2:rgba(122,220,192,.05);
-  --btn-grad-1:rgba(255,114,76,.20); --btn-grad-2:rgba(255,114,76,.08);
-  --btn-grad-hover-1:rgba(255,114,76,.30); --btn-grad-hover-2:rgba(255,114,76,.14);
+  /* 深色主题：靛蓝 SaaS 暗色版 */
+  --bg:#0f172a; --surface:#1e293b; --surface-2:#334155; --elevated:#1e293b;
+  --border:rgba(148,163,184,.15); --border-strong:rgba(148,163,184,.25);
+  --text:#f1f5f9; --muted:#94a3b8; --dim:#64748b;
+  --accent:#818cf8; --ok:#34d399; --warn:#fbbf24; --block:#f87171; --info:#60a5fa;
+  --accent-soft:rgba(129,140,248,.14); --ok-soft:rgba(52,211,153,.14);
+  --warn-soft:rgba(251,191,36,.15); --block-soft:rgba(248,113,113,.15); --info-soft:rgba(96,165,250,.14);
+  --flash:rgba(251,191,36,.35);
+  --ok-line:rgba(52,211,153,.25); --ok-line-strong:rgba(52,211,153,.45);
+  --ok-glow:rgba(52,211,153,.5); --ok-grad-1:rgba(52,211,153,.08); --ok-grad-2:rgba(52,211,153,.02);
+  --block-line:rgba(248,113,113,.28); --block-line-strong:rgba(248,113,113,.45);
+  --block-glow:rgba(248,113,113,.5); --block-grad-1:rgba(248,113,113,.09); --block-grad-2:rgba(248,113,113,.02);
+  --diff-hunk-bg:rgba(148,163,184,.06);
+  --body-grad-1:rgba(129,140,248,.07); --body-grad-2:rgba(52,211,153,.04);
+  --btn-grad-1:rgba(129,140,248,.22); --btn-grad-2:rgba(129,140,248,.08);
+  --btn-grad-hover-1:rgba(129,140,248,.32); --btn-grad-hover-2:rgba(129,140,248,.14);
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
   --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",Roboto,sans-serif;
 }
-/* 日间主题：覆盖变量 + 局部硬编码 rgba 适配浅底（前景色整体加深，保证正文/小字达到 WCAG AA 4.5:1） */
+/* 浅色主题：靛蓝 SaaS 主风（灰白 + 靛蓝） */
 [data-theme="light"] {
-  --bg:#f6f2ea; --surface:#ffffff; --surface-2:#f1ece3; --elevated:#faf6ef;
-  --border:rgba(60,40,20,.10); --border-strong:rgba(60,40,20,.20);
-  --text:#2a2018; --muted:#52483f; --dim:#6f6459;
-  --accent:#bd411d; --ok:#14754f; --warn:#8a5f00; --block:#bf3222; --info:#2760b8;
-  --accent-soft:rgba(189,65,29,.10); --ok-soft:rgba(20,117,79,.10);
-  --warn-soft:rgba(138,95,0,.12); --block-soft:rgba(191,50,34,.10); --info-soft:rgba(39,96,184,.10);
-  --flash:rgba(138,95,0,.30);
-  --ok-line:rgba(20,117,79,.25); --ok-line-strong:rgba(20,117,79,.4);
-  --ok-glow:rgba(20,117,79,.45); --ok-grad-1:rgba(20,117,79,.08); --ok-grad-2:rgba(20,117,79,.02);
-  --block-line:rgba(191,50,34,.26); --block-line-strong:rgba(191,50,34,.42);
-  --block-glow:rgba(191,50,34,.45); --block-grad-1:rgba(191,50,34,.08); --block-grad-2:rgba(191,50,34,.02);
-  --diff-hunk-bg:rgba(60,40,20,.04); --diff-add-bg:rgba(20,117,79,.10); --diff-del-bg:rgba(191,50,34,.10);
-  --body-grad-1:rgba(189,65,29,.06); --body-grad-2:rgba(20,117,79,.04);
-  --btn-grad-1:rgba(189,65,29,.10); --btn-grad-2:rgba(189,65,29,.05);
-  --btn-grad-hover-1:rgba(189,65,29,.18); --btn-grad-hover-2:rgba(189,65,29,.09);
+  --bg:#f8fafc; --surface:#ffffff; --surface-2:#f1f5f9; --elevated:#ffffff;
+  --border:#e2e8f0; --border-strong:#cbd5e1;
+  --text:#0f172a; --muted:#64748b; --dim:#94a3b8;
+  --accent:#4f46e5; --ok:#10b981; --warn:#f59e0b; --block:#ef4444; --info:#3b82f6;
+  --accent-soft:rgba(79,70,229,.10); --ok-soft:rgba(16,185,129,.10);
+  --warn-soft:rgba(245,158,11,.12); --block-soft:rgba(239,68,68,.10); --info-soft:rgba(59,130,246,.10);
+  --flash:rgba(245,158,11,.30);
+  --ok-line:rgba(16,185,129,.25); --ok-line-strong:rgba(16,185,129,.4);
+  --ok-glow:rgba(16,185,129,.45); --ok-grad-1:rgba(16,185,129,.08); --ok-grad-2:rgba(16,185,129,.02);
+  --block-line:rgba(239,68,68,.26); --block-line-strong:rgba(239,68,68,.42);
+  --block-glow:rgba(239,68,68,.45); --block-grad-1:rgba(239,68,68,.08); --block-grad-2:rgba(239,68,68,.02);
+  --diff-hunk-bg:rgba(15,23,42,.04);
+  --body-grad-1:rgba(79,70,229,.05); --body-grad-2:rgba(16,185,129,.03);
+  --btn-grad-1:rgba(79,70,229,.12); --btn-grad-2:rgba(79,70,229,.05);
+  --btn-grad-hover-1:rgba(79,70,229,.20); --btn-grad-hover-2:rgba(79,70,229,.10);
 }
 .theme-toggle { appearance:none; background:var(--surface); border:1px solid var(--border); color:var(--muted); width:34px; height:34px; border-radius:8px; display:inline-grid; place-items:center; cursor:pointer; transition:all 150ms ease; padding:0; }
 .theme-toggle:hover { color:var(--text); border-color:var(--border-strong); }
@@ -176,12 +177,12 @@ body {
 }
 a { color:var(--info); text-decoration:none; }
 a:hover { text-decoration:underline; }
-.topbar { width:100%; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; gap:16px; border-bottom:1px solid var(--border); background:rgba(22,18,12,.85); backdrop-filter:blur(10px); position:sticky; top:0; z-index:10; }
+.topbar { width:100%; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; gap:16px; border-bottom:1px solid var(--border); background:rgba(15,23,42,.85); backdrop-filter:blur(10px); position:sticky; top:0; z-index:10; }
 .brand { display:inline-flex; align-items:center; gap:10px; font-weight:700; letter-spacing:-.2px; font-size:15px; }
-.brand-mark { width:22px; height:22px; border-radius:6px; background:linear-gradient(145deg,#ff9a71 0%,#ff724c 60%,#e95235 100%); box-shadow:0 0 12px rgba(255,112,69,.45), inset 0 1px 0 rgba(255,255,255,.3); position:relative; }
+.brand-mark { width:22px; height:22px; border-radius:6px; background:linear-gradient(145deg,#818cf8 0%,#4f46e5 60%,#4338ca 100%); box-shadow:0 0 12px rgba(79,70,229,.45), inset 0 1px 0 rgba(255,255,255,.3); position:relative; }
 .brand-mark::before, .brand-mark::after { content:""; position:absolute; left:50%; transform:translateX(-50%); border-left:4px solid transparent; border-right:4px solid transparent; }
-.brand-mark::before { top:4px; border-bottom:5px solid #1a130c; }
-.brand-mark::after { bottom:4px; border-top:5px solid #1a130c; }
+.brand-mark::before { top:4px; border-bottom:5px solid #1e1b4b; }
+.brand-mark::after { bottom:4px; border-top:5px solid #1e1b4b; }
 .back-link { font-size:13px; color:var(--muted); padding:6px 12px; border:1px solid var(--border); border-radius:8px; transition:all 150ms ease; }
 .back-link:hover { color:var(--text); border-color:var(--border-strong); background:var(--surface); text-decoration:none; }
 .main { width:100%; padding:16px 16px 28px; }
@@ -290,17 +291,28 @@ code { font-family:var(--mono); font-size:.92em; }
 .left-summary .icon { font-size:14px; }
 .left-summary .count { margin-left:auto; font-family:var(--mono); font-size:10.5px; padding:1px 7px; border-radius:999px; background:var(--accent-soft); color:var(--accent); }
 .left-sec-body { padding:4px 0; }
-/* 违反条例列表（按 category 分组） */
+/* 违反条例列表（按 severity 分组） */
 .rule-list { padding:2px 0; }
-.rule-item { display:flex; align-items:center; gap:8px; padding:8px 14px; border-bottom:1px solid var(--border); cursor:pointer; transition:background 150ms ease; }
-.rule-item:last-child { border-bottom:none; }
-.rule-item:hover { background:var(--surface-2); }
-.rule-item .rule-sev { flex:0 0 auto; width:8px; height:8px; border-radius:50%; }
-.rule-item .rule-sev.blocker { background:var(--block); box-shadow:0 0 6px var(--block); }
-.rule-item .rule-sev.warning { background:var(--warn); box-shadow:0 0 6px var(--warn); }
-.rule-item .rule-sev.info { background:var(--ok); box-shadow:0 0 6px var(--ok); }
-.rule-item .rule-name { flex:1; min-width:0; font-size:12px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.rule-item .rule-count { flex:0 0 auto; font-size:10.5px; font-weight:700; padding:1px 8px; border-radius:999px; background:var(--accent-soft); color:var(--accent); }
+/* severity 筛选条 */
+.sev-filter { display:flex; align-items:center; gap:6px; padding:8px 14px; border-bottom:1px solid var(--border); background:var(--surface-2); flex-wrap:wrap; }
+.sev-filter .sf-label { font-size:10.5px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:var(--dim); }
+.sev-filter .sf-btn { appearance:none; border:1px solid var(--border); background:var(--surface); color:var(--muted); font-size:10.5px; font-weight:600; letter-spacing:.5px; padding:3px 10px; border-radius:999px; cursor:pointer; transition:all 120ms ease; font-family:var(--sans); }
+.sev-filter .sf-btn:hover { border-color:var(--border-strong); color:var(--text); }
+.sev-filter .sf-btn.active.blocker { background:var(--block); border-color:var(--block); color:#fff; }
+.sev-filter .sf-btn.active.warning { background:var(--warn); border-color:var(--warn); color:#fff; }
+.sev-filter .sf-btn.active.info { background:var(--ok); border-color:var(--ok); color:#fff; }
+.sev-filter .sf-clear { margin-left:auto; appearance:none; background:none; border:none; color:var(--dim); font-size:10.5px; cursor:pointer; font-family:var(--sans); }
+.sev-filter .sf-clear:hover { color:var(--text); }
+/* 单个问题项：左侧条例名 + 问题描述占满，最右侧行号区间，无 severity 色点 */
+.rule-issue { display:flex; align-items:center; gap:8px; padding:7px 14px; border-top:1px solid var(--border); cursor:pointer; transition:background 120ms ease; }
+.rule-issue:first-child { border-top:none; }
+.rule-issue:hover { background:var(--surface-2); }
+.rule-issue .ri-rule { font-family:var(--mono); font-size:11px; color:var(--text); font-weight:600; white-space:nowrap; flex:0 0 auto; }
+.rule-issue[data-sev="blocker"] .ri-rule { color:var(--block); }
+.rule-issue[data-sev="warning"] .ri-rule { color:var(--warn); }
+.rule-issue[data-sev="info"] .ri-rule { color:var(--ok); }
+.rule-issue .ri-msg { font-size:11px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; }
+.rule-issue .ri-loc { font-family:var(--mono); font-size:10.5px; color:var(--dim); white-space:nowrap; flex:0 0 auto; margin-left:auto; }
 
 /* 右栏 */
 .right-col { display:flex; flex-direction:column; gap:12px; min-width:0; flex:1; min-height:0; }
@@ -310,12 +322,22 @@ code { font-family:var(--mono); font-size:.92em; }
 .result-head h2 { margin:0; font-size:13px; font-weight:700; letter-spacing:.5px; }
 .result-head .result-caret { flex:0 0 auto; font-size:11px; color:var(--dim); transition:transform 200ms ease; }
 .result-section.collapsed .result-caret { transform:rotate(-90deg); }
-.result-body { padding:14px 16px 16px; }
+.result-body { padding:10px 12px 12px; }
 .result-section.collapsed .result-body { display:none; }
-.result-body .verdict { margin:0; }
-.result-body .summary { margin-top:12px; }
-.result-body .stats { margin-top:14px; }
-.result-body .pushes { margin-top:14px; }
+.result-body .verdict { margin:0; padding:12px 14px; gap:14px; }
+.result-body .verdict-icon { width:36px; height:36px; }
+.result-body .verdict-icon svg { width:18px; height:18px; }
+.result-body .verdict-text h1 { font-size:15px; margin:0 0 2px; }
+.result-body .verdict-meta { font-size:10.5px; }
+.result-body .verdict-pill { font-size:10px; padding:4px 10px; letter-spacing:1px; }
+.result-body .summary { margin-top:10px; padding:10px 12px; }
+.result-body .summary p { font-size:10.5px; }
+.result-body .summary h2 { font-size:10px; }
+.result-body .stats { margin-top:10px; gap:8px; }
+.result-body .stat { padding:8px 10px; }
+.result-body .stat .num { font-size:16px; }
+.result-body .stat .lbl { font-size:10px; }
+.result-body .pushes { margin-top:10px; padding:10px 12px; }
 
 /* 提交按钮（顶栏） */
 .submit-toggle { appearance:none; border:1px solid var(--accent); background:linear-gradient(180deg, var(--btn-grad-1), var(--btn-grad-2)); color:var(--accent); font-family:var(--sans); font-size:13px; font-weight:700; padding:7px 16px; border-radius:8px; cursor:pointer; transition:all 150ms ease; display:inline-flex; align-items:center; gap:6px; }
@@ -345,20 +367,20 @@ code { font-family:var(--mono); font-size:.92em; }
 .diff-line { display:flex; align-items:flex-start; font-family:var(--mono); font-size:12.5px; line-height:1.55; }
 .diff-line .gutter { flex:0 0 42px; padding:0 6px; text-align:right; color:var(--dim); background:var(--surface-2); user-select:none; border-right:1px solid var(--border); }
 .diff-line .content { flex:1; padding:0 10px; white-space:pre-wrap; word-break:break-word; min-width:0; }
-.diff-line.add { background:var(--diff-add-bg); }
-.diff-line.add .content { color:var(--ok); }
-.diff-line.del { background:var(--diff-del-bg); }
-.diff-line.del .content { color:var(--block); }
+/* 以下代码批注色值为神圣不可改（AGENTS.md），全部硬编码锁定 */
+.diff-line.add { background:rgba(122,220,192,.09); }
+.diff-line.add .content { color:#14754f; }
+.diff-line.del { background:rgba(240,85,69,.09); }
+.diff-line.del .content { color:#bf3222; }
 .diff-line.ctx .content { color:var(--muted); }
-.diff-line.target { animation:flash 1.4s ease-out; box-shadow:inset 3px 0 0 var(--warn); }
-.diff-line.target-range { background:var(--warn-soft); box-shadow:inset 3px 0 0 var(--warn); }
+.diff-line.target { animation:flash 1.4s ease-out; box-shadow:inset 3px 0 0 #f59e0b; }
+.diff-line.target-range { background:rgba(255,212,98,.13); box-shadow:inset 3px 0 0 #f59e0b; }
 /* 点击问题项按 severity 高亮区间（blocker 红 / warning 琥珀 / info 青绿，遵守禁蓝色约束） */
-.diff-line.hl-blocker { background:rgba(173,49,77,.20); box-shadow:inset 3px 0 0 var(--block); }
-.diff-line.hl-warning { background:var(--warn-soft); box-shadow:inset 3px 0 0 var(--warn); }
-.diff-line.hl-info { background:var(--ok-soft); box-shadow:inset 3px 0 0 var(--ok); }
-/* 堆叠菜单（点击问题项在 diff 区间末尾展开；卡片默认折叠，点击 head 展开） */
-.issue-menu { margin:6px 0 10px; padding:0; border-radius:10px; overflow:hidden; display:flex; flex-direction:column; gap:8px; background:var(--surface-2); border:1px solid var(--border-strong); }
-.issue-menu-card { padding:10px 14px; border-left:3px solid var(--dim); background:var(--surface); border-radius:8px; }
+.diff-line.hl-blocker { background:rgba(173,49,77,.20); box-shadow:inset 3px 0 0 #ef4444; }
+.diff-line.hl-warning { background:rgba(255,212,98,.13); box-shadow:inset 3px 0 0 #f59e0b; }
+.diff-line.hl-info { background:rgba(122,220,192,.12); box-shadow:inset 3px 0 0 #10b981; }
+/* 堆叠菜单（内联渲染在 diff 行后，卡片默认折叠，点击 head 展开） */
+.issue-menu-card { margin:0; padding:10px 14px; border-left:3px solid var(--dim); background:var(--surface); border-radius:0; }
 .issue-menu-card.sev-blocker { border-left-color:var(--block); background:var(--block-soft); }
 .issue-menu-card.sev-warning { border-left-color:var(--warn); background:var(--warn-soft); }
 .issue-menu-card.sev-info { border-left-color:var(--ok); background:var(--ok-soft); }
@@ -367,10 +389,12 @@ code { font-family:var(--mono); font-size:.92em; }
 .issue-menu-card .menu-head .menu-caret { flex:0 0 auto; font-size:10px; color:var(--dim); transition:transform 200ms ease; display:inline-block; }
 .issue-menu-card:not(.collapsed) .menu-head .menu-caret { transform:rotate(90deg); }
 .issue-menu-card.collapsed .menu-body { display:none; }
+/* 收纳态：上下内边距收窄，整行宽度不变，视觉上更紧凑 */
+.issue-menu-card.collapsed { padding-top:6px; padding-bottom:6px; }
 .issue-menu-card .menu-head .sev { font-size:10.5px; font-weight:700; letter-spacing:1px; text-transform:uppercase; padding:2px 7px; border-radius:4px; }
 .issue-menu-card .menu-head .sev.blocker { background:var(--block); color:#fff; }
-.issue-menu-card .menu-head .sev.warning { background:var(--warn); color:#1a130c; }
-.issue-menu-card .menu-head .sev.info { background:var(--ok); color:#1a130c; }
+.issue-menu-card .menu-head .sev.warning { background:var(--warn); color:#fff; }
+.issue-menu-card .menu-head .sev.info { background:var(--ok); color:#ffffff; }
 .issue-menu-card .menu-head .rule { font-family:var(--mono); font-size:12px; color:var(--text); font-weight:600; }
 .issue-menu-card .menu-head .loc { font-family:var(--mono); font-size:11.5px; color:var(--dim); margin-left:auto; }
 .issue-menu-card .menu-msg { margin:0; font-size:13.5px; color:var(--text); line-height:1.6; white-space:pre-wrap; word-break:break-word; }
@@ -454,47 +478,51 @@ function accountHtml(v: ReportView): string {
 }
 
 function statCards(v: ReportView): string {
-  const cards: [number, string, string, string][] = [
-    [v.filesReviewed, "评审文件", "", ""],
-    [v.degradedCount, "降级文件", "", ""],
-    [v.total, "问题总数", "", ""],
-    [v.counts.blocker, "blocker", "n-red", "sev-tog"],
-    [v.counts.warning, "warning", "n-yellow", "sev-tog"],
-    [v.counts.info, "info", "n-green", "sev-tog"],
+  const cards: [number, string, string][] = [
+    [v.filesReviewed, "评审文件", ""],
+    [v.degradedCount, "降级文件", ""],
+    [v.total, "问题总数", ""],
+    [v.counts.blocker, "blocker", "n-red"],
+    [v.counts.warning, "warning", "n-yellow"],
+    [v.counts.info, "info", "n-green"],
   ];
   return cards
     .map(
-      ([num, lbl, cls, tog]) => {
-        const sev = tog ? ` data-severity="${lbl}"` : "";
-        return `<div class="stat ${cls} ${tog}"${sev}><div class="num">${num}</div><div class="lbl">${lbl}</div><div class="bar"></div></div>`;
-      }
+      ([num, lbl, cls]) =>
+        `<div class="stat ${cls}"><div class="num">${num}</div><div class="lbl">${lbl}</div><div class="bar"></div></div>`,
     )
     .join("\n    ");
 }
 
-/** 违反条例列表：按 category（条例名）分组，统计命中次数，取最高 severity 着色。
- *  点击某项 → 自动展开对应 diff 文件并弹出该条例首条问题的菜单。 */
+/** 违反条例列表：拍平为单一列表（不按 severity 分组收纳），左侧条例名 + 问题描述，最右侧行号区间。 */
 function ruleList(v: ReportView): string {
   if (!v.issues.length) return `<div class="empty">未发现问题。</div>`;
-  const groups = new Map<string, { count: number; sev: string }>();
-  const rank: Record<string, number> = { blocker: 3, warning: 2, info: 1 };
-  for (const i of v.issues) {
-    const g = groups.get(i.category) ?? { count: 0, sev: "info" };
-    g.count++;
-    if (rank[i.severity] > rank[g.sev]) g.sev = i.severity;
-    groups.set(i.category, g);
-  }
-  const items = [...groups.entries()]
-    .sort((a, b) => rank[b[1].sev] - rank[a[1].sev] || b[1].count - a[1].count)
-    .map(([cat, g]) => {
-      return `<div class="rule-item" data-rule="${esc(cat)}"><span class="rule-sev ${g.sev}"></span><span class="rule-name" title="${esc(cat)}">${esc(cat)}</span><span class="rule-count">${g.count}</span></div>`;
-    });
-  return `<div class="rule-list">${items.join("\n")}</div>`;
+  /* 拍平为单一列表：左侧条例名，中间问题描述，最右侧行号区间；不按 severity 分组收纳 */
+  const sevRank: Record<string, number> = { blocker: 3, warning: 2, info: 1 };
+  const items = [...v.issues].sort((a, b) => sevRank[b.severity] - sevRank[a.severity]);
+  const itemHtml = items
+    .map((i) => {
+      const range = i.lineStart === i.lineEnd ? String(i.lineStart) : `${i.lineStart}-${i.lineEnd}`;
+      return `<div class="rule-issue" data-rule="${esc(i.category)}" data-file="${esc(i.file)}" data-ls="${i.lineStart}" data-le="${i.lineEnd}" data-sev="${i.severity}">
+        <code class="ri-rule" title="${esc(i.category)}">${esc(i.category)}</code>
+        <span class="ri-msg">${esc(i.message)}</span>
+        <code class="ri-loc">${esc(range)}</code>
+      </div>`;
+    })
+    .join("\n");
+  return `<div class="sev-filter">
+    <span class="sf-label">筛选</span>
+    <button type="button" class="sf-btn blocker" data-sev="blocker">Blocker · ${v.counts.blocker}</button>
+    <button type="button" class="sf-btn warning" data-sev="warning">Warning · ${v.counts.warning}</button>
+    <button type="button" class="sf-btn info" data-sev="info">Info · ${v.counts.info}</button>
+    <button type="button" class="sf-clear" id="sevFilterClear">清除</button>
+  </div>
+  <div class="rule-list">${itemHtml}</div>`;
 }
 
 /** 右侧 diff 面板：按文件渲染 hunks，新增绿、删除红、上下文灰，行号对应 AI 报告行号。
  *  每个文件默认折叠（仅显示文件名 + 增删行数 + 问题数），点击表头展开。
- *  问题行在渲染时预标注 hl-{severity} 类，便于用户直接看到问题位置并点击展开菜单。 */
+ *  问题行不预高亮；仅点击左侧「违反条例」项时才高亮对应区间。问题菜单卡内联渲染。 */
 function diffPanel(v: ReportView): string {
   if (!v.diffFiles || !v.diffFiles.length) {
     return `<div class="diff-empty">无代码变更数据。</div>`;
@@ -504,22 +532,19 @@ function diffPanel(v: ReportView): string {
   for (const i of v.issues) {
     issueCount.set(i.file, (issueCount.get(i.file) ?? 0) + 1);
   }
-  // 预计算每行的最高 severity（blocker > warning > info），用于初始高亮
-  const sevRank: Record<string, number> = { blocker: 3, warning: 2, info: 1 };
-  const lineSev = new Map<string, Map<number, string>>();
+  // 按文件 + lineEnd 分组问题（用于内联渲染菜单卡）
+  const issuesByLineEnd = new Map<string, Map<number, typeof v.issues>>();
   for (const i of v.issues) {
-    if (!lineSev.has(i.file)) lineSev.set(i.file, new Map());
-    const m = lineSev.get(i.file)!;
-    for (let n = i.lineStart; n <= i.lineEnd; n++) {
-      const cur = m.get(n);
-      if (!cur || sevRank[i.severity] > sevRank[cur]) m.set(n, i.severity);
-    }
+    if (!issuesByLineEnd.has(i.file)) issuesByLineEnd.set(i.file, new Map());
+    const m = issuesByLineEnd.get(i.file)!;
+    if (!m.has(i.lineEnd)) m.set(i.lineEnd, []);
+    m.get(i.lineEnd)!.push(i);
   }
   return v.diffFiles
     .map((f) => {
       let addCount = 0;
       let delCount = 0;
-      const sevMap = lineSev.get(f.path);
+      const lineIssues = issuesByLineEnd.get(f.path);
       const body = f.hunks
         .map((h) => {
           const head = `<div class="diff-hunk-head">@@ -${h.oldStart},${h.oldEnd - h.oldStart + 1} +${h.newStart},${h.newEnd - h.newStart + 1} @@</div>`;
@@ -534,16 +559,29 @@ function diffPanel(v: ReportView): string {
                 l.newNo !== undefined
                   ? ` data-file="${esc(f.path)}" data-line="${l.newNo}"`
                   : "";
-              // 预标注问题行高亮
-              const hlCls =
-                l.newNo !== undefined && sevMap?.has(l.newNo)
-                  ? ` hl-${sevMap.get(l.newNo)}`
-                  : "";
-              return `      <div class="diff-line ${l.type}${hlCls}"${dataLine}>
+              const lineHtml = `      <div class="diff-line ${l.type}"${dataLine}>
         <span class="gutter">${oldG}</span>
         <span class="gutter">${newG}</span>
         <code class="content">${esc(l.text)}</code>
       </div>`;
+              // 如果该行是某个问题的 lineEnd，在行后内联插入问题菜单卡（默认 collapsed）
+              let menuHtml = "";
+              if (l.newNo !== undefined && lineIssues?.has(l.newNo)) {
+                const items = lineIssues.get(l.newNo)!;
+                menuHtml = items
+                  .map((it) => {
+                    const sevCls = `sev-${it.severity}`;
+                    const sug = it.suggestion
+                      ? `<div class="menu-sug"><span class="tag">建议</span><p>${esc(it.suggestion)}</p></div>`
+                      : "";
+                    return `      <div class="issue-menu-card collapsed ${sevCls}" data-file="${esc(f.path)}" data-ls="${it.lineStart}" data-le="${it.lineEnd}">
+        <div class="menu-head"><span class="menu-caret">›</span><span class="sev ${it.severity}">${esc(it.severity)}</span><code class="rule">${esc(it.category || "")}</code><code class="loc">${esc(it.loc || "")}</code></div>
+        <div class="menu-body"><p class="menu-msg">${esc(it.message || "")}</p>${sug}</div>
+      </div>`;
+                  })
+                  .join("\n");
+              }
+              return lineHtml + (menuHtml ? "\n" + menuHtml : "");
             })
             .join("\n");
           return `    ${head}\n${lines}`;
@@ -842,18 +880,18 @@ export function renderTemplate(v: ReportView): string {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="theme-color" content="#16120c" />
+<meta name="theme-color" content="#0f172a" />
 <title>AI 代码评审报告 · ai-review</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%23ff724c'/%3E%3Cpath d='M7 8l5 5 5-5' stroke='%231a130c' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%234f46e5'/%3E%3Cpath d='M7 8l5 5 5-5' stroke='%231e1b4b' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
 <style>${REPORT_CSS}</style>
 <script>
   (function(){
     try {
       var t = localStorage.getItem('ai-review-theme');
-      if (t !== 'light' && t !== 'dark') t = 'dark';
+      if (t !== 'light' && t !== 'dark') t = 'light';
       document.documentElement.setAttribute('data-theme', t);
     } catch (e) {
-      document.documentElement.setAttribute('data-theme', 'dark');
+      document.documentElement.setAttribute('data-theme', 'light');
     }
   })();
 </script>
@@ -951,7 +989,6 @@ export function renderTemplate(v: ReportView): string {
         <div class="diff-panel-head">
           <h2>代码变更</h2>
           <span class="count">${v.diffFiles?.length ?? 0} 个文件</span>
-          <span class="filter-clear" id="filterClear">清除筛选 &times;</span>
         </div>
         ${diffPanel(v)}
       </section>
@@ -966,10 +1003,10 @@ export function renderTemplate(v: ReportView): string {
   var meta = document.querySelector('meta[name="theme-color"]');
   function applyTheme(t){
     document.documentElement.setAttribute('data-theme', t);
-    if(meta) meta.setAttribute('content', t === 'light' ? '#f6f2ea' : '#16120c');
+    if(meta) meta.setAttribute('content', t === 'light' ? '#f8fafc' : '#0f172a');
     try { localStorage.setItem('ai-review-theme', t); } catch(e){}
   }
-  if(meta) meta.setAttribute('content', document.documentElement.getAttribute('data-theme') === 'light' ? '#f6f2ea' : '#16120c');
+  if(meta) meta.setAttribute('content', document.documentElement.getAttribute('data-theme') === 'light' ? '#f8fafc' : '#0f172a');
   if(toggle){
     toggle.addEventListener('click', function(){
       var next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
@@ -1002,43 +1039,12 @@ export function renderTemplate(v: ReportView): string {
       resultSection.classList.toggle('collapsed');
     });
   }
-  /* 统计卡点击：定位到该 severity 首条问题并展开 diff + 问题菜单 */
-  var sevCards = document.querySelectorAll('.stat.sev-tog[data-severity]');
-  var filterClear = document.getElementById('filterClear');
-  var currentFilter = null;
-  function findFirstIssueBySev(sev){
-    if(!issueStore) return null;
-    var keys = Object.keys(issueStore);
-    for(var i=0;i<keys.length;i++){
-      var items = issueStore[keys[i]];
-      for(var j=0;j<items.length;j++){
-        if(items[j].severity === sev){
-          var parts = keys[i].split('#');
-          return { file: parts[0], ls: items[j].lineStart, le: items[j].lineEnd, sev: sev };
-        }
-      }
-    }
-    return null;
-  }
-  function applyFilter(sev){
-    currentFilter = sev;
-    sevCards.forEach(function(c){
-      c.classList.toggle('active', c.getAttribute('data-severity') === sev);
-    });
-    if(filterClear) filterClear.classList.toggle('show', !!sev);
-    if(!sev) return;
-    var hit = findFirstIssueBySev(sev);
-    if(hit) showIssueMenu(hit.file, hit.ls, hit.le, hit.sev);
-  }
-  sevCards.forEach(function(c){
-    c.addEventListener('click', function(){
-      var sev = c.getAttribute('data-severity');
-      applyFilter(currentFilter === sev ? null : sev);
-    });
-  });
-  if(filterClear){
-    filterClear.addEventListener('click', function(){ applyFilter(null); });
-  }
+  /* issueStore 供行→问题查找 */
+  var issueStore = null;
+  try {
+    var storeEl = document.getElementById('issueStore');
+    if(storeEl) issueStore = JSON.parse(storeEl.textContent || '{}');
+  } catch(e){ issueStore = null; }
   /* 在 issueStore 中查找指定文件的首条问题 */
   function findFirstIssueByFile(file){
     if(!issueStore) return null;
@@ -1053,28 +1059,69 @@ export function renderTemplate(v: ReportView): string {
     }
     return null;
   }
-  /* 在 issueStore 中查找指定条例（category）的首条问题 */
-  function findFirstIssueByRule(rule){
-    if(!issueStore) return null;
-    var keys = Object.keys(issueStore);
-    for(var i=0;i<keys.length;i++){
-      var items = issueStore[keys[i]];
-      for(var j=0;j<items.length;j++){
-        if(items[j].category === rule){
-          var parts = keys[i].split('#');
-          return { file: parts[0], ls: items[j].lineStart, le: items[j].lineEnd, sev: items[j].severity };
-        }
+  /* severity 筛选：点击按钮切换 active，按 data-sev 过滤问题列表 */
+  var sevFilterBtns = document.querySelectorAll('.sev-filter .sf-btn');
+  var sevFilterClear = document.getElementById('sevFilterClear');
+  function applySevFilter(){
+    var active = [];
+    sevFilterBtns.forEach(function(b){
+      if(b.classList.contains('active')) active.push(b.getAttribute('data-sev'));
+    });
+    var items = document.querySelectorAll('.rule-issue');
+    items.forEach(function(it){
+      var sev = it.getAttribute('data-sev');
+      if(active.length === 0 || active.indexOf(sev) >= 0){
+        it.style.display = '';
+      } else {
+        it.style.display = 'none';
       }
-    }
-    return null;
+    });
   }
-  /* 点击高亮 diff 行 → 弹出该行问题菜单 */
+  sevFilterBtns.forEach(function(btn){
+    btn.addEventListener('click', function(){
+      btn.classList.toggle('active');
+      applySevFilter();
+    });
+  });
+  if(sevFilterClear){
+    sevFilterClear.addEventListener('click', function(){
+      sevFilterBtns.forEach(function(b){ b.classList.remove('active'); });
+      applySevFilter();
+    });
+  }
+  /* 违反条例项点击 → 高亮对应 diff 行区间 + 展开 diff 文件并定位到菜单卡 */
+  var ruleItems = document.querySelectorAll('.rule-issue');
+  ruleItems.forEach(function(item){
+    item.addEventListener('click', function(){
+      var file = item.getAttribute('data-file');
+      var ls = parseInt(item.getAttribute('data-ls'),10);
+      var le = parseInt(item.getAttribute('data-le'),10);
+      var sev = item.getAttribute('data-sev') || 'warning';
+      if(!file || !le) return;
+      /* 清除已有高亮 */
+      document.querySelectorAll('.diff-line.hl-blocker, .diff-line.hl-warning, .diff-line.hl-info').forEach(function(l){
+        l.classList.remove('hl-blocker','hl-warning','hl-info');
+      });
+      /* 高亮 [ls, le] 区间 */
+      var lines = document.querySelectorAll('.diff-line[data-file="' + cssEsc(file) + '"][data-line]');
+      lines.forEach(function(l){
+        var ln = parseInt(l.getAttribute('data-line'),10);
+        if(ln >= ls && ln <= le) l.classList.add('hl-' + sev);
+      });
+      var df = findDiffFile(file);
+      if(df) df.setAttribute('data-collapsed', 'false');
+      expandIssueCard(file, le);
+    });
+  });
+  /* 问题菜单卡点击展开/收纳 */
+  document.querySelectorAll('.issue-menu-card .menu-head').forEach(function(head){
+    head.addEventListener('click', function(e){
+      e.stopPropagation();
+      head.closest('.issue-menu-card').classList.toggle('collapsed');
+    });
+  });
+  /* 点击高亮 diff 行 → 找到对应菜单卡并展开 + 滚动 */
   var panel = document.querySelector('.diff-panel');
-  var issueStore = null;
-  try {
-    var storeEl = document.getElementById('issueStore');
-    if(storeEl) issueStore = JSON.parse(storeEl.textContent || '{}');
-  } catch(e){ issueStore = null; }
   if(panel){
     panel.addEventListener('click', function(e){
       var line = e.target.closest('.diff-line.hl-blocker, .diff-line.hl-warning, .diff-line.hl-info');
@@ -1082,112 +1129,47 @@ export function renderTemplate(v: ReportView): string {
       var file = line.getAttribute('data-file');
       var ln = parseInt(line.getAttribute('data-line'),10);
       if(!file || !ln) return;
-      // 在 issueStore 中找覆盖该行的问题
-      var hit = null;
-      var keys = Object.keys(issueStore || {});
-      for(var i=0;i<keys.length;i++){
-        if(keys[i].indexOf(file + '#') !== 0) continue;
-        var items = issueStore[keys[i]];
-        for(var j=0;j<items.length;j++){
-          if(ln >= items[j].lineStart && ln <= items[j].lineEnd){
-            hit = { file: file, ls: items[j].lineStart, le: items[j].lineEnd, sev: items[j].severity };
-            break;
-          }
-        }
-        if(hit) break;
-      }
-      if(hit) showIssueMenu(hit.file, hit.ls, hit.le, hit.sev);
+      expandIssueCard(file, ln);
     });
   }
-  /* 违反条例项点击 → 展开该条例首条问题的菜单 */
-  var ruleItems = document.querySelectorAll('.rule-item');
+  /* 违反条例项点击 → 展开 diff 文件并定位到对应菜单卡 */
+  var ruleItems = document.querySelectorAll('.rule-issue');
   ruleItems.forEach(function(item){
     item.addEventListener('click', function(){
-      var rule = item.getAttribute('data-rule');
-      if(!rule) return;
-      var hit = findFirstIssueByRule(rule);
-      if(hit) showIssueMenu(hit.file, hit.ls, hit.le, hit.sev);
+      var file = item.getAttribute('data-file');
+      var ls = parseInt(item.getAttribute('data-ls'),10);
+      var le = parseInt(item.getAttribute('data-le'),10);
+      if(!file || !le) return;
+      var df = findDiffFile(file);
+      if(df) df.setAttribute('data-collapsed', 'false');
+      expandIssueCard(file, le);
     });
   });
-  function clearIssueMenus(){
-    document.querySelectorAll('.issue-menu').forEach(function(el){ el.remove(); });
-  }
-  function clearHighlight(){
-    panel.querySelectorAll('.diff-line').forEach(function(l){
-      l.classList.remove('hl-blocker','hl-warning','hl-info','target','target-range');
-    });
-  }
-  function highlightRange(file, ls, le, sev){
-    var cls = 'hl-' + (sev === 'blocker' ? 'blocker' : (sev === 'warning' ? 'warning' : 'info'));
-    var firstHit = null;
-    var bestDist = Infinity;
-    panel.querySelectorAll('.diff-line[data-line]').forEach(function(l){
-      if(l.getAttribute('data-file') !== file) return;
-      var n = parseInt(l.getAttribute('data-line'),10);
-      if(n >= ls && n <= le){
-        l.classList.add(cls);
-        if(!firstHit) firstHit = l;
+  /* 展开 file#lineEnd 对应的菜单卡（取消 collapsed、高亮区间、滚动） */
+  function expandIssueCard(file, lineEnd){
+    var cards = document.querySelectorAll('.issue-menu-card[data-file="' + cssEsc(file) + '"]');
+    var target = null;
+    for(var i=0;i<cards.length;i++){
+      var le = parseInt(cards[i].getAttribute('data-le'),10);
+      if(le === lineEnd){ target = cards[i]; break; }
+    }
+    if(!target){
+      /* 回退：找最接近的 */
+      var bestDist = Infinity;
+      for(var j=0;j<cards.length;j++){
+        var d = Math.abs(parseInt(cards[j].getAttribute('data-le'),10) - lineEnd);
+        if(d < bestDist){ bestDist = d; target = cards[j]; }
       }
-    });
-    if(!firstHit){
-      panel.querySelectorAll('.diff-line[data-line]').forEach(function(l){
-        if(l.getAttribute('data-file') !== file) return;
-        var n = parseInt(l.getAttribute('data-line'),10);
-        var diff = Math.abs(n - ls);
-        if(diff < bestDist){ bestDist = diff; firstHit = l; }
-      });
-      if(firstHit) firstHit.classList.add(cls);
     }
-    return firstHit;
+    if(!target) return;
+    var df = target.closest('.diff-file');
+    if(df) df.setAttribute('data-collapsed', 'false');
+    target.classList.remove('collapsed');
+    target.scrollIntoView({behavior:'smooth', block:'center'});
   }
-  function buildMenuHtml(items){
-    return items.map(function(it){
-      var sev = it.severity || 'info';
-      var sevCls = 'sev-' + (sev === 'blocker' ? 'blocker' : (sev === 'warning' ? 'warning' : 'info'));
-      var sug = it.suggestion ? '<div class="menu-sug"><span class="tag">INFO</span><p>' + escS(it.suggestion) + '</p></div>' : '';
-      /* 默认展开：severity + rule + loc + 问题描述 + 建议，一直显示不折叠 */
-      return '<div class="issue-menu-card ' + sevCls + '">' +
-        '<div class="menu-head"><span class="sev ' + sev + '">' + escS(sev) + '</span><code class="rule">' + escS(it.category || '') + '</code><code class="loc">' + escS(it.loc || '') + '</code></div>' +
-        '<div class="menu-body"><p class="menu-msg">' + escS(it.message || '') + '</p>' + sug + '</div></div>';
-    }).join('');
-  }
-  function showIssueMenu(file, ls, le, sev){
-    clearIssueMenus();
-    clearHighlight();
-    var df = findDiffFile(file);
-    if(!df) return;
-    df.setAttribute('data-collapsed', 'false');
-    var body = df.querySelector('.diff-file-body');
-    if(!body) return;
-    var anchor = highlightRange(file, ls, le, sev);
-    /* 找 le 对应的行作为菜单插入点；找不到则取 anchor */
-    var insertAfter = null;
-    if(le){
-      body.querySelectorAll('.diff-line[data-line]').forEach(function(l){
-        if(l.getAttribute('data-file') !== file) return;
-        if(parseInt(l.getAttribute('data-line'),10) === le) insertAfter = l;
-      });
-    }
-    if(!insertAfter) insertAfter = anchor;
-    if(!insertAfter) return;
-    /* 从 issueStore 取该区间所有问题堆叠渲染 */
-    var key = file + '#' + le;
-    var items = (issueStore && issueStore[key]) || [];
-    if(!items.length){
-      items = [{ severity: sev, category: '', message: '', loc: ls === le ? 'L' + ls : ('L' + ls + '-' + le) }];
-    }
-    var menu = document.createElement('div');
-    menu.className = 'issue-menu';
-    menu.innerHTML = buildMenuHtml(items);
-    /* 在 insertAfter 行后插入菜单（若是最后一个子元素则 appendChild） */
-    if(insertAfter.nextSibling && insertAfter.parentNode){
-      insertAfter.parentNode.insertBefore(menu, insertAfter.nextSibling);
-    } else {
-      body.appendChild(menu);
-    }
-    menu.scrollIntoView({behavior:'smooth', block:'center'});
-  }
-  /* 查找指定路径对应的 diff 文件块（用属性值逐项比较，避免 CSS 选择器转义问题） */
+  /* CSS 属性值转义（文件路径含特殊字符时安全用于 querySelector） */
+  function cssEsc(s){ return String(s).replace(/["\\\\]/g, '\\\\$&'); }
+  /* 查找指定路径对应的 diff 文件块 */
   function findDiffFile(path){
     var all = document.querySelectorAll('.diff-file[data-file]');
     for(var i=0;i<all.length;i++){
@@ -1195,7 +1177,7 @@ export function renderTemplate(v: ReportView): string {
     }
     return null;
   }
-  /* diff 文件表头点击：折叠/展开代码内容（默认折叠，仅显示文件名 + 问题数） */
+  /* diff 文件表头点击：折叠/展开代码内容 */
   var diffFileHeads = document.querySelectorAll('.diff-file-head');
   diffFileHeads.forEach(function(head){
     head.addEventListener('click', function(){
@@ -1214,7 +1196,7 @@ export function renderTemplate(v: ReportView): string {
       summaryToggleAll.setAttribute('data-expanded', expanded ? 'true' : 'false');
     });
   }
-  /* 左侧变更文件点击：展开对应 diff 文件并弹出首条问题菜单 */
+  /* 左侧变更文件点击：展开对应 diff 文件并定位到首条问题菜单卡 */
   var fileEntries = document.querySelectorAll('.file-entry');
   fileEntries.forEach(function(entry){
     entry.addEventListener('click', function(e){
@@ -1228,7 +1210,7 @@ export function renderTemplate(v: ReportView): string {
         df.setAttribute('data-collapsed', 'false');
         var hit = findFirstIssueByFile(path);
         if(hit){
-          showIssueMenu(hit.file, hit.ls, hit.le, hit.sev);
+          expandIssueCard(hit.file, hit.le);
         } else {
           df.scrollIntoView({behavior:'smooth', block:'start'});
         }

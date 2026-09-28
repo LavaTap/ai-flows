@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ai-flows · 新风格方案（靛蓝 SaaS）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+/* ============================================================
+   新风格设计 token（靛蓝 #4F46E5 + 灰白 · 圆角卡片 · 充足留白）
+   ============================================================ */
+:root{
+  /* 品牌主色 */
+  --indigo:#4F46E5;
+  --indigo-600:#4338CA;
+  --indigo-50:#EEF2FF;
+  --indigo-100:#E0E7FF;
+
+  /* 中性灰阶（灰白辅助） */
+  --bg:#F8FAFC;
+  --surface:#FFFFFF;
+  --surface-2:#F1F5F9;
+  --surface-3:#E2E8F0;
+  --border:#E2E8F0;
+  --border-strong:#CBD5E1;
+  --text:#0F172A;       /* slate-900 */
+  --text-soft:#334155;  /* slate-700 */
+  --muted:#64748B;      /* slate-500 */
+  --muted-2:#94A3B8;    /* slate-400 */
+
+  /* 语义色（保持旧含义，但换为更现代的 SaaS 配色） */
+  --ok:#10B981;   /* 绿 */
+  --warn:#F59E0B; /* 琥珀 */
+  --block:#EF4444;/* 红 */
+  --info:#3B82F6; /* 蓝 */
+  --ok-soft:rgba(16,185,129,.10);
+  --warn-soft:rgba(245,158,11,.12);
+  --block-soft:rgba(239,68,68,.10);
+  --info-soft:rgba(59,130,246,.10);
+
+  /* 几何 */
+  --radius-sm:8px;
+  --radius:12px;
+  --radius-lg:16px;
+  --radius-pill:999px;
+  --shadow-card:0 1px 2px rgba(15,23,42,.04),0 1px 3px rgba(15,23,42,.06);
+  --shadow-card-hover:0 4px 12px rgba(79,70,229,.12),0 2px 4px rgba(15,23,42,.05);
+  --shadow-pop:0 12px 32px rgba(15,23,42,.12);
+
+  --font-sans:"Inter","PingFang SC",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--font-sans);
+  font-size:14px;
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+  min-height:100vh;
+}
+
+/* ===== 原型容器 ===== */
+.proto-wrap{max-width:1180px;margin:0 auto;padding:48px 28px 80px;}
+.proto-head{margin-bottom:40px;}
+.proto-head h1{font-size:28px;font-weight:700;margin:0 0 8px;letter-spacing:-.01em;}
+.proto-head .sub{color:var(--muted);font-size:14px;}
+.proto-head .tagline{display:inline-flex;align-items:center;gap:8px;margin-top:14px;font-size:12px;color:var(--indigo);background:var(--indigo-50);border:1px solid var(--indigo-100);padding:6px 14px;border-radius:var(--radius-pill);font-weight:500;}
+.proto-head .tagline .dot{width:8px;height:8px;border-radius:50%;background:var(--indigo);}
+
+.proto-section{margin-bottom:48px;}
+.proto-section h2{font-size:18px;font-weight:600;margin:0 0 6px;}
+.proto-section .desc{color:var(--muted);font-size:13px;margin-bottom:20px;}
+.proto-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;}
+@media(max-width:900px){.proto-grid{grid-template-columns:1fr;}}
+
+/* ===== 通用卡片 ===== */
+.card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-card);
+}
+.card-pad{padding:24px;}
+
+/* ============================================================
+   ① 登录卡（来自 web/login.html）
+   ============================================================ */
+.login-card{width:100%;max-width:400px;padding:36px;}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:28px;}
+.brand .dot{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--indigo),#6366F1);display:grid;place-items:center;}
+.brand .dot svg{width:16px;height:16px;stroke:#fff;stroke-width:2.2;fill:none;stroke-linecap:round;stroke-linejoin:round;}
+.brand .name{font-size:16px;font-weight:600;}
+.login-card h1{font-size:24px;font-weight:700;margin:0 0 6px;letter-spacing:-.01em;}
+.login-card .sub{color:var(--muted);font-size:13px;margin:0 0 24px;}
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:16px;}
+.field label{font-size:13px;font-weight:500;color:var(--text-soft);}
+.field input{
+  font:inherit;padding:11px 14px;min-height:44px;
+  border:1px solid var(--border-strong);border-radius:var(--radius-sm);
+  background:var(--surface);color:var(--text);outline:none;
+  transition:border-color 150ms ease,box-shadow 150ms ease;
+}
+.field input:focus{border-color:var(--indigo);box-shadow:0 0 0 3px var(--indigo-50);}
+.btn-primary{
+  font:inherit;font-weight:600;padding:11px 16px;min-height:44px;
+  border:none;border-radius:var(--radius-sm);
+  background:var(--indigo);color:#fff;cursor:pointer;
+  transition:background 150ms ease,transform 150ms ease,box-shadow 150ms ease;
+  width:100%;
+}
+.btn-primary:hover{background:var(--indigo-600);transform:translateY(-1px);box-shadow:0 6px 16px rgba(79,70,229,.3);}
+.btn-primary:active{transform:translateY(0);}
+.login-card .demo{margin-top:20px;padding-top:16px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);}
+.login-card .demo b{color:var(--text-soft);}
+.login-card .demo code{font-family:var(--font-mono);font-size:11.5px;color:var(--indigo);background:var(--indigo-50);padding:2px 6px;border-radius:4px;}
+
+/* ============================================================
+   ② 管线节点（来自 web/ai-pipeline.html）
+   ============================================================ */
+.pipeline-demo{display:flex;align-items:center;gap:0;padding:12px 0;}
+.node{
+  padding:14px 22px;border-radius:var(--radius-lg);
+  background:var(--surface);border:1px solid var(--border);
+  box-shadow:var(--shadow-card);cursor:pointer;
+  font:inherit;text-align:center;outline:none;
+  transition:transform 200ms cubic-bezier(.22,1,.36,1),box-shadow 200ms ease,border-color 200ms ease;
+}
+.node:hover{transform:translateY(-2px);box-shadow:var(--shadow-card-hover);border-color:var(--indigo-100);}
+.node.on{border-color:var(--indigo);background:var(--indigo-50);}
+.node.on .n-title{color:var(--indigo);}
+.n-title{font-size:14px;font-weight:600;color:var(--text);}
+.n-sub{font-size:11.5px;color:var(--muted);margin-top:2px;}
+.arrow{flex:0 0 36px;display:flex;align-items:center;justify-content:center;color:var(--muted-2);}
+.arrow svg{width:36px;height:10px;}
+
+/* 节点详情卡 */
+.node-detail{margin-top:20px;}
+.node-detail .d-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+.node-detail .d-title{font-size:16px;font-weight:600;}
+.tag{font-size:12px;font-weight:500;padding:3px 12px;border-radius:var(--radius-pill);white-space:nowrap;}
+.tag.ok{color:var(--ok);background:var(--ok-soft);}
+.tag.muted{color:var(--muted);background:var(--surface-2);}
+.node-detail .d-desc{color:var(--text-soft);font-size:13px;margin-bottom:14px;}
+.d-meta{display:flex;gap:24px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:14px;}
+.d-meta b{color:var(--text-soft);font-weight:500;margin-right:4px;}
+.d-actions{display:flex;gap:10px;flex-wrap:wrap;}
+.btn-ghost{
+  font:inherit;font-weight:500;padding:9px 16px;min-height:40px;
+  border:1px solid var(--border-strong);border-radius:var(--radius-sm);
+  background:var(--surface);color:var(--text-soft);cursor:pointer;
+  transition:border-color 150ms ease,color 150ms ease;
+}
+.btn-ghost:hover{border-color:var(--indigo);color:var(--indigo);}
+.btn-primary.sm{min-height:40px;padding:9px 16px;width:auto;}
+
+/* ============================================================
+   ③ 报告 · 评审结果 + 问题卡片（来自 src/reporter.ts）
+   ============================================================ */
+.verdict{
+  display:flex;align-items:center;gap:20px;padding:22px 24px;
+  background:var(--ok-soft);border:1px solid var(--ok);border-radius:var(--radius-lg);
+  position:relative;
+}
+.verdict.block{background:var(--block-soft);border-color:var(--block);}
+.verdict-icon{width:48px;height:48px;flex:0 0 auto;border-radius:50%;display:grid;place-items:center;background:var(--ok);}
+.verdict.block .verdict-icon{background:var(--block);}
+.verdict-icon svg{width:24px;height:24px;stroke:#fff;stroke-width:2.5;fill:none;stroke-linecap:round;stroke-linejoin:round;}
+.verdict-text{flex:1;min-width:0;}
+.verdict-title{font-size:18px;font-weight:700;}
+.verdict-sub{font-size:13px;color:var(--text-soft);margin-top:2px;}
+.verdict-pill{flex:0 0 auto;padding:6px 14px;border-radius:var(--radius-pill);font-size:11.5px;font-weight:700;letter-spacing:1px;color:var(--ok);background:#fff;border:1px solid var(--ok);}
+.verdict.block .verdict-pill{color:var(--block);border-color:var(--block);}
+
+/* 统计卡 */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:16px;}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;}
+.stat .num{font-size:26px;font-weight:700;line-height:1.1;}
+.stat .label{font-size:12.5px;color:var(--muted);margin-top:4px;}
+.stat.n-red .num{color:var(--block);}
+.stat.n-yellow .num{color:var(--warn);}
+.stat.n-green .num{color:var(--ok);}
+
+/* 违反条例列表 */
+.rule-list{margin-top:16px;display:flex;flex-direction:column;gap:6px;}
+.rule-item{
+  display:flex;align-items:center;gap:12px;
+  padding:10px 14px;border-radius:var(--radius-sm);
+  background:var(--surface-2);cursor:pointer;
+  transition:background 150ms ease;
+}
+.rule-item:hover{background:var(--surface-3);}
+.rule-name{font-size:13px;font-weight:600;color:var(--text);flex:none;}
+.rule-msg{font-size:12.5px;color:var(--text-soft);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.rule-loc{font-family:var(--font-mono);font-size:11.5px;color:var(--indigo);background:var(--indigo-50);padding:2px 8px;border-radius:4px;flex:none;}
+
+/* 问题卡片（diff 内展开） */
+.issue-card{
+  margin-top:12px;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:14px 16px;
+}
+.issue-card .sev{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;letter-spacing:.5px;padding:3px 10px;border-radius:var(--radius-pill);}
+.issue-card .sev.blocker{color:var(--block);background:var(--block-soft);}
+.issue-card .sev.warning{color:var(--warn);background:var(--warn-soft);}
+.issue-card .sev.info{color:var(--info);background:var(--info-soft);}
+.issue-card .ic-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+.issue-card .ic-cat{font-size:13px;font-weight:600;}
+.issue-card .ic-loc{font-family:var(--font-mono);font-size:11.5px;color:var(--muted);}
+.issue-card .ic-msg{font-size:13px;color:var(--text-soft);line-height:1.6;}
+.issue-card .ic-sug{margin-top:10px;padding:10px 12px;background:var(--surface-2);border-radius:var(--radius-sm);border-left:3px solid var(--indigo);font-size:12.5px;color:var(--text-soft);}
+.issue-card .ic-sug b{color:var(--indigo);font-weight:600;}
+
+/* ============================================================
+   配色板展示
+   ============================================================ */
+.swatch-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:12px;}
+.swatch{border-radius:var(--radius);overflow:hidden;border:1px solid var(--border);}
+.swatch .chip{height:56px;}
+.swatch .meta{padding:8px 10px;font-size:11px;background:var(--surface);}
+.swatch .meta .n{font-weight:600;color:var(--text);}
+.swatch .meta .v{color:var(--muted);font-family:var(--font-mono);}
+
+/* 字体展示 */
+.type-scale{display:flex;flex-direction:column;gap:14px;}
+.type-row{display:flex;align-items:baseline;gap:16px;}
+.type-row .t{color:var(--muted);font-size:12px;width:80px;flex:none;font-family:var(--font-mono);}
+.type-row .v{font-weight:600;color:var(--text);}
+
+/* 顶栏示例 */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:var(--surface);border-bottom:1px solid var(--border);border-radius:var(--radius-lg) var(--radius-lg) 0 0;}
+.topbar .tb-brand{display:flex;align-items:center;gap:10px;font-weight:600;}
+.topbar .tb-right{display:flex;align-items:center;gap:10px;}
+.user-chip{display:flex;align-items:center;gap:8px;padding:5px 12px;border:1px solid var(--border);border-radius:var(--radius-pill);font-size:12.5px;color:var(--text-soft);background:var(--surface);}
+.user-chip .av{width:20px;height:20px;border-radius:50%;background:var(--indigo-100);display:grid;place-items:center;font-size:11px;font-weight:600;color:var(--indigo);}
+
+.diff-panel{border-radius:0 0 var(--radius-lg) var(--radius-lg);border-top:none;overflow:hidden;}
+.diff-head{padding:10px 16px;background:var(--surface-2);border-bottom:1px solid var(--border);font-size:12.5px;color:var(--text-soft);font-weight:500;}
+.diff-body{padding:12px 16px;font-family:var(--font-mono);font-size:12.5px;line-height:1.9;}
+.diff-line{display:flex;gap:12px;}
+.diff-line .ln{width:40px;color:var(--muted-2);text-align:right;flex:none;user-select:none;}
+.diff-line.add{background:var(--ok-soft);}
+.diff-line.del{background:var(--block-soft);}
+.diff-line.hl-blocker{background:var(--block-soft);}
+.diff-line.hl-warning{background:var(--warn-soft);}
+.diff-line.hl-info{background:var(--info-soft);}
+.diff-line .sign{width:16px;flex:none;color:var(--muted);}
+.diff-line.add .sign{color:var(--ok);}
+.diff-line.del .sign{color:var(--block);}
+</style>
+</head>
+<body>
+<div class="proto-wrap">
+
+  <header class="proto-head">
+    <h1>ai-flows 新风格方案</h1>
+    <p class="sub">参考 SaaS 官网视觉语言：靛蓝 #4F46E5 主色 + 灰白辅助、圆角卡片、充足留白、无衬线字体、现代专业。忽略原参考站的版块排版，仅套用风格。</p>
+    <span class="tagline"><span class="dot"></span>Indigo · Gray-White · Rounded Cards · Inter</span>
+  </header>
+
+  <!-- 配色 & 字体 -->
+  <section class="proto-section">
+    <h2>设计 Token</h2>
+    <p class="desc">主色、语义色、灰阶、圆角、阴影。</p>
+    <div class="proto-grid">
+      <div>
+        <div class="swatch-grid">
+          <div class="swatch"><div class="chip" style="background:#4F46E5"></div><div class="meta"><div class="n">Primary</div><div class="v">#4F46E5</div></div></div>
+          <div class="swatch"><div class="chip" style="background:#4338CA"></div><div class="meta"><div class="n">Primary Dark</div><div class="v">#4338CA</div></div></div>
+          <div class="swatch"><div class="chip" style="background:#EEF2FF"></div><div class="meta"><div class="n">Primary 50</div><div class="v">#EEF2FF</div></div></div>
+          <div class="swatch"><div class="chip" style="background:#F8FAFC"></div><div class="meta"><div class="n">Bg</div><div class="v">#F8FAFC</div></div></div>
+          <div class="swatch"><div class="chip" style="background:#0F172A"></div><div class="meta"><div class="n">Text</div><div class="v">#0F172A</div></div></div>
+          <div class="swatch"><div class="chip" style="background:#64748B"></div><div class="meta"><div class="n">Muted</div><div class="v">#64748B</div></div></div>
+          <div class="swatch"><div class="chip" style="background:#10B981"></div><div class="meta"><div class="n">OK</div><div class="v">#10B981</div></div></div>
+          <div class="swatch"><div class="chip" style="background:#F59E0B"></div><div class="meta"><div class="n">Warn</div><div class="v">#F59E0B</div></div></div>
+          <div class="swatch"><div class="chip" style="background:#EF4444"></div><div class="meta"><div class="n">Block</div><div class="v">#EF4444</div></div></div>
+          <div class="swatch"><div class="chip" style="background:#3B82F6"></div><div class="meta"><div class="n">Info</div><div class="v">#3B82F6</div></div></div>
+        </div>
+      </div>
+      <div class="type-scale">
+        <div class="type-row"><span class="t">Display</span><span class="v" style="font-size:28px">评审通过</span></div>
+        <div class="type-row"><span class="t">H1</span><span class="v" style="font-size:24px">代码评审报告</span></div>
+        <div class="type-row"><span class="t">H2</span><span class="v" style="font-size:18px">变更文件</span></div>
+        <div class="type-row"><span class="t">Body</span><span class="v" style="font-size:14px;font-weight:400">本次评审未发现阻塞性问题。</span></div>
+        <div class="type-row"><span class="t">Mono</span><span class="v" style="font-size:13px;font-family:var(--font-mono)">src/reporter.ts</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 登录卡 -->
+  <section class="proto-section">
+    <h2>① 登录页（web/login.html）</h2>
+    <p class="desc">去掉玻璃拟态 + 纸灰颗粒，改为白底卡片 + 靛蓝主按钮。</p>
+    <div class="card login-card">
+      <div class="brand">
+        <span class="dot"><svg viewBox="0 0 24 24"><path d="M4 17l6-6 4 4 6-8"/></svg></span>
+        <span class="name">ai-flows</span>
+      </div>
+      <h1>登录管线平台</h1>
+      <p class="sub">使用公司邮箱与密码登录</p>
+      <form>
+        <div class="field">
+          <label>邮箱</label>
+          <input type="email" value="lihua@company.com" />
+        </div>
+        <div class="field">
+          <label>密码</label>
+          <input type="password" value="123456" />
+        </div>
+        <button type="button" class="btn-primary">登录</button>
+      </form>
+      <div class="demo">演示账号密码统一 <code>123456</code></div>
+    </div>
+  </section>
+
+  <!-- 管线 -->
+  <section class="proto-section">
+    <h2>② 管线节点（web/ai-pipeline.html）</h2>
+    <p class="desc">节点卡片白底 + 1px 边框，选中态靛蓝；详情卡分区边框改用靛蓝。</p>
+    <div class="card card-pad">
+      <div class="pipeline-demo">
+        <button class="node on"><div class="n-title">01 · 需求分析</div><div class="n-sub">用户研究部门</div></button>
+        <div class="arrow"><svg viewBox="0 0 36 10" fill="none"><path d="M0 5h30m0 0l-5-4m5 4l-5 4" stroke="currentColor" stroke-width="1.5"/></svg></div>
+        <button class="node"><div class="n-title">02 · 调研需求</div><div class="n-sub">用户研究部门</div></button>
+        <div class="arrow"><svg viewBox="0 0 36 10" fill="none"><path d="M0 5h30m0 0l-5-4m5 4l-5 4" stroke="currentColor" stroke-width="1.5"/></svg></div>
+        <button class="node"><div class="n-title">03 · 程序执行</div><div class="n-sub">程序中台</div></button>
+        <div class="arrow"><svg viewBox="0 0 36 10" fill="none"><path d="M0 5h30m0 0l-5-4m5 4l-5 4" stroke="currentColor" stroke-width="1.5"/></svg></div>
+        <button class="node"><div class="n-title">04 · 上线发布</div><div class="n-sub">运营部门</div></button>
+      </div>
+
+      <div class="node-detail">
+        <div class="d-head">
+          <span class="d-title">03 · 程序执行</span>
+          <span class="tag ok">in_review</span>
+        </div>
+        <div class="d-desc">对需求分析产物与调研需求进行代码评审，自动生成评审报告。</div>
+        <div class="d-meta">
+          <span><b>部门</b>程序中台</span>
+          <span><b>执行</b>ai-review</span>
+          <span><b>产物</b>1 个文件</span>
+        </div>
+        <div class="d-actions">
+          <button class="btn-primary sm">执行节点</button>
+          <button class="btn-ghost">提交验收</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 报告 -->
+  <section class="proto-section">
+    <h2>③ 评审报告（src/reporter.ts）</h2>
+    <p class="desc">结论条、统计卡、违反条例列表、问题卡片统一用新配色。代码批注 hl 颜色保持不变。</p>
+
+    <div class="topbar">
+      <div class="tb-brand">
+        <span class="dot" style="width:24px;height:24px;border-radius:6px;background:linear-gradient(135deg,var(--indigo),#6366F1);display:grid;place-items:center;"><svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:#fff;stroke-width:2.2;fill:none;stroke-linecap:round;stroke-linejoin:round;"><path d="M4 17l6-6 4 4 6-8"/></svg></span>
+        ai-flows / text-code
+      </div>
+      <div class="tb-right">
+        <div class="user-chip"><span class="av">L</span>李华</div>
+      </div>
+    </div>
+
+    <div class="card" style="border-top:none;border-radius:0 0 var(--radius-lg) var(--radius-lg);padding:24px;">
+
+      <!-- verdict -->
+      <div class="verdict">
+        <div class="verdict-icon"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></div>
+        <div class="verdict-text">
+          <div class="verdict-title">评审通过</div>
+          <div class="verdict-sub">未发现阻塞性问题，可合并。</div>
+        </div>
+        <span class="verdict-pill">PASS</span>
+      </div>
+
+      <!-- stats -->
+      <div class="stats">
+        <div class="stat n-red"><div class="num">0</div><div class="label">阻塞</div></div>
+        <div class="stat n-yellow"><div class="num">2</div><div class="label">警告</div></div>
+        <div class="stat n-green"><div class="num">1</div><div class="label">建议</div></div>
+      </div>
+
+      <!-- rule list -->
+      <h3 style="font-size:14px;font-weight:600;margin:24px 0 12px;color:var(--text-soft);">违反条例</h3>
+      <div class="rule-list">
+        <div class="rule-item"><span class="rule-name">可维护性</span><span class="rule-msg">函数复杂度超过阈值，建议拆分</span><span class="rule-loc">12-48</span></div>
+        <div class="rule-item"><span class="rule-name">性能</span><span class="rule-msg">循环内重复查询 DOM，可缓存</span><span class="rule-loc">88-91</span></div>
+        <div class="rule-item"><span class="rule-name">安全</span><span class="rule-msg">用户输入未转义直接插入 HTML</span><span class="rule-loc">156-156</span></div>
+      </div>
+
+      <!-- issue card -->
+      <h3 style="font-size:14px;font-weight:600;margin:24px 0 12px;color:var(--text-soft);">问题卡片（点击条例后展开）</h3>
+      <div class="issue-card">
+        <div class="ic-head">
+          <span class="sev warning">WARNING</span>
+          <span class="ic-cat">性能</span>
+          <span class="ic-loc">src/utils.ts:88-91</span>
+        </div>
+        <div class="ic-msg">循环内每次迭代都调用 <code style="font-family:var(--font-mono);background:var(--surface-2);padding:1px 5px;border-radius:4px;">document.querySelector</code>，导致重复 DOM 查询。</div>
+        <div class="ic-sug"><b>建议：</b>将查询结果缓存到循环外的变量中复用。</div>
+      </div>
+
+      <!-- diff -->
+      <h3 style="font-size:14px;font-weight:600;margin:24px 0 12px;color:var(--text-soft);">代码变更（点击条例高亮行）</h3>
+      <div class="diff-panel" style="border:1px solid var(--border);border-radius:var(--radius);">
+        <div class="diff-head">src/utils.ts</div>
+        <div class="diff-body">
+          <div class="diff-line ctx"><span class="ln">85</span><span class="sign"> </span><span>function process(items) {</span></div>
+          <div class="diff-line ctx"><span class="ln">86</span><span class="sign"> </span><span>  const result = [];</span></div>
+          <div class="diff-line hl-warning"><span class="ln">87</span><span class="sign"> </span><span>  for (const it of items) {</span></div>
+          <div class="diff-line hl-warning"><span class="ln">88</span><span class="sign"> </span><span>    const el = document.querySelector("#box");</span></div>
+          <div class="diff-line hl-warning"><span class="ln">89</span><span class="sign"> </span><span>    el.textContent = it.name;</span></div>
+          <div class="diff-line add"><span class="ln">90</span><span class="sign">+</span><span>    result.push(el);</span></div>
+          <div class="diff-line del"><span class="ln">91</span><span class="sign">-</span><span>    result.push(it);</span></div>
+          <div class="diff-line ctx"><span class="ln">92</span><span class="sign"> </span><span>  }</span></div>
+          <div class="diff-line ctx"><span class="ln">93</span><span class="sign"> </span><span>  return result;</span></div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <p style="color:var(--muted);font-size:12px;text-align:center;margin-top:40px;">以上为风格预览，确认后将批量应用到 web/login.css、web/ai-pipeline.css、src/reporter.ts REPORT_CSS。</p>
+
+</div>
+</body>
+</html>

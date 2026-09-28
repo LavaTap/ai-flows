@@ -6,24 +6,12 @@
       "department": "用户研究部门",
       "step": "产品调研",
       "ready": true,
-      "status": "done",
-      "runner": "skill:research-crawler",
-      "requirementText": "爬取哔哩哔哩关于”学生管理系统“十条视频 按人气排行",
+      "status": "running",
+      "runner": "research-crawler",
+      "requirementText": "爬取哔哩哔哩的“学生管理系统”视频top1 10条评论",
       "outputDir": "ppt",
-      "progress": 100,
-      "progressLabel": "完成",
-      "artifacts": [
-        {
-          "name": "research-crawler-20260928092220.md",
-          "path": "ppt/research-crawler-20260928092220.md",
-          "skill": "research-crawler",
-          "at": "2026-09-28T09:22:20.749Z"
-        }
-      ],
-      "lastResult": "执行完成：产物已生成，可提交验收",
-      "uploads": [
-        "research-crawler-20260928092220.md"
-      ]
+      "progress": 10,
+      "progressLabel": "启动调研 agent"
     },
     {
       "id": "02",

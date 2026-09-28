@@ -69,8 +69,8 @@
     ".top-right .logout{font:500 12px/18px var(--font-sans);color:var(--copy);background:var(--glass-fill);",
     "border:1px solid var(--glass-line);border-radius:999px;padding:4px 12px;cursor:pointer;white-space:nowrap;}",
     ".top-right .logout:hover{color:var(--led);border-color:rgba(173,49,77,.3);}",
-    ".top-right .accbtn{font:500 12px/18px var(--font-sans);color:var(--teal);background:var(--teal-soft);",
-    "border:1px solid var(--teal-line);border-radius:999px;padding:4px 12px;cursor:pointer;white-space:nowrap;}",
+    ".top-right .accbtn{font:500 12px/18px var(--font-sans);color:var(--teal);background:var(--teal-soft);text-decoration:none;",
+    "border:1px solid var(--teal-line);border-radius:999px;padding:4px 12px;cursor:pointer;white-space:nowrap;display:inline-block;}",
     ".top-right .accbtn:hover{color:#fff;background:var(--teal);}",
     ".user-chip .rname{color:var(--ink-soft);font-weight:500;}",
     /* 执行角色：紧凑列表（小头像 + 名字），hover 弹出详情卡片 */
@@ -79,22 +79,23 @@
     ".d-roles-list{display:flex;gap:8px;flex-wrap:wrap;}",
     ".role-chip{position:relative;display:inline-flex;align-items:center;gap:6px;padding:4px 10px 4px 4px;",
     "border:1px solid var(--glass-line);border-radius:999px;background:var(--glass-fill);cursor:default;white-space:nowrap;}",
-    ".role-chip:hover{background:rgba(255,255,255,.75);}",
+    ".role-chip:hover{background:var(--paper-2);}",
     ".rc-chip-avatar{width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;",
     "color:#fff;font:600 11px/1 var(--font-sans);flex:none;box-shadow:0 1px 3px rgba(20,20,20,.15);}",
     ".rc-chip-name{font:500 12px/18px var(--font-sans);color:var(--ink-soft);}",
     /* hover 弹出的完整长方形卡片 */
     ".role-card{position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);",
-    "display:none;width:220px;padding:12px 14px;border:1px solid var(--glass-line-strong);",
-    "border-radius:12px;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);",
-    "box-shadow:0 8px 24px rgba(20,20,20,.12),0 2px 6px rgba(20,20,20,.08);",
+    "display:none;width:352px;padding:12px 14px;border:1px solid var(--glass-line-strong);",
+    "border-radius:12px;background:var(--glass-fill);",
+    "box-shadow:0 8px 24px rgba(15,23,42,.12),0 2px 6px rgba(15,23,42,.08);",
     "z-index:20;pointer-events:none;}",
     ".role-chip:hover .role-card{display:flex;}",
     ".rc-avatar{width:42px;height:42px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;",
-    "color:#fff;font:600 18px/1 var(--font-sans);flex:none;box-shadow:0 2px 6px rgba(20,20,20,.15);}",
-    ".rc-body{display:flex;flex-direction:column;min-width:0;margin-left:12px;justify-content:center;}",
+    "color:#fff;font:600 18px/1 var(--font-sans);flex:none;box-shadow:0 2px 6px rgba(15,23,42,.15);}",
+    ".rc-body{display:flex;flex-direction:column;min-width:0;margin-left:12px;justify-content:center;flex:1;}",
     ".rc-name{font:700 15px/22px var(--font-sans);color:var(--ink-soft);white-space:nowrap;}",
     ".rc-sub{font:400 12px/18px var(--font-sans);color:var(--muted);white-space:nowrap;}",
+    ".rc-email{font:400 11.5px/17px var(--font-mono);color:var(--led);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;}",
     /* 进度条 */
     ".d-progress{width:100%;}",
     ".d-progress .bar{height:8px;border-radius:999px;background:rgba(0,0,0,.08);overflow:hidden;}",
@@ -371,12 +372,11 @@
     }
     var topRight = document.querySelector(".top-right");
     if (topRight) {
-      var acc = document.createElement("button");
-      acc.type = "button";
+      var acc = document.createElement("a");
+      acc.href = "/account";
       acc.className = "accbtn";
       acc.textContent = "账号管理";
       acc.title = "管理我的 GitHub 绑定与资料";
-      acc.addEventListener("click", openAccountManager);
       topRight.appendChild(acc);
       var out = document.createElement("button");
       out.type = "button";
@@ -434,8 +434,12 @@
       var sub = document.createElement("span");
       sub.className = "rc-sub";
       sub.textContent = m.department + " / " + m.title;
+      var em = document.createElement("span");
+      em.className = "rc-email";
+      em.textContent = m.email;
       body.appendChild(nm);
       body.appendChild(sub);
+      body.appendChild(em);
       card.appendChild(av);
       card.appendChild(body);
       chip.appendChild(card);
@@ -1106,6 +1110,11 @@
     return !!node.runner && node.runner.indexOf("skill:") === 0;
   }
 
+  /* 节点 01 产品调研：调外部调研 agent，产物为其 output 目录打包的 zip */
+  function isCrawlerNode(node) {
+    return node.runner === "research-crawler";
+  }
+
   function renderActions(idx) {
     var node = nodes[idx];
     var panel = currentTip(idx);
@@ -1204,9 +1213,9 @@
       wrap.appendChild(rowR);
     }
 
-    /* 需求编辑器 + 附件（skill 节点）：拆为 琥珀色需求区 + 青绿附件区 */
-    if (isSkillNode(node)) {
-      renderRequirementEditor(node, idx, wrap);
+    /* 需求编辑器（skill / 调研 agent 节点）：拆为 琥珀色需求区 + 青绿附件区（附件仅 skill 节点） */
+    if (isSkillNode(node) || isCrawlerNode(node)) {
+      renderRequirementEditor(node, idx, wrap, isSkillNode(node));
     }
 
     /* 动作按钮行 */
@@ -1218,8 +1227,8 @@
     panel.appendChild(wrap);
   }
 
-  /** 需求文本编辑（琥珀区）+ 附件上传（青绿区）：拆为两个色块分区 */
-  function renderRequirementEditor(node, idx, wrap) {
+  /** 需求文本编辑（琥珀区）+ 附件上传（青绿区，仅 skill 节点）：拆为两个色块分区 */
+  function renderRequirementEditor(node, idx, wrap, withFiles) {
     /* —— 琥珀区：需求文本编辑 —— */
     var reqBox = document.createElement("div");
     reqBox.className = "d-req";
@@ -1273,6 +1282,8 @@
       reqBox.appendChild(reqRow);
     }
     wrap.appendChild(reqBox);
+
+    if (!withFiles) return;
 
     /* —— 青绿区：附件文件 —— */
     var fileBox = document.createElement("div");
@@ -1419,18 +1430,12 @@
     var isRunning = node.status === "running";
     var inFlight = busyIds.indexOf(node.id) >= 0;
 
-    if (isSkillNode(node)) {
+    if (isCrawlerNode(node)) {
+      /* 调研 agent 节点：需求文本已在节点内，直接执行（产物为 output 打包 zip） */
+      addBtn(isRunning ? "重新执行" : "执行", false, function () { return doExecute({}); });
+    } else if (isSkillNode(node)) {
       addBtn(node.id === "01" ? (isRunning ? "重新执行" : "直接执行") : (isRunning ? "重新执行" : "执行"),
         false, function () { runSkillFlow(); });
-      /* 节点 01 专属：需求分析（product-analysis skill，先提交材料）—— 琥珀色 */
-      if (node.id === "01") {
-        addBtn("需求分析", true, function () {
-          openUploadDialog(node, function () {
-            runSkillFlow("product-analysis");
-          });
-          return Promise.resolve();
-        }, "amber");
-      }
     } else if (node.runner === "ai-review") {
       addBtn(isRunning ? "重新执行" : "执行", false, function () {
         return doExecute({});

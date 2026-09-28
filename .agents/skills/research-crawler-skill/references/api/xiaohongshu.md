@@ -189,12 +189,12 @@
   "image_formats": ["jpg", "webp", "avif"],
   "extra": {"need_body_topic": "1"},
   "xsec_source": "pc_share",
-  "xsec_token": "ABxYkjUQdpOv4bm_YfDb23LCi08smdITrlW1mvsJR_Pco="
+  "xsec_token": "<REDACTED>"
 }
 ```
 
-- **抓包样例笔记**: `https://www.xiaohongshu.com/discovery/item/6a1b013700000000350334a7?source=webshare&xhsshare=pc_web&xsec_token=ABxYkjUQdpOv4bm_YfDb23LCi08smdITrlW1mvsJR_Pco=&xsec_source=pc_share`
-- **说明**: 拉取标题、正文、作者、图片、视频、点赞数、收藏数、评论数等笔记主内容。该接口必须处于已登录网页端上下文中，并携带当前页面实时生成的 `x-s`、`x-t`、`x-s-common`、`x-b3-traceid`、`x-xray-traceid` 与 Cookie。
+- **抓包样例笔记**: `https://www.xiaohongshu.com/discovery/item/6a1b013700000000350334a7?source=webshare&xhsshare=pc_web&xsec_token=<REDACTED>&xsec_source=pc_share`
+- **说明**: 拉取标题、正文、作者、图片、视频、点赞数、收藏数、评论数等笔记主内容。该接口必须处于已登录网页端上下文中，并携带当前页面实时生成的 `x-s`、`x-t`、`x-s-common`、`x-b3-traceid`、`x-xray-traceid` 与 Cookie。这些请求头由页面实时生成、**无法静态复用**，需通过已登录的浏览器上下文自动注入；硬编码会因签名过期而请求失败。
 
 #### Feed 返回结构与字段映射
 
@@ -207,9 +207,11 @@
 | 评论数 | `data.items[0].note_card.interact_info.comment_count` | `data.items[0].note_card.comment_count` |
 | 收藏数 | `data.items[0].note_card.interact_info.collected_count` | `data.items[0].note_card.collected_count` |
 
+> **主路径与备用路径的优先级**：Feed 接口正常返回时，一律以「推荐读取路径」`data.items[0].note_card.*` 为准，备用路径不启用。仅当 Feed 未触发、返回空或该字段缺失时，才回退到备用路径——正文回退到页面内初始状态 JSON（如 `window.__INITIAL_STATE__` 中的 `note.desc`），昵称回退到搜索结果卡片。回退属于兜底，不应与主路径同时取值或互相覆盖。
+
 #### 无法读取笔记详尽信息的常见原因与修复规则
 
-1. **接口路径匹配过窄**：脚本只匹配 `/api/sns/web/v1/feed` 时，若页面改为其他详情接口或缓存首屏数据，`note_info` 会保持空对象。修复方式是同时监听所有 `edith.xiaohongshu.com` JSON 响应，并按 `note_id` 在响应体中递归查找 `note_card`。
+1. **接口路径匹配过窄**：脚本只匹配 `/api/sns/web/v1/feed` 时，若页面改为其他详情接口或缓存首屏数据，`note_info` 会保持空对象。修复方式是同时监听所有 `edith.xiaohongshu.com` JSON 响应，并按 `note_id` 在响应体中递归查找 `note_card`（递归须按 `note_id` 精确匹配，并限制递归深度与响应体大小，避免误命中非目标笔记及造成性能开销）。
 2. **只等待 network response，不读取页面初始状态**：部分分享页详情直接注入到页面脚本状态中，未必再次触发 Feed 请求。修复方式是在拦截接口失败时，从页面 `<script>` 文本、`window.__INITIAL_STATE__`、`window.__NUXT__` 等状态对象中递归提取目标笔记。
 3. **`xsec_source` 与入口不一致**：分享链接应优先使用 `pc_share`，搜索结果入口使用 `pc_search`，详情流入口使用 `pc_feed`。入口不匹配时 Feed 可能返回空、失败或只返回评论。
 4. **旧脚本只在评论采集阶段顺带捕获详情**：如果评论接口先触发、Feed 未触发或被缓存，最终 `meta.json.note_info` 为空，`note_content.txt` 只能写入 note_id。修复方式是将“详情获取”作为独立前置步骤，先拿到 `note_card` 后再采集评论。
@@ -218,8 +220,8 @@
 
 1. 使用已登录浏览器上下文打开原始分享链接。
 2. 注册响应监听，捕获 Feed 或任意包含目标 `note_id` 的 JSON 响应。
-3. 若 15-30 秒内未捕获到详情 JSON，则从页面 DOM 与脚本状态递归提取。
-4. 输出 `标题`、`作者`、`正文`、`点赞数`、`评论数` 到项目根目录 `note_content.txt`。
+3. 若在可配置的详情等待超时（默认 15-30 秒，依据页面首屏详情接口的响应耗时经验值设定）内未捕获到详情 JSON，则从页面 DOM 与脚本状态递归提取。
+4. 输出 `标题`、`作者`、`正文`、`点赞数`、`评论数` 到项目根目录 `note_content.txt`（UTF-8 编码；每次运行覆盖写入；若详情获取失败，则写入 note_id 占位并提示失败）。
 
 ### 笔记附属组件数据
 
@@ -356,21 +358,3 @@ https://edith.xiaohongshu.com/api/sns/web/v2/comment/page?note_id=644f32ac000000
 1. 抓包文本中多处仅保留“接口名称”未提供完整 URL，脚本落地前需二次抓包补齐。
 2. 小红书接口对签名与时效敏感，`x-t`/`x-s`/`x-s-common` 需按请求实时生成。
 3. 评论翻页需控制请求频率，避免触发风控限流。
-
-
----
-
-## 实际爬取实践总结
-
-### 推荐方案：浏览器自动化（DrissionPage）
-
-经过实测，直接调用 API 方式（即使使用 xhshow 生成签名）仍会触发小红书风控校验，**推荐使用 DrissionPage 浏览器自动化方式**：
-
-1. **优势**：自动处理所有动态签名（x-s/x-s-common/x-t）、Cookie 管理、浏览器指纹
-2. **流程**：访问笔记页面 → 等待3秒加载 → 滚动到评论区 → 循环滚动加载所有评论
-3. **终止条件**：连续5次滚动无新评论时停止（保证不超过实际评论总量）
-4. **元素选择器**：（主评论）、（子回复）
-
-### Cookie 更新
-
-使用 DrissionPage 打开小红书登录后，提取所有 Cookie 并保存，即可用于后续爬取。

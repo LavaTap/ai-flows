@@ -45,8 +45,9 @@
 | `reporter.ts` | Markdown 报告 + HTML 模板渲染 `renderTemplate()` |
 | `serve.ts` | 报告 HTTP 服务（`node:http`）+ 报告列表页 + `POST /reports/<id>/push` 确认提交（需带 commit message，有暂存先 commit 再 push；无暂存且信息与 HEAD 不同则 amend 改写） |
 | `publisher.ts` | 多目标远端推送、https token 注入；内部推送置 `AI_REVIEW_INTERNAL_PUSH=1`，防被 pre-push hook 循环拦截 |
-| `platform.ts` | 平台 HTTP 服务：登录会话 + 管线页注入 `window.__PIPELINE__` + 节点执行/提交/验收/驳回 API + 需求编辑/附件上传/目录浏览/产物下载 + `GET /api/reviews` 评审记录（平台历史 + 外部报告聚合，按视角过滤）+ 账号管理 API（我的资料 / GitHub 自助绑定 / 主管审核绑定 / 主管改他人姓名·部门·职位）；权限判定 `canExecute` / `canApprove` / `canEditRequirement` / `filterReviewsByUser` / `safeRepoPath`；节点 01/02 后台跑 skill、节点 03 后台跑评审链，`busy` 集合防并发 |
+| `platform.ts` | 平台 HTTP 服务：登录会话 + 管线页注入 `window.__PIPELINE__` + 节点执行/提交/验收/驳回 API + 需求编辑/附件上传/目录浏览/产物下载 + `GET /api/reviews` 评审记录（平台历史 + 外部报告聚合，按视角过滤）+ 账号管理 API（我的资料 / GitHub 自助绑定 / 主管审核绑定 / 主管改他人姓名·部门·职位）；权限判定 `canExecute` / `canApprove` / `canEditRequirement` / `filterReviewsByUser` / `safeRepoPath`；节点 02 后台跑 skill、节点 01 后台跑外部调研 agent、节点 03 后台跑评审链，`busy` 集合防并发 |
 | `skill.ts` | skill 执行器：SKILL.md（剥 frontmatter）作系统提示 + 需求/附件组装 prompt → `callModel` 生成 Markdown 产物写入输出目录，进度经回调回写 db；不感知节点/权限 |
+| `crawler.ts` | 节点 01 调研 agent 执行器：需求文本经 stdin 作 agent（`crawler.root` 项目内，命令 `crawler.command`）prompt → 跑完把 agent `output/` 目录打包 zip（零依赖 CRC32 + `zlib.deflateRawSync`，含 `collectFiles`）；不感知节点/权限 |
 | `db.ts` | JSON 库读写（`db/users.json` / `db/pipeline.json` / `db/reviews.json`）、`authenticate` 邮箱+密码校验、`appendReview` 评审历史追加、GitHub 绑定/待审核/资料修改（`setUserGithub` / `setUserGithubPending` / `clearUserGithubPending` / `approveUserGithub` / `setUserProfile`） |
 | `auth.ts` | 内存会话 + cookie 签发/解析（`HttpOnly` `SameSite=Lax`，24h，重启即失效） |
 | `redact.ts` | `maskSecrets()`：评审产出前对 `summary` / `message` / `suggestion` 打码（密钥只留首尾各 4 位） |
@@ -80,6 +81,7 @@
 | 节点异步执行 | `runner=ai-review` / `runner=skill:<name>` 先落 `running` 并立即响应，后台跑完（skill 走 `src/skill.ts`）回写 `lastResult` / `progress` / 产物（回写前重读库，避免覆盖期间其他节点变更）；执行完成保持 `running` 等提交验收 |
 | 注入 bootstrap 必须转义 | `window.__PIPELINE__` 注入用 `jsonForScript()`（转义 `<`）；节点顺序与 `web/ai-pipeline-app.js` 的 `data-idx` 一一对应，改注入结构必须同步该脚本 |
 | 评审记录按视角过滤 | `GET /api/reviews` 只用 `filterReviewsByUser`（主管全量 / 员工限本部门）；外部触发（hook/手动 run）报告无账号归属，统一归到节点 03 部门「程序中台」；平台触发记录写 `db/reviews.json` |
+| 调研 agent 产物为 zip | 节点 01（`runner: research-crawler`）需求文本经 `stdin` 传 agent（不拼命令行）；agent 在 `crawler.root` 项目内跑完，打包其 `output/` 为 zip 落节点 `outputDir`（`safeRepoPath` 校验），不产出 Markdown；需求为空 / 未配 `crawler.root` / 目录不存在一律 400 |
 
 ### ESM 相对导入
 
@@ -162,6 +164,7 @@ export default function main() {}
 | `serve.ts` | `/reports/<id>` 路由 | `../` 等路径穿越必须 404 |
 | `platform.ts` | `canExecute` / `canApprove` / `canEditRequirement` / `filterReviewsByUser` / `safeRepoPath` | 员工限本部门、主管全节点可执行；员工不可批准；需求编辑同执行权限；评审记录主管全量、员工本部门；目录穿越拦截 |
 | `skill.ts` | `sanitizeFilename` / `buildSkillPrompt` / `resolveSkillDoc` | 文件名净化；含/不含附件的 prompt 组装；未知 skill 抛错 |
+| `crawler.ts` | `crc32` / `buildZip` / `collectFiles` | CRC32 标准校验值；zip 经 `inflateRawSync` 往返一致、空条目归档合法；目录递归条目名为 posix 相对路径 |
 
 不要求覆盖：`index.ts` 的 CLI 编排、HTTP 服务生命周期、真实模型调用（涉及网络与凭据）。
 端到端回归用手工三档用例（info / warning / blocker）验证，方法见 `评审链路与说明.md` §3。
@@ -176,7 +179,9 @@ CLI --config <path>  >  环境变量 AI_REVIEW_CONFIG  >  默认 ./ai-review.con
 
 模型凭据解析优先级（`resolveApiKey`）：`model.apiKey`（不推荐明文）> `model.apiKeyEnv` 指向的环境变量。
 
-`loadConfig` 兜底默认值：`severityBlocked=["blocker"]`、`targets=[]`、`diff.scope="staged"`、`diff.exclude=[]`、`diff.maxFileLines=500`。新增配置项时**必须同时更新** `config.example.json` 与 `loadConfig` 默认值。
+`loadConfig` 兜底默认值：`severityBlocked=["blocker"]`、`targets=[]`、`diff.scope="staged"`、`diff.exclude=[]`、`diff.maxFileLines=500`、`reviews.scanRoots=["."]`、`crawler.command="claude"`、`crawler.args=["-p","--permission-mode","bypassPermissions"]`、`crawler.outputDir="output"`、`crawler.timeoutMs=600000`。新增配置项时**必须同时更新** `config.example.json` 与 `loadConfig` 默认值。
+
+节点 01 的调研 agent 配置读**平台自身** `ai-review.config.json` 的 `crawler` 段（`root` 为 agent 项目根，缺省空即拒绝执行）；产物是 agent `output/` 目录打包的 zip，落在节点 `outputDir`（须在目标仓库内，经 `safeRepoPath` 校验），不再产出 Markdown。
 
 平台节点 03 的评审配置随**目标仓库**走（`<repo>/ai-review.config.json`），与其 pre-push hook 行为一致；平台自身不存额外配置，端口用 `AI_FLOWS_PORT` 覆盖。
 

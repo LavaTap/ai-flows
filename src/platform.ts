@@ -4,7 +4,7 @@ import { join, dirname, basename, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, type ReviewRecord, type NodeState, type UserAccount } from "./db.js";
 import { createSession, destroySession, currentUser, sessionCookie, clearCookie, SESSION_COOKIE, parseCookies } from "./auth.js";
-import { loadConfig, type ReviewConfig } from "./config.js";
+import { loadConfig, type CrawlerConfig, type ReviewConfig } from "./config.js";
 import { collectDiff } from "./collector.js";
 import { reviewBatch } from "./reviewer.js";
 import { decideGate } from "./gate.js";
@@ -12,6 +12,7 @@ import { writeReviewReport, buildReportView, fetchRepoTree } from "./reporter.js
 import { isRepo, currentBranch } from "./git.js";
 import { ensureReportServer, REPORTS_DIR } from "./serve.js";
 import { runSkill, sanitizeFilename } from "./skill.js";
+import { runCrawler } from "./crawler.js";
 
 /** 平台静态资源目录 web/（src 与 dist 均位于仓库根下一级，向上取根） */
 export const WEB_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
@@ -177,6 +178,8 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   "/ai-pipeline-app.js": { file: "ai-pipeline-app.js", type: "text/javascript; charset=utf-8" },
   "/ai-review-report.css": { file: "ai-review-report.css", type: "text/css; charset=utf-8" },
   "/ai-review-report.js": { file: "ai-review-report.js", type: "text/javascript; charset=utf-8" },
+  "/account.js": { file: "account.js", type: "text/javascript; charset=utf-8" },
+  "/team.js": { file: "team.js", type: "text/javascript; charset=utf-8" },
 };
 
 /** 读 web/ 下静态文件并响应，不存在返回 false */
@@ -212,10 +215,54 @@ async function pipelineHtml(user: UserAccount, repo: string): Promise<string> {
   return raw.replace("</body>", `${inject}\n</body>`);
 }
 
+/** 渲染账号管理页：读静态 account.html，注入登录用户 bootstrap */
+function accountHtml(user: UserAccount): string {
+  const raw = readFileSync(join(WEB_DIR, "account.html"), "utf8");
+  const boot = {
+    user: toUserView(user),
+    isSupervisor: user.role === "supervisor",
+  };
+  const inject = `<script>window.__ACCOUNT__ = ${jsonForScript(boot)};</script>\n<script src="/account.js" defer></script>`;
+  return raw.replace("</body>", `${inject}\n</body>`);
+}
+
+/** 渲染团队管理页：读静态 team.html，注入用户 + 成员 + 部门列表 bootstrap（仅主管可访问） */
+function teamHtml(user: UserAccount): string {
+  const raw = readFileSync(join(WEB_DIR, "team.html"), "utf8");
+  const allUsers = loadUsers();
+  const departments = Array.from(new Set(allUsers.map((u) => u.department).filter(Boolean)));
+  const boot = {
+    user: toUserView(user),
+    members: allUsers.map(toUserView),
+    departments,
+    isSupervisor: user.role === "supervisor",
+  };
+  const inject = `<script>window.__TEAM__ = ${jsonForScript(boot)};</script>\n<script src="/team.js" defer></script>`;
+  return raw.replace("</body>", `${inject}\n</body>`);
+}
+
 /** skill 执行用的模型配置：优先目标仓库的 ai-review.config.json，缺省回退平台启动目录配置 */
 function loadSkillModelConfig(repo: string): ReviewConfig {
   const repoCfg = join(repo, "ai-review.config.json");
   return loadConfig(existsSync(repoCfg) ? repoCfg : undefined);
+}
+
+/** 节点 01 调研 agent 配置：读平台自身 ai-review.config.json，缺省值兜底（root 解析为绝对路径） */
+function loadCrawlerConfig(): Required<CrawlerConfig> {
+  let cfg: CrawlerConfig = {};
+  try {
+    const cfgPath = join(process.cwd(), "ai-review.config.json");
+    if (existsSync(cfgPath)) cfg = loadConfig(cfgPath).crawler ?? {};
+  } catch {
+    /* 平台配置缺失/损坏时按空配置兜底，由调用方给出可读报错 */
+  }
+  return {
+    root: cfg.root ? resolve(cfg.root) : "",
+    command: cfg.command || "claude",
+    args: cfg.args ?? ["-p", "--permission-mode", "bypassPermissions"],
+    outputDir: cfg.outputDir || "output",
+    timeoutMs: cfg.timeoutMs ?? 600000,
+  };
 }
 
 /** 重新读库更新单个节点（后台任务完成后回写，避免覆盖期间其他节点的状态变更） */
@@ -711,6 +758,39 @@ export async function startPlatformServer(
       return;
     }
 
+    // 账号管理页（登录即可访问）
+    if (path === "/account" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        res.statusCode = 302;
+        res.setHeader("Location", "/login");
+        res.end();
+        return;
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(accountHtml(user));
+      return;
+    }
+
+    // 团队管理页（仅主管可访问）
+    if (path === "/team" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        res.statusCode = 302;
+        res.setHeader("Location", "/login");
+        res.end();
+        return;
+      }
+      if (user.role !== "supervisor") {
+        res.statusCode = 403;
+        res.end("仅部门主管可访问团队管理");
+        return;
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(teamHtml(user));
+      return;
+    }
+
     // 需求文本：PUT 保存（主管 + 本部门员工）。id 用 [^/\\]+ 限定防路径穿越
     const rm = path.match(/^\/api\/nodes\/([^/\\]+)\/requirement$/);
     if (rm && req.method === "PUT") {
@@ -900,6 +980,85 @@ export async function startPlatformServer(
                   },
                 ];
                 n.lastResult = "执行完成：产物已生成，可提交验收";
+              });
+            })
+            .catch((err: any) => {
+              updateNode(node.id, (n) => {
+                n.status = "running";
+                n.progress = undefined;
+                n.progressLabel = undefined;
+                n.lastResult = `执行失败：${err?.message || String(err)}`;
+              });
+            })
+            .finally(() => {
+              busy.delete(node.id);
+            });
+          return;
+        }
+
+        if (node.runner === "research-crawler") {
+          // 调研 agent 节点：需求文本直接作 prompt → 外部 agent 跑完 → 打包其 output 为 zip 产物
+          const requirement = (node.requirementText ?? "").trim();
+          if (!requirement) {
+            sendJson(res, 400, { error: "请先填写调研需求内容再执行" });
+            return;
+          }
+          const crawler = loadCrawlerConfig();
+          if (!crawler.root) {
+            sendJson(res, 400, { error: "未配置调研 agent 目录（ai-review.config.json 的 crawler.root）" });
+            return;
+          }
+          if (!existsSync(crawler.root) || !statSync(crawler.root).isDirectory()) {
+            sendJson(res, 400, { error: `调研 agent 目录不存在：${crawler.root}` });
+            return;
+          }
+          const outputAbs = safeRepoPath(repo, node.outputDir ?? "");
+          if (!outputAbs || !existsSync(outputAbs) || !statSync(outputAbs).isDirectory()) {
+            sendJson(res, 400, { error: `产物输出目录不存在：${node.outputDir || "."}` });
+            return;
+          }
+          const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+          const zipName = sanitizeFilename(`research-crawler-${stamp}.zip`);
+          const zipPath = join(outputAbs, zipName);
+
+          node.status = "running";
+          node.progress = 0;
+          node.progressLabel = "排队中";
+          node.lastResult = undefined;
+          node.reportUrl = undefined;
+          busy.add(node.id);
+          saveNodes(nodes);
+          sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
+          runCrawler({
+            root: crawler.root,
+            command: crawler.command,
+            args: crawler.args,
+            requirement,
+            outputDirName: crawler.outputDir,
+            zipPath,
+            timeoutMs: crawler.timeoutMs,
+            onProgress: (pct, label) => {
+              updateNode(node.id, (n) => {
+                n.progress = pct;
+                n.progressLabel = label;
+              });
+            },
+          })
+            .then((r) => {
+              updateNode(node.id, (n) => {
+                n.status = "running";
+                n.progress = 100;
+                n.progressLabel = "完成";
+                n.artifacts = [
+                  ...(n.artifacts ?? []),
+                  {
+                    name: r.artifactName,
+                    path: relative(repo, r.artifactPath).replace(/\\/g, "/"),
+                    skill: "research-crawler",
+                    at: new Date().toISOString(),
+                  },
+                ];
+                n.lastResult = `执行完成：调研产物已打包（${r.fileCount} 个文件），可提交验收`;
               });
             })
             .catch((err: any) => {
@@ -1111,7 +1270,8 @@ export async function startPlatformServer(
         sendJson(res, 404, { error: "产物文件不存在" });
         return;
       }
-      res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+      const isZip = /\.zip$/i.test(artifact.name);
+      res.setHeader("Content-Type", isZip ? "application/zip" : "text/markdown; charset=utf-8");
       res.setHeader(
         "Content-Disposition",
         `attachment; filename="${encodeURIComponent(artifact.name)}"`
