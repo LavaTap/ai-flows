@@ -57,6 +57,49 @@ export function filterReviewsByUser(reviews: ReviewRecord[], user: UserAccount):
   return reviews.filter((r) => r.department === user.department);
 }
 
+/** 按 id 去重，platform 优先于 external（platform 记录有更完整的执行人/角色元信息） */
+function dedupReviews(reviews: ReviewRecord[]): ReviewRecord[] {
+  const seen = new Map<string, ReviewRecord>();
+  for (const r of reviews) {
+    const existing = seen.get(r.id);
+    if (!existing || (r.source === "platform" && existing.source === "external")) {
+      seen.set(r.id, r);
+    }
+  }
+  return [...seen.values()];
+}
+
+/** 用当前报告服务地址刷新评审记录的 reportUrl（报告 JSON 文件存在于当前仓库才刷新） */
+async function refreshReviewUrls(
+  reviews: ReviewRecord[],
+  repo: string,
+): Promise<ReviewRecord[]> {
+  const dir = join(repo, REPORTS_DIR);
+  const base = await ensureReportServer(repo);
+  return reviews.map((r) => {
+    if (existsSync(join(dir, `${r.id}.json`))) {
+      return { ...r, reportUrl: `${base}/reports/${r.id}` };
+    }
+    return r;
+  });
+}
+
+/** 刷新节点的 reportUrl（报告 JSON 文件存在于当前仓库才刷新） */
+async function refreshNodeReportUrl(
+  node: NodeState,
+  repo: string,
+): Promise<NodeState> {
+  if (!node.reportUrl) return node;
+  const dir = join(repo, REPORTS_DIR);
+  // 从旧 URL 里提取 id，兼容各种端口场景
+  const m = node.reportUrl.match(/\/reports\/([^/]+)/);
+  if (!m) return node;
+  const id = m[1];
+  if (!existsSync(join(dir, `${id}.json`))) return node;
+  const base = await ensureReportServer(repo);
+  return { ...node, reportUrl: `${base}/reports/${id}` };
+}
+
 /** 视图层用户模型（不含密码） */
 interface UserView {
   email: string;
@@ -145,12 +188,15 @@ function serveStatic(res: ServerResponse, route: string): boolean {
 }
 
 /** 渲染管线页：读静态 ai-pipeline.html，注入登录用户 + 部门成员 + 节点状态 + 权限 bootstrap，再挂平台脚本 */
-function pipelineHtml(user: UserAccount): string {
+async function pipelineHtml(user: UserAccount, repo: string): Promise<string> {
   const raw = readFileSync(join(WEB_DIR, "ai-pipeline.html"), "utf8");
+  const nodesWithUrls = await Promise.all(
+    loadNodes().map((n) => refreshNodeReportUrl(n, repo)),
+  );
   const boot = {
     user: toUserView(user),
     members: loadUsers().map(toUserView),
-    nodes: loadNodes().map((n) => toNodeView(user, n)),
+    nodes: nodesWithUrls.map((n) => toNodeView(user, n)),
   };
   const inject = `<script>window.__PIPELINE__ = ${jsonForScript(boot)};</script>\n<script src="/ai-pipeline-app.js" defer></script>`;
   return raw.replace("</body>", `${inject}\n</body>`);
@@ -359,10 +405,13 @@ export async function startPlatformServer(
         sendJson(res, 401, { error: "未登录" });
         return;
       }
+      const nodesWithUrls = await Promise.all(
+        loadNodes().map((n) => refreshNodeReportUrl(n, repo)),
+      );
       sendJson(res, 200, {
         user: toUserView(user),
         members: loadUsers().map(toUserView),
-        nodes: loadNodes().map((n) => toNodeView(user, n)),
+        nodes: nodesWithUrls.map((n) => toNodeView(user, n)),
         busy: [...busy],
       });
       return;
@@ -375,10 +424,13 @@ export async function startPlatformServer(
         sendJson(res, 401, { error: "未登录" });
         return;
       }
-      const all = [...loadReviews(), ...(await collectExternalReviews(repo))].sort(
-        (a, b) => b.generatedAt.localeCompare(a.generatedAt)
-      );
-      sendJson(res, 200, { reviews: filterReviewsByUser(all, user) });
+      const merged = dedupReviews([
+        ...loadReviews(),
+        ...(await collectExternalReviews(repo)),
+      ]);
+      const refreshed = await refreshReviewUrls(merged, repo);
+      const sorted = refreshed.sort((a, b) => b.generatedAt.localeCompare(a.generatedAt));
+      sendJson(res, 200, { reviews: filterReviewsByUser(sorted, user) });
       return;
     }
 
@@ -392,7 +444,7 @@ export async function startPlatformServer(
         return;
       }
       res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.end(pipelineHtml(user));
+      res.end(await pipelineHtml(user, repo));
       return;
     }
 
