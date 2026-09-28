@@ -1,22 +1,29 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
-import { readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync } from "node:fs";
+import { join, dirname, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadNodes, saveNodes, authenticate, loadReviews, appendReview, type ReviewRecord, type NodeState, type UserAccount } from "./db.js";
+import { loadNodes, saveNodes, authenticate, loadUsers, loadReviews, appendReview, type ReviewRecord, type NodeState, type UserAccount } from "./db.js";
 import { createSession, destroySession, currentUser, sessionCookie, clearCookie, SESSION_COOKIE, parseCookies } from "./auth.js";
-import { loadConfig } from "./config.js";
+import { loadConfig, type ReviewConfig } from "./config.js";
 import { collectDiff } from "./collector.js";
 import { reviewBatch } from "./reviewer.js";
 import { decideGate } from "./gate.js";
 import { writeReviewReport, buildReportView } from "./reporter.js";
 import { isRepo, currentBranch } from "./git.js";
 import { ensureReportServer, REPORTS_DIR } from "./serve.js";
+import { runSkill, sanitizeFilename } from "./skill.js";
 
 /** 平台静态资源目录 web/（src 与 dist 均位于仓库根下一级，向上取根） */
 export const WEB_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 
 /** 平台默认端口（与报告服务 4310 错开） */
 export const DEFAULT_PLATFORM_PORT = 4311;
+
+/** 节点附件上传目录名（位于目标仓库根下） */
+const UPLOADS_DIR = ".ai-flows-uploads";
+
+/** 需求文本长度上限 */
+const REQUIREMENT_MAX = 4000;
 
 /** 员工只能执行本部门节点；部门主管不限部门（权限最高） */
 export function canExecute(user: UserAccount, node: NodeState): boolean {
@@ -26,6 +33,19 @@ export function canExecute(user: UserAccount, node: NodeState): boolean {
 /** 仅部门主管可批准节点（操控并批准所有节点） */
 export function canApprove(user: UserAccount): boolean {
   return user.role === "supervisor";
+}
+
+/** 需求文本/附件编辑权限：与本节点执行权限一致（本部门员工 + 主管） */
+export function canEditRequirement(user: UserAccount, node: NodeState): boolean {
+  return canExecute(user, node);
+}
+
+/** 目标仓库内路径安全解析：rel 归一化后必须仍在 repo 内，越权返回 null */
+export function safeRepoPath(repo: string, rel: string): string | null {
+  const root = resolve(repo);
+  const abs = resolve(root, rel || ".");
+  if (abs !== root && !abs.startsWith(root + sep)) return null;
+  return abs;
 }
 
 /** 节点 03（AI 代码评审）所属部门：外部触发（hook/手动 run）的报告无账号归属，统一归到该部门 */
@@ -40,6 +60,8 @@ export function filterReviewsByUser(reviews: ReviewRecord[], user: UserAccount):
 /** 视图层用户模型（不含密码） */
 interface UserView {
   email: string;
+  /** 中文姓名（角色卡片展示） */
+  name?: string;
   role: UserAccount["role"];
   title: string;
   department: string;
@@ -51,16 +73,23 @@ interface NodeView extends NodeState {
   canExecute: boolean;
   /** 当前用户能否批准该节点 */
   canApprove: boolean;
+  /** 当前用户能否编辑需求文本/上传附件（与执行权限一致） */
+  canEdit: boolean;
 }
 
 /** 剥离密码，输出视图层用户 */
 function toUserView(u: UserAccount): UserView {
-  return { email: u.email, role: u.role, title: u.title, department: u.department };
+  return { email: u.email, name: u.name, role: u.role, title: u.title, department: u.department };
 }
 
 /** 节点 + 权限 → 视图模型 */
 function toNodeView(user: UserAccount, node: NodeState): NodeView {
-  return { ...node, canExecute: canExecute(user, node), canApprove: canApprove(user) };
+  return {
+    ...node,
+    canExecute: canExecute(user, node),
+    canApprove: canApprove(user),
+    canEdit: canEditRequirement(user, node),
+  };
 }
 
 /** JSON 序列化为可安全内嵌 <script> 的字符串（转义 < 防提前闭合标签） */
@@ -115,18 +144,25 @@ function serveStatic(res: ServerResponse, route: string): boolean {
   }
 }
 
-/** 渲染管线页：读静态 ai-pipeline.html，注入登录用户 + 节点状态 + 权限 bootstrap，再挂平台脚本 */
+/** 渲染管线页：读静态 ai-pipeline.html，注入登录用户 + 部门成员 + 节点状态 + 权限 bootstrap，再挂平台脚本 */
 function pipelineHtml(user: UserAccount): string {
   const raw = readFileSync(join(WEB_DIR, "ai-pipeline.html"), "utf8");
   const boot = {
     user: toUserView(user),
+    members: loadUsers().map(toUserView),
     nodes: loadNodes().map((n) => toNodeView(user, n)),
   };
   const inject = `<script>window.__PIPELINE__ = ${jsonForScript(boot)};</script>\n<script src="/ai-pipeline-app.js" defer></script>`;
   return raw.replace("</body>", `${inject}\n</body>`);
 }
 
-/** 重新读库更新单个节点（后台评审任务完成后回写，避免覆盖期间其他节点的状态变更） */
+/** skill 执行用的模型配置：优先目标仓库的 ai-review.config.json，缺省回退平台启动目录配置 */
+function loadSkillModelConfig(repo: string): ReviewConfig {
+  const repoCfg = join(repo, "ai-review.config.json");
+  return loadConfig(existsSync(repoCfg) ? repoCfg : undefined);
+}
+
+/** 重新读库更新单个节点（后台任务完成后回写，避免覆盖期间其他节点的状态变更） */
 function updateNode(id: string, mutate: (n: NodeState) => void): void {
   const nodes = loadNodes();
   const n = nodes.find((x) => x.id === id);
@@ -232,13 +268,16 @@ export interface PlatformServer {
   close(): Promise<void>;
 }
 
-/** 启动 AI 管线平台 HTTP 服务：登录会话 + 管线页角色渲染 + 节点执行/批准 API。
- *  opts.repo 为节点 03 AI 代码评审的目标仓库（缺省取当前工作目录）。 */
+/** 启动 AI 管线平台 HTTP 服务：登录会话 + 管线页角色渲染 + 节点执行/提交/批准/驳回 API。
+ *  opts.repo 为节点执行的目标仓库（skill 产物与附件落在该仓库，节点 03 评审链也在其上执行）。 */
 export async function startPlatformServer(
   opts: { host?: string; port?: number; repo?: string } = {}
 ): Promise<PlatformServer> {
   const host = opts.host ?? "127.0.0.1";
   const repo = opts.repo ?? process.cwd();
+
+  // 后台任务在途的节点 id（防并发重复执行；完成/失败后移除）
+  const busy = new Set<string>();
 
   // 清理上次进程异常退出残留的 running 状态，避免节点永久卡在执行中
   const bootNodes = loadNodes();
@@ -313,7 +352,7 @@ export async function startPlatformServer(
       return;
     }
 
-    // 节点列表 + 当前用户权限（登录即可查看全流程）
+    // 节点列表 + 当前用户权限 + 部门成员（角色卡片数据源；登录即可查看全流程）
     if (path === "/api/nodes" && req.method === "GET") {
       const user = currentUser(req);
       if (!user) {
@@ -322,7 +361,9 @@ export async function startPlatformServer(
       }
       sendJson(res, 200, {
         user: toUserView(user),
+        members: loadUsers().map(toUserView),
         nodes: loadNodes().map((n) => toNodeView(user, n)),
+        busy: [...busy],
       });
       return;
     }
@@ -355,8 +396,91 @@ export async function startPlatformServer(
       return;
     }
 
-    // 节点动作：执行（本部门员工或主管）/ 批准（仅主管）。id 用 [^/\\]+ 限定防路径穿越
-    const am = path.match(/^\/api\/nodes\/([^/\\]+)\/(execute|approve)$/);
+    // 需求文本：PUT 保存（主管 + 本部门员工）。id 用 [^/\\]+ 限定防路径穿越
+    const rm = path.match(/^\/api\/nodes\/([^/\\]+)\/requirement$/);
+    if (rm && req.method === "PUT") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const nodes = loadNodes();
+      const node = nodes.find((n) => n.id === rm[1]);
+      if (!node) {
+        sendJson(res, 404, { error: "节点不存在" });
+        return;
+      }
+      if (!canEditRequirement(user, node)) {
+        sendJson(res, 403, { error: "仅本部门员工或部门主管可编辑需求内容" });
+        return;
+      }
+      let text = "";
+      try {
+        const body = JSON.parse(await readBody(req)) as { text?: unknown };
+        if (typeof body.text === "string") text = body.text;
+      } catch {
+        sendJson(res, 400, { error: "请求体不是合法 JSON" });
+        return;
+      }
+      if (text.length > REQUIREMENT_MAX) {
+        sendJson(res, 400, { error: `需求内容过长（上限 ${REQUIREMENT_MAX} 字）` });
+        return;
+      }
+      node.requirementText = text;
+      saveNodes(nodes);
+      sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
+      return;
+    }
+
+    // 附件上传：POST（body 为 base64，避免手写 multipart），落 .ai-flows-uploads/<节点id>/
+    const um = path.match(/^\/api\/nodes\/([^/\\]+)\/upload$/);
+    if (um && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const nodes = loadNodes();
+      const node = nodes.find((n) => n.id === um[1]);
+      if (!node) {
+        sendJson(res, 404, { error: "节点不存在" });
+        return;
+      }
+      if (!canEditRequirement(user, node)) {
+        sendJson(res, 403, { error: "仅本部门员工或部门主管可上传附件" });
+        return;
+      }
+      let filename = "";
+      let contentBase64 = "";
+      try {
+        const body = JSON.parse(await readBody(req, 4 * 1024 * 1024)) as {
+          filename?: unknown;
+          contentBase64?: unknown;
+        };
+        if (typeof body.filename === "string") filename = body.filename;
+        if (typeof body.contentBase64 === "string") contentBase64 = body.contentBase64;
+      } catch {
+        sendJson(res, 400, { error: "请求体过大或不是合法 JSON" });
+        return;
+      }
+      if (!filename || !contentBase64) {
+        sendJson(res, 400, { error: "缺少 filename 或 contentBase64" });
+        return;
+      }
+      const safeName = sanitizeFilename(filename);
+      const dir = join(repo, UPLOADS_DIR, node.id);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, safeName), Buffer.from(contentBase64, "base64"));
+      const list = node.uploads ?? [];
+      if (!list.includes(safeName)) list.push(safeName);
+      node.uploads = list;
+      saveNodes(nodes);
+      sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
+      return;
+    }
+
+    // 节点动作：执行 / 提交 / 批准 / 驳回。id 用 [^/\\]+ 限定防路径穿越
+    const am = path.match(/^\/api\/nodes\/([^/\\]+)\/(execute|submit|approve|reject)$/);
     if (am && req.method === "POST") {
       const user = currentUser(req);
       if (!user) {
@@ -369,39 +493,133 @@ export async function startPlatformServer(
         sendJson(res, 404, { error: "节点不存在" });
         return;
       }
-      if (am[2] === "execute") {
+      const action = am[2];
+
+      if (action === "execute") {
         if (!canExecute(user, node)) {
           sendJson(res, 403, { error: "仅本部门员工或部门主管可执行该节点" });
           return;
         }
-        if (!node.ready) {
+        if (!node.ready || !node.runner) {
           sendJson(res, 400, { error: "该环节能力待接入，暂不可执行" });
           return;
         }
-        if (node.status === "approved") {
-          sendJson(res, 400, { error: "节点已批准，无需重复执行" });
-          return;
-        }
-        if (node.status === "running") {
+        if (busy.has(node.id)) {
           sendJson(res, 400, { error: "该节点正在执行中，请稍候" });
           return;
         }
-        // 带 runner 的节点：先落 running 态立即响应，评审链在后台执行，完成后回写结果
-        if (node.runner === "ai-review") {
+        if (node.status === "in_review") {
+          sendJson(res, 409, { error: "节点待验收中，请等待主管审核" });
+          return;
+        }
+        if (node.status === "done") {
+          sendJson(res, 409, { error: "节点已执行完成（终态），不可重复执行" });
+          return;
+        }
+
+        const sm = node.runner.match(/^skill:([\w-]+)$/);
+        if (sm) {
+          // skill 节点：解析输出目录 → 后台跑 runSkill，进度经 onProgress 回写。
+          // body.skill 可覆盖 runner 默认 skill（节点 01「需求分析」用 product-analysis）
+          let outputDirRel = node.outputDir ?? "";
+          let skillOverride = "";
+          try {
+            const body = JSON.parse(await readBody(req)) as { outputDir?: unknown; skill?: unknown };
+            if (typeof body.outputDir === "string") outputDirRel = body.outputDir;
+            if (typeof body.skill === "string" && /^[\w-]+$/.test(body.skill)) {
+              skillOverride = body.skill;
+            }
+          } catch {
+            /* 未带 body 时沿用最近一次输出目录 */
+          }
+          const outputAbs = safeRepoPath(repo, outputDirRel);
+          if (!outputAbs) {
+            sendJson(res, 403, { error: "输出目录越权：只能选择目标仓库内的目录" });
+            return;
+          }
+          if (!existsSync(outputAbs) || !statSync(outputAbs).isDirectory()) {
+            sendJson(res, 400, { error: `输出目录不存在：${outputDirRel || "."}` });
+            return;
+          }
+          const skill = skillOverride || sm[1];
+          const uploadDir = join(repo, UPLOADS_DIR, node.id);
+          const uploadFiles = (node.uploads ?? [])
+            .map((f) => join(uploadDir, f))
+            .filter((f) => existsSync(f));
           node.status = "running";
+          node.progress = 0;
+          node.progressLabel = "排队中";
+          node.lastResult = undefined;
+          node.reportUrl = undefined;
+          node.outputDir = outputDirRel.replace(/\\/g, "/");
+          busy.add(node.id);
+          saveNodes(nodes);
+          sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
+          runSkill(
+            {
+              skill,
+              requirement: node.requirementText ?? "",
+              uploads: uploadFiles,
+              outputDir: outputAbs,
+              onProgress: (pct, label) => {
+                updateNode(node.id, (n) => {
+                  n.progress = pct;
+                  n.progressLabel = label;
+                });
+              },
+            },
+            loadSkillModelConfig(repo).model
+          )
+            .then((r) => {
+              updateNode(node.id, (n) => {
+                n.status = "running";
+                n.progress = 100;
+                n.progressLabel = "完成";
+                n.artifacts = [
+                  ...(n.artifacts ?? []),
+                  {
+                    name: r.artifactName,
+                    path: relative(repo, r.artifactPath).replace(/\\/g, "/"),
+                    skill,
+                    at: new Date().toISOString(),
+                  },
+                ];
+                n.lastResult = "执行完成：产物已生成，可提交验收";
+              });
+            })
+            .catch((err: any) => {
+              updateNode(node.id, (n) => {
+                n.status = "running";
+                n.progress = undefined;
+                n.progressLabel = undefined;
+                n.lastResult = `执行失败：${err?.message || String(err)}`;
+              });
+            })
+            .finally(() => {
+              busy.delete(node.id);
+            });
+          return;
+        }
+
+        if (node.runner === "ai-review") {
+          // 评审链节点：先落 running 态立即响应，评审在后台执行，完成后保持 running 等待提交
+          node.status = "running";
+          node.progress = undefined;
+          node.progressLabel = undefined;
           node.lastResult = "AI 评审进行中…";
           node.reportUrl = undefined;
+          busy.add(node.id);
           saveNodes(nodes);
           sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
           runAiReviewNode(repo)
             .then((r) => {
               updateNode(node.id, (n) => {
-                n.status = "done";
+                n.status = "running";
                 n.reportUrl = r.reportUrl;
                 n.lastResult = r.passed
                   ? r.issues > 0
-                    ? `评审通过（共 ${r.issues} 个非阻塞提示）`
-                    : "评审通过（未发现问题）"
+                    ? `评审通过（共 ${r.issues} 个非阻塞提示），可提交验收`
+                    : "评审通过（未发现问题），可提交验收"
                   : `评审未通过：${r.blockers} 个 blocker，已拦截`;
               });
               // 写入平台执行历史，供「评审记录」面板按角色/部门追溯
@@ -421,30 +639,169 @@ export async function startPlatformServer(
             })
             .catch((err: any) => {
               updateNode(node.id, (n) => {
-                n.status = "todo";
+                n.status = "running";
                 n.lastResult = `执行失败：${err?.message || String(err)}`;
               });
+            })
+            .finally(() => {
+              busy.delete(node.id);
             });
           return;
         }
-        node.status = "done";
-      } else {
+        sendJson(res, 400, { error: `未知执行器：${node.runner}` });
+        return;
+      }
+
+      if (action === "submit") {
+        // 执行人提交验收：running → in_review
+        if (!canExecute(user, node)) {
+          sendJson(res, 403, { error: "仅本部门员工或部门主管可提交验收" });
+          return;
+        }
+        if (node.status !== "running") {
+          sendJson(res, 409, { error: "仅「执行中」状态可提交验收" });
+          return;
+        }
+        if (busy.has(node.id)) {
+          sendJson(res, 400, { error: "该节点正在执行中，请等待执行完成" });
+          return;
+        }
+        node.status = "in_review";
+        node.rejection = undefined;
+        saveNodes(nodes);
+        sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
+        return;
+      }
+
+      if (action === "approve") {
+        // 主管通过：in_review → done
         if (!canApprove(user)) {
           sendJson(res, 403, { error: "仅部门主管可批准节点" });
           return;
         }
-        if (node.status === "approved") {
-          sendJson(res, 400, { error: "节点已批准" });
+        if (node.status !== "in_review") {
+          sendJson(res, 409, { error: "仅「待验收」状态可批准" });
           return;
         }
-        if (node.status === "running") {
-          sendJson(res, 400, { error: "节点执行中，待执行完成后再批准" });
-          return;
-        }
-        node.status = "approved";
+        node.status = "done";
+        saveNodes(nodes);
+        sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
+        return;
       }
+
+      // reject：主管驳回，in_review → running（附驳回意见）
+      if (!canApprove(user)) {
+        sendJson(res, 403, { error: "仅部门主管可驳回节点" });
+        return;
+      }
+      if (node.status !== "in_review") {
+        sendJson(res, 409, { error: "仅「待验收」状态可驳回" });
+        return;
+      }
+      let reason = "验收不通过，请修改后重新提交";
+      try {
+        const body = JSON.parse(await readBody(req)) as { reason?: unknown };
+        if (typeof body.reason === "string" && body.reason.trim()) {
+          reason = body.reason.trim().slice(0, 500);
+        }
+      } catch {
+        /* 未带 body 时用默认意见 */
+      }
+      node.status = "running";
+      node.rejection = reason;
       saveNodes(nodes);
       sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
+      return;
+    }
+
+    // 目录浏览：只列目标仓库白名单根下的子目录（供输出目录选择弹窗）
+    if (path === "/api/fs" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const rel = u.searchParams.get("path") ?? "";
+      const abs = safeRepoPath(repo, rel);
+      if (!abs) {
+        sendJson(res, 403, { error: "路径越权：只能浏览目标仓库内的目录" });
+        return;
+      }
+      let stat: ReturnType<typeof statSync>;
+      try {
+        stat = statSync(abs);
+      } catch {
+        sendJson(res, 400, { error: "目录不存在" });
+        return;
+      }
+      if (!stat.isDirectory()) {
+        sendJson(res, 400, { error: "该路径不是目录" });
+        return;
+      }
+      const dirs = readdirSync(abs, { withFileTypes: true })
+        .filter((d) => d.isDirectory() && !d.name.startsWith(".") && d.name !== "node_modules")
+        .map((d) => ({ name: d.name, path: relative(repo, join(abs, d.name)).replace(/\\/g, "/") }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      sendJson(res, 200, { path: rel.replace(/\\/g, "/") || ".", dirs });
+      return;
+    }
+
+    // 新建子目录（目录选择弹窗内「新建文件夹」）
+    if (path === "/api/fs/mkdir" && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      let base = "";
+      let name = "";
+      try {
+        const body = JSON.parse(await readBody(req)) as { path?: unknown; name?: unknown };
+        if (typeof body.path === "string") base = body.path;
+        if (typeof body.name === "string") name = body.name;
+      } catch {
+        /* fallthrough 按空处理 */
+      }
+      const safeName = sanitizeFilename(name);
+      if (!safeName || safeName === "file") {
+        sendJson(res, 400, { error: "目录名不合法" });
+        return;
+      }
+      const abs = safeRepoPath(repo, join(base || ".", safeName));
+      if (!abs) {
+        sendJson(res, 403, { error: "路径越权：只能在目标仓库内新建目录" });
+        return;
+      }
+      mkdirSync(abs, { recursive: true });
+      sendJson(res, 200, { ok: true, path: relative(repo, abs).replace(/\\/g, "/") });
+      return;
+    }
+
+    // 产物下载：按节点 id + 产物名精确匹配（禁止穿越）
+    const dm = path.match(/^\/api\/artifacts\/([^/\\]+)\/([^/\\]+)$/);
+    if (dm && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const node = loadNodes().find((n) => n.id === dm[1]);
+      const artifact = node?.artifacts?.find((a) => a.name === dm[2]);
+      if (!node || !artifact) {
+        sendJson(res, 404, { error: "产物不存在" });
+        return;
+      }
+      const abs = safeRepoPath(repo, artifact.path);
+      if (!abs || !existsSync(abs)) {
+        sendJson(res, 404, { error: "产物文件不存在" });
+        return;
+      }
+      res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${encodeURIComponent(artifact.name)}"`
+      );
+      res.end(readFileSync(abs));
       return;
     }
 

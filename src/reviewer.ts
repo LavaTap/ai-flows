@@ -41,10 +41,12 @@ function buildPrompt(file: DiffFile): string {
   ].join("\n");
 }
 
-/** 调用 OpenAI/DeepSeek 兼容的 chat/completions 接口 */
-async function callModel(
+/** 调用 OpenAI/DeepSeek 兼容的 chat/completions 接口。
+ *  opts.json=false 时关闭 JSON 模式（自由文本，供 skill 生成复用）；opts.system 追加 system 消息。 */
+export async function callModel(
   model: ModelConfig,
-  userPrompt: string
+  userPrompt: string,
+  opts: { json?: boolean; system?: string } = {}
 ): Promise<string> {
   const apiKey = resolveApiKey(model);
   if (!apiKey) {
@@ -55,6 +57,9 @@ async function callModel(
   }
 
   const baseUrl = model.baseUrl.replace(/\/+$/, "");
+  const messages: { role: string; content: string }[] = [];
+  if (opts.system) messages.push({ role: "system", content: opts.system });
+  messages.push({ role: "user", content: userPrompt });
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
@@ -64,9 +69,9 @@ async function callModel(
     signal: AbortSignal.timeout(model.timeoutMs ?? 120000),
     body: JSON.stringify({
       model: model.model,
-      messages: [{ role: "user", content: userPrompt }],
+      messages,
       temperature: 0.2,
-      response_format: { type: "json_object" },
+      ...(opts.json === false ? {} : { response_format: { type: "json_object" } }),
     }),
   });
 
