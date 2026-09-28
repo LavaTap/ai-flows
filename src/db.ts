@@ -258,3 +258,12 @@ export function appendReview(record: ReviewRecord): void {
   mkdirSync(DB_DIR, { recursive: true });
   writeFileSync(join(DB_DIR, "reviews.json"), JSON.stringify({ reviews }, null, 2), "utf8");
 }
+
+/** 批量追加评审历史（只读写一次文件） */
+export function appendReviews(newRecords: ReviewRecord[]): void {
+  if (!newRecords.length) return;
+  const reviews = loadReviews();
+  reviews.push(...newRecords);
+  mkdirSync(DB_DIR, { recursive: true });
+  writeFileSync(join(DB_DIR, "reviews.json"), JSON.stringify({ reviews }, null, 2), "utf8");
+}

@@ -2,7 +2,7 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname, basename, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, type ReviewRecord, type NodeState, type UserAccount } from "./db.js";
+import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, type ReviewRecord, type NodeState, type UserAccount } from "./db.js";
 import { createSession, destroySession, currentUser, sessionCookie, clearCookie, SESSION_COOKIE, parseCookies } from "./auth.js";
 import { loadConfig, type ReviewConfig } from "./config.js";
 import { collectDiff } from "./collector.js";
@@ -368,6 +368,12 @@ async function collectExternalReviews(
       }
     }
   }
+  // 扫到的记录中，db 里不存在的批量补录（只读写一次文件）
+  if (records.length) {
+    const existingIds = new Set(loadReviews().map((r) => r.id));
+    const fresh = records.filter((r) => !existingIds.has(r.id));
+    if (fresh.length) appendReviews(fresh);
+  }
   // reportUrl 刷新：仅当报告 JSON 存在于平台当前仓库的 .ai-review-reports/ 时才能通过报告服务访问
   if (records.length) {
     const base = await ensureReportServer(platformRepo);
@@ -682,11 +688,10 @@ export async function startPlatformServer(
         sendJson(res, 401, { error: "未登录" });
         return;
       }
-      const merged = dedupReviews([
-        ...loadReviews(),
-        ...(await collectExternalReviews(scanRoots, repo)),
-      ]);
-      const refreshed = await refreshReviewUrls(merged, repo);
+      // 先扫描外部报告并补录到 db/reviews.json，再直接读 db 全量
+      await collectExternalReviews(scanRoots, repo);
+      const all = loadReviews();
+      const refreshed = await refreshReviewUrls(all, repo);
       const sorted = refreshed.sort((a, b) => b.generatedAt.localeCompare(a.generatedAt));
       sendJson(res, 200, { reviews: filterReviewsByUser(sorted, user) });
       return;
