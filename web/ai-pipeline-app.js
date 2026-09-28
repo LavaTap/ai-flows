@@ -14,6 +14,8 @@
   var ROLE_TEXT = { staff: "员工", supervisor: "主管" };
   var STATUS_TEXT = { todo: "待执行", running: "执行中", in_review: "待验收", done: "已执行" };
   var STATUS_CLS = { todo: "st-todo", running: "st-running", in_review: "st-review", done: "st-done" };
+  /* 平台可选部门（主管在成员管理中据此下拉分配） */
+  var DEPARTMENTS = ["用户研究部门", "程序中台", "运营部门"];
   /* 头像调色板：按邮箱哈希取色，前端保证同一账号颜色稳定 */
   var PALETTE = ["#ad314d", "#2aa198", "#b58900", "#6c71c4", "#cb4b16", "#859900"];
 
@@ -67,25 +69,21 @@
     ".top-right .logout{font:500 12px/18px var(--font-sans);color:var(--copy);background:var(--glass-fill);",
     "border:1px solid var(--glass-line);border-radius:999px;padding:4px 12px;cursor:pointer;white-space:nowrap;}",
     ".top-right .logout:hover{color:var(--led);border-color:rgba(173,49,77,.3);}",
+    ".top-right .accbtn{font:500 12px/18px var(--font-sans);color:var(--teal);background:var(--teal-soft);",
+    "border:1px solid var(--teal-line);border-radius:999px;padding:4px 12px;cursor:pointer;white-space:nowrap;}",
+    ".top-right .accbtn:hover{color:#fff;background:var(--teal);}",
     ".user-chip .rname{color:var(--ink-soft);font-weight:500;}",
-    /* 角色卡片 */
+    /* 角色卡片（长方形：左头像 + 右侧姓名/部门职位） */
     ".d-roles{margin-top:12px;border-top:1px solid var(--glass-line);padding-top:10px;}",
     ".d-roles-head{font:600 12px/18px var(--font-sans);color:var(--ink-soft);margin-bottom:8px;}",
-    ".d-roles-list{display:flex;gap:8px;flex-wrap:wrap;}",
-    ".role-card{position:relative;display:inline-flex;align-items:center;gap:8px;padding:6px 12px 6px 6px;",
-    "border:1px solid var(--glass-line);border-radius:999px;background:var(--glass-fill);cursor:default;}",
-    ".rc-avatar{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;",
-    "color:#fff;font:600 12px/1 var(--font-sans);flex:none;}",
-    ".rc-name{font:500 12px/18px var(--font-sans);color:var(--copy);}",
-    ".rc-pop{display:none;position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);",
-    "background:rgba(255,255,255,.92);backdrop-filter:blur(12px);border:1px solid var(--glass-line);",
-    "border-radius:14px;box-shadow:0 10px 30px rgba(20,20,20,.12);padding:12px 16px;min-width:150px;",
-    "text-align:center;z-index:30;}",
-    ".role-card:hover .rc-pop{display:block;}",
-    ".rc-pop .pa{width:44px;height:44px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;",
-    "color:#fff;font:600 18px/1 var(--font-sans);margin-bottom:6px;}",
-    ".rc-pop .pn{font:600 13px/20px var(--font-sans);color:var(--ink-soft);}",
-    ".rc-pop .pt{font:400 11px/16px var(--font-sans);color:var(--muted);}",
+    ".d-roles-list{display:flex;gap:10px;flex-wrap:wrap;}",
+    ".role-card{display:flex;align-items:center;gap:12px;padding:10px 14px;",
+    "border:1px solid var(--glass-line);border-radius:12px;background:var(--glass-fill);cursor:default;min-width:150px;}",
+    ".rc-avatar{width:42px;height:42px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;",
+    "color:#fff;font:600 18px/1 var(--font-sans);flex:none;box-shadow:0 2px 6px rgba(20,20,20,.15);}",
+    ".rc-body{display:flex;flex-direction:column;min-width:0;}",
+    ".rc-name{font:700 15px/22px var(--font-sans);color:var(--ink-soft);white-space:nowrap;}",
+    ".rc-sub{font:400 12px/18px var(--font-sans);color:var(--muted);white-space:nowrap;}",
     /* 进度条 */
     ".d-progress{width:100%;}",
     ".d-progress .bar{height:8px;border-radius:999px;background:rgba(0,0,0,.08);overflow:hidden;}",
@@ -135,7 +133,51 @@
     ".ai-modal .foot .btn{font:500 13px/18px var(--font-sans);padding:8px 18px;border:none;border-radius:999px;",
     "background:var(--led);color:#fff;cursor:pointer;}",
     ".ai-modal .foot .btn.ghost{background:transparent;border:1px solid var(--glass-line);color:var(--copy);}",
-    ".ai-modal .empty{font:400 12px/18px var(--font-sans);color:var(--muted);padding:8px 0 14px;}"
+    ".ai-modal .empty{font:400 12px/18px var(--font-sans);color:var(--muted);padding:8px 0 14px;}",
+    /* 账号管理弹窗 */
+    ".acc-panel{width:min(680px,92vw);}",
+    ".acc-card{display:flex;align-items:center;gap:14px;padding:14px 16px;border:1px solid var(--glass-line);border-radius:16px;background:var(--glass-fill);}",
+    ".acc-avatar{width:52px;height:52px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff;font:700 22px/1 var(--font-sans);flex:none;box-shadow:0 2px 8px rgba(20,20,20,.16);}",
+    ".acc-id{min-width:0;}",
+    ".acc-name{font:700 17px/24px var(--font-sans);color:var(--ink-soft);}",
+    ".acc-meta{font:400 12px/18px var(--font-sans);color:var(--muted);margin-top:2px;}",
+    ".acc-meta b{font-weight:600;color:var(--ink-soft);}",
+    ".acc-sec{margin-top:18px;}",
+    ".acc-sec-title{font:600 13px/20px var(--font-sans);color:var(--ink-soft);margin-bottom:10px;",
+    "display:flex;align-items:center;gap:8px;}",
+    ".acc-sec-title::before{content:'';width:8px;height:8px;border-radius:2px;background:var(--led);flex:none;}",
+    ".acc-field{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;}",
+    ".acc-input{flex:1 1 200px;padding:8px 12px;border-radius:10px;border:1px solid var(--glass-line);",
+    "background:rgba(255,255,255,.7);font:400 13px/18px var(--font-sans);color:var(--copy);}",
+    ".acc-select{padding:8px 10px;border-radius:10px;border:1px solid var(--glass-line);",
+    "background:rgba(255,255,255,.7);font:400 13px/18px var(--font-sans);color:var(--copy);}",
+    ".acc-status{font:500 12px/18px var(--font-sans);}",
+    ".acc-status.ok{color:var(--teal);}",
+    ".acc-status.wait{color:var(--amber);}",
+    ".acc-status.off{color:var(--led);}",
+    ".acc-note{font:400 11px/16px var(--font-sans);color:var(--muted-2);}",
+    ".acc-member{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;",
+    "border:1px solid var(--glass-line);border-radius:14px;background:var(--glass-fill);margin-bottom:10px;}",
+    ".acc-member .acc-av{width:36px;height:36px;border-radius:50%;display:inline-flex;align-items:center;",
+    "justify-content:center;color:#fff;font:600 14px/1 var(--font-sans);flex:none;}",
+    ".acc-member .acc-mid{min-width:0;flex:1 1 auto;}",
+    ".acc-member .acc-mn{font:600 14px/20px var(--font-sans);color:var(--ink-soft);display:flex;align-items:center;gap:8px;flex-wrap:wrap;}",
+    ".acc-member .acc-me{font:400 11px/16px var(--font-sans);color:var(--muted);}",
+    ".acc-badge{font:600 11px/16px var(--font-sans);padding:2px 10px;border-radius:999px;white-space:nowrap;}",
+    ".acc-badge.staff{color:var(--copy);background:rgba(0,0,0,.06);}",
+    ".acc-badge.super{color:var(--led);background:var(--led-soft);}",
+    ".acc-gh{font:500 12px/18px var(--font-sans);color:var(--teal);}",
+    ".acc-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}",
+    ".acc-foot{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;}",
+    ".acc-empty{font:400 12px/18px var(--font-sans);color:var(--muted);padding:6px 0 10px;}",
+    /* 账号管理内小按钮 */
+    ".acc-btn{font:500 13px/18px var(--font-sans);padding:7px 14px;border:none;border-radius:10px;",
+    "background:var(--teal);color:#fff;cursor:pointer;transition:opacity 150ms ease,background 150ms ease;}",
+    ".acc-btn:hover:not(:disabled){opacity:.9;}",
+    ".acc-btn.ghost{background:transparent;border:1px solid var(--glass-line);color:var(--copy);}",
+    ".acc-btn.ghost:hover:not(:disabled){border-color:var(--teal);color:var(--teal);}",
+    ".acc-btn.red{background:transparent;border:1px solid var(--led-line,rgba(173,49,77,.35));color:var(--led);}",
+    ".acc-btn:disabled{opacity:.5;cursor:not-allowed;}"
   ].join("");
   document.head.appendChild(style);
 
@@ -318,6 +360,13 @@
     }
     var topRight = document.querySelector(".top-right");
     if (topRight) {
+      var acc = document.createElement("button");
+      acc.type = "button";
+      acc.className = "accbtn";
+      acc.textContent = "账号管理";
+      acc.title = "管理我的 GitHub 绑定与资料";
+      acc.addEventListener("click", openAccountManager);
+      topRight.appendChild(acc);
       var out = document.createElement("button");
       out.type = "button";
       out.className = "logout";
@@ -331,7 +380,7 @@
 
   /* ────────────────────────────── 角色卡片 ────────────────────────────── */
 
-  /** 渲染本节点部门的执行角色卡片：头像（哈希配色）+ 姓名，悬停浮层显示 姓名/岗位/头像 */
+  /** 渲染本节点部门的执行角色卡片：长方形 —— 左头像 + 右侧加粗姓名 + 下方「部门/职位」 */
   function renderRoles(idx, panel) {
     var node = nodes[idx];
     if (!node) return;
@@ -353,30 +402,18 @@
       av.className = "rc-avatar";
       av.style.background = colorOf(m.email);
       av.textContent = firstChar(m);
+      var body = document.createElement("span");
+      body.className = "rc-body";
       var nm = document.createElement("span");
       nm.className = "rc-name";
       nm.textContent = displayName(m);
-      /* 悬停浮层：大头像 + 姓名 + 岗位 */
-      var pop = document.createElement("span");
-      pop.className = "rc-pop";
-      var pa = document.createElement("span");
-      pa.className = "pa";
-      pa.style.background = colorOf(m.email);
-      pa.textContent = firstChar(m);
-      var pn = document.createElement("span");
-      pn.className = "pn";
-      pn.style.display = "block";
-      pn.textContent = displayName(m);
-      var pt = document.createElement("span");
-      pt.className = "pt";
-      pt.style.display = "block";
-      pt.textContent = m.title;
-      pop.appendChild(pa);
-      pop.appendChild(pn);
-      pop.appendChild(pt);
+      var sub = document.createElement("span");
+      sub.className = "rc-sub";
+      sub.textContent = m.department + " / " + m.title;
+      body.appendChild(nm);
+      body.appendChild(sub);
       card.appendChild(av);
-      card.appendChild(nm);
-      card.appendChild(pop);
+      card.appendChild(body);
       list.appendChild(card);
     });
     box.appendChild(head);
@@ -682,6 +719,12 @@
         time.textContent = isNaN(dt.getTime()) ? re.generatedAt : dt.toLocaleString();
         main.appendChild(who);
         main.appendChild(time);
+        if (re.repo) {
+          var repoTag = document.createElement("div");
+          repoTag.className = "rr-repo";
+          repoTag.textContent = "📦 " + re.repo;
+          main.appendChild(repoTag);
+        }
         rec.appendChild(main);
 
         var badge = document.createElement("span");
@@ -727,6 +770,309 @@
     btn.addEventListener("click", openReviewPanel);
     trigger.appendChild(btn);
     wrap.appendChild(trigger);
+  }
+
+  /* ────────────────────────────── 账号管理 ────────────────────────────── */
+
+  /** 账号管理弹窗：我的资料 + GitHub 绑定（员工待主管审核）；主管额外提供成员管理 + 绑定审核 */
+  function openAccountManager() {
+    var m = openModal();
+    m.panel.classList.add("acc-panel");
+    var isSuper = user.role === "supervisor";
+
+    var h = document.createElement("h3");
+    h.textContent = "账号管理";
+    m.panel.appendChild(h);
+    var sub = document.createElement("div");
+    sub.className = "sub";
+    sub.textContent = isSuper
+      ? "管理自己的 GitHub 绑定，并可设置成员的姓名 / 部门 / 职位、审核成员的 GitHub 绑定。"
+      : "绑定自己的 GitHub 账号，或管理已绑定的信息。员工提交的绑定需主管审核后生效。";
+    m.panel.appendChild(sub);
+    var body = document.createElement("div");
+    m.panel.appendChild(body);
+
+    function sec(title) {
+      var s = document.createElement("div");
+      s.className = "acc-sec";
+      var t = document.createElement("div");
+      t.className = "acc-sec-title";
+      t.textContent = title;
+      s.appendChild(t);
+      body.appendChild(s);
+      return s;
+    }
+
+    function githubState(u) {
+      if (u.github) return { txt: "已绑定 @" + u.github, cls: "ok" };
+      if (u.githubPending) return { txt: "待主管审核 @" + u.githubPending, cls: "wait" };
+      return { txt: "未绑定", cls: "off" };
+    }
+
+    /** 我的资料 + GitHub 绑定区 */
+    function renderMine(u) {
+      var s = sec("我的资料");
+      var card = document.createElement("div");
+      card.className = "acc-card";
+      var av = document.createElement("span");
+      av.className = "acc-avatar";
+      av.style.background = colorOf(u.email);
+      av.textContent = (u.name || u.email).slice(0, 1);
+      card.appendChild(av);
+      var id = document.createElement("div");
+      id.className = "acc-id";
+      var nm = document.createElement("div");
+      nm.className = "acc-name";
+      nm.textContent = (u.name || u.email.split("@")[0]) + (u.role === "supervisor" ? "（主管）" : "（员工）");
+      var meta = document.createElement("div");
+      meta.className = "acc-meta";
+      var info = document.createElement("span");
+      info.textContent = u.department + " / " + u.title + " · " + u.email;
+      meta.appendChild(info);
+      id.appendChild(nm);
+      id.appendChild(meta);
+      card.appendChild(id);
+      s.appendChild(card);
+
+      var gs = sec("GitHub 绑定");
+      var st = githubState(u);
+      var status = document.createElement("div");
+      status.className = "acc-status " + st.cls;
+      status.textContent = st.txt;
+      gs.appendChild(status);
+      var note = document.createElement("div");
+      note.className = "acc-note";
+      note.textContent = isSuper
+        ? "主管绑定即刻生效；如需更换请先解绑。"
+        : "员工绑定需主管审核：提交后进入「待审核」，被批准后才正式生效。";
+      gs.appendChild(note);
+
+      var field = document.createElement("div");
+      field.className = "acc-field";
+      var input = document.createElement("input");
+      input.className = "acc-input";
+      input.placeholder = "GitHub 用户名（如 octocat）";
+      input.value = u.githubPending || u.github || "";
+      field.appendChild(input);
+      var bind = document.createElement("button");
+      bind.type = "button";
+      bind.className = "acc-btn";
+      bind.textContent = isSuper ? "绑定" : "提交绑定";
+      bind.addEventListener("click", function () {
+        bind.disabled = true;
+        post("/api/account/github/bind", { github: input.value }).then(function (res) {
+          bind.disabled = false;
+          if (!handleAuth(res)) return;
+          if (res.ok) { alert(res.pending ? "已提交绑定，等待主管审核。" : "绑定成功。"); load(); }
+          else alert((res.data && res.data.error) || "绑定失败");
+        }).catch(function () { bind.disabled = false; alert("网络异常"); });
+      });
+      field.appendChild(bind);
+      if (u.github) {
+        var unbind = document.createElement("button");
+        unbind.type = "button";
+        unbind.className = "acc-btn red";
+        unbind.textContent = "解绑";
+        unbind.addEventListener("click", function () {
+          post("/api/account/github/unbind").then(function (res) {
+            if (!handleAuth(res)) return;
+            if (res.ok) { alert("已解绑 @" + u.github); load(); }
+            else alert((res.data && res.data.error) || "解绑失败");
+          });
+        });
+        field.appendChild(unbind);
+      }
+      if (u.githubPending) {
+        var cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.className = "acc-btn red";
+        cancel.textContent = "取消申请";
+        cancel.addEventListener("click", function () {
+          post("/api/account/github/cancel").then(function (res) {
+            if (!handleAuth(res)) return;
+            if (res.ok) { alert("已取消绑定申请。"); load(); }
+            else alert((res.data && res.data.error) || "取消失败");
+          });
+        });
+        field.appendChild(cancel);
+      }
+      gs.appendChild(field);
+    }
+
+    /** 主管专属：成员 GitHub 绑定审核区 */
+    function renderPending(members) {
+      var pend = members.filter(function (x) { return x.githubPending; });
+      var s = sec("GitHub 绑定审核");
+      if (!pend.length) {
+        var e = document.createElement("div");
+        e.className = "acc-empty";
+        e.textContent = "暂无待审核的绑定申请。";
+        s.appendChild(e);
+        return;
+      }
+      pend.forEach(function (x) {
+        var row = document.createElement("div");
+        row.className = "acc-member";
+        var av = document.createElement("span");
+        av.className = "acc-av";
+        av.style.background = colorOf(x.email);
+        av.textContent = (x.name || x.email).slice(0, 1);
+        row.appendChild(av);
+        var mid = document.createElement("div");
+        mid.className = "acc-mid";
+        var mn = document.createElement("div");
+        mn.className = "acc-mn";
+        mn.textContent = (x.name || x.email.split("@")[0]) + " 申请绑定";
+        var gh = document.createElement("div");
+        gh.className = "acc-gh";
+        gh.textContent = "@" + x.githubPending;
+        mid.appendChild(mn);
+        mid.appendChild(gh);
+        row.appendChild(mid);
+        var aBtn = document.createElement("button");
+        aBtn.type = "button";
+        aBtn.className = "acc-btn";
+        aBtn.textContent = "批准";
+        aBtn.addEventListener("click", function () {
+          post("/api/account/" + x.email + "/github/approve").then(function (res) {
+            if (!handleAuth(res)) return;
+            if (res.ok) { alert("已批准 @" + x.githubPending + " 绑定。" + (x.name || x.email)); load(); }
+            else alert((res.data && res.data.error) || "操作失败");
+          });
+        });
+        row.appendChild(aBtn);
+        var rBtn = document.createElement("button");
+        rBtn.type = "button";
+        rBtn.className = "acc-btn red";
+        rBtn.textContent = "驳回";
+        rBtn.addEventListener("click", function () {
+          post("/api/account/" + x.email + "/github/reject").then(function (res) {
+            if (!handleAuth(res)) return;
+            if (res.ok) { alert("已驳回 @" + x.githubPending + " 的绑定申请。"); load(); }
+            else alert((res.data && res.data.error) || "操作失败");
+          });
+        });
+        row.appendChild(rBtn);
+        s.appendChild(row);
+      });
+    }
+
+    /** 主管专属：成员资料管理（姓名 / 部门 / 职位） */
+    function renderManage(members) {
+      var s = sec("成员管理（姓名 / 部门 / 职位）");
+      members.forEach(function (x) {
+        var row = document.createElement("div");
+        row.className = "acc-member";
+        var av = document.createElement("span");
+        av.className = "acc-av";
+        av.style.background = colorOf(x.email);
+        av.textContent = (x.name || x.email).slice(0, 1);
+        row.appendChild(av);
+        var mid = document.createElement("div");
+        mid.className = "acc-mid";
+        var mn = document.createElement("div");
+        mn.className = "acc-mn";
+        mn.textContent = x.email + "　";
+        if (x.role === "supervisor") {
+          var bd = document.createElement("span");
+          bd.className = "acc-badge super";
+          bd.textContent = "主管";
+          mn.appendChild(bd);
+        } else {
+          var bd2 = document.createElement("span");
+          bd2.className = "acc-badge staff";
+          bd2.textContent = "员工";
+          mn.appendChild(bd2);
+        }
+        var edit = document.createElement("div");
+        edit.className = "acc-row";
+        edit.style.marginTop = "6px";
+        var nIn = document.createElement("input");
+        nIn.className = "acc-input";
+        nIn.style.flex = "1 1 110px";
+        nIn.value = x.name || x.email.split("@")[0];
+        nIn.placeholder = "姓名";
+        var dSel = document.createElement("select");
+        dSel.className = "acc-select";
+        DEPARTMENTS.forEach(function (d) {
+          var o = document.createElement("option");
+          o.value = d;
+          o.textContent = d;
+          if (d === x.department) o.selected = true;
+          dSel.appendChild(o);
+        });
+        if (DEPARTMENTS.indexOf(x.department) < 0) {
+          var extra = document.createElement("option");
+          extra.value = x.department;
+          extra.textContent = x.department;
+          extra.selected = true;
+          dSel.appendChild(extra);
+        }
+        var tIn = document.createElement("input");
+        tIn.className = "acc-input";
+        tIn.style.flex = "1 1 120px";
+        tIn.value = x.title;
+        tIn.placeholder = "职位";
+        var save = document.createElement("button");
+        save.type = "button";
+        save.className = "acc-btn ghost";
+        save.textContent = "保存";
+        save.addEventListener("click", function () {
+          save.disabled = true;
+          post("/api/account/" + x.email + "/profile", {
+            name: nIn.value,
+            department: dSel.value,
+            title: tIn.value,
+          }).then(function (res) {
+            save.disabled = false;
+            if (!handleAuth(res)) return;
+            if (res.ok) { alert("已保存 " + (x.name || x.email) + " 的资料。"); load(); refreshNodes(); }
+            else alert((res.data && res.data.error) || "保存失败");
+          }).catch(function () { save.disabled = false; alert("网络异常"); });
+        });
+        edit.appendChild(nIn);
+        edit.appendChild(dSel);
+        edit.appendChild(tIn);
+        edit.appendChild(save);
+        mid.appendChild(mn);
+        mid.appendChild(edit);
+        row.appendChild(mid);
+        s.appendChild(row);
+      });
+    }
+
+    function renderAll(data) {
+      body.textContent = "";
+      renderMine(data.user);
+      if (isSuper) {
+        var members = data.members || [];
+        renderPending(members);
+        renderManage(members);
+      }
+    }
+
+    function load() {
+      body.textContent = "";
+      var loading = document.createElement("div");
+      loading.className = "acc-empty";
+      loading.textContent = "加载中…";
+      body.appendChild(loading);
+      fetch("/api/account").then(function (r) {
+        if (r.status === 401) { location.href = "/login"; return null; }
+        return r.json();
+      }).then(function (d) {
+        if (!d) return;
+        renderAll(d);
+      }).catch(function () {
+        body.textContent = "";
+        var e = document.createElement("div");
+        e.className = "acc-empty";
+        e.textContent = "加载失败，请重试";
+        body.appendChild(e);
+      });
+    }
+
+    load();
   }
 
   /* ────────────────────────────── 详情动作区 ────────────────────────────── */

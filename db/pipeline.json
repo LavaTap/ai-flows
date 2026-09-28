@@ -3,16 +3,31 @@
   "nodes": [
     {
       "id": "01",
-      "department": "产品调研",
+      "department": "用户研究部门",
       "step": "产品调研",
       "ready": true,
-      "status": "todo",
+      "status": "done",
       "runner": "skill:research-crawler",
-      "requirementText": ""
+      "requirementText": "爬取哔哩哔哩关于”学生管理系统“十条视频 按人气排行",
+      "outputDir": "ppt",
+      "progress": 100,
+      "progressLabel": "完成",
+      "artifacts": [
+        {
+          "name": "research-crawler-20260928092220.md",
+          "path": "ppt/research-crawler-20260928092220.md",
+          "skill": "research-crawler",
+          "at": "2026-09-28T09:22:20.749Z"
+        }
+      ],
+      "lastResult": "执行完成：产物已生成，可提交验收",
+      "uploads": [
+        "research-crawler-20260928092220.md"
+      ]
     },
     {
       "id": "02",
-      "department": "AI产品",
+      "department": "用户研究部门",
       "step": "产品策划案",
       "ready": true,
       "status": "todo",
@@ -31,7 +46,7 @@
     },
     {
       "id": "04",
-      "department": "产品运营",
+      "department": "运营部门",
       "step": "运营",
       "ready": false,
       "status": "todo"

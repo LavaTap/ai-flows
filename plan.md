@@ -31,7 +31,7 @@
 
 | # | 邮箱 | 密码 | 身份 | 岗位 | 归属部门节点 | 姓名
 |---|---|---|---|---|---|
-| 1 | zhaoli@ai-flows.com | 123456 | 主管 | 产品部门主管 | 全部节点（操控+批准） | 张丽 |
+| 1 | zhangli@ai-flows.com | 123456 | 主管 | 产品部门主管 | 全部节点（操控+批准） | 张丽 |
 | 2 | wangxinyi@ai-flows.com | 123456 | 员工 | 用户调研实习生 | 产品调研 | 王鑫易 |
 | 3 | lixiang@ai-flows.com | 123456 | 员工 | 前端开发设计师 | 程序中台（AI 代码评审） | 李翔 |
 | 4 | chenyu@ai-flows.com | 123456 | 员工 | AI 产品实习生 | AI产品（产品策划案） | 陈宇  |
@@ -97,6 +97,7 @@ ai-flows/
 6. **P5 接能力**（已完成）：节点 03（`runner: ai-review`）执行时在目标仓库（`--repo` 指定，缺省平台启动目录）真正触发 ai-review 评审链：状态 `todo → running → done`（失败回 `todo` 并记录原因），评审配置随目标仓库的 `ai-review.config.json`；完成后详情面板展示门禁结果与「查看评审报告」链接（报告服务复用 4310 端口自动拉起，前端 2s 轮询刷新）；空 diff / 非仓库等异常回滚并提示。节点 01/02/04 按用户后续 Skill 接入。
 7. **P6 服务整合**（已完成）：`ai-review platform [--port 4311] [--repo <path>]` 子命令，走 `dist/` 构建产物；冒烟测试 22 项全过（登录/权限/执行/批准/穿越防护），P5 后另做真实评审端到端验证（执行 → LLM 评审 → 报告页 200）。
 8. **P7 角色卡片 + 四态工作流 + Skill 接入**（已完成）：状态机改四态 `todo → running → in_review → done`（新增 `submit`/`reject` 动作；approve/reject 非 `in_review` 返回 409；旧 `approved` 启动自动迁移为 `done`）；详情面板角色卡片（首字头像按邮箱哈希 6 色取色 + 悬停浮层显示姓名/岗位）；节点 01/02 接入 `.agents` 自研 skill（SKILL.md 剥 frontmatter 作系统提示 → 平台内 LLM 生成 Markdown 产物，写入用户经目录弹窗选定的输出目录，进度 10/35/70/95/100 回写 db，产物可下载）；节点 01 另有「需求分析」按钮（`product-analysis` skill）；需求文字编辑 + 附件上传 + busy 并发防护。设计详见 `docs/superpowers/specs/2026-09-24-character-skill-design.md`。
+9. **P8 评审记录跨仓库聚合 + 报告页改造**（已完成）：`ai-review.config.json` 新增 `reviews.scanRoots`（默认 `["."]`）+ `reviews.gitHubTokenEnv`（默认 `GH_TOKEN`）；`collectExternalReviews` 改递归遍历 scanRoots（限 3 层深度，跳过 `.git`/`node_modules`/`dist` 等），跨仓库报告带 `repo` 字段标记来源仓库名；`reportUrl` 仅在报告 JSON 存在于平台当前仓库时回填（跨仓库报告留空，详情面板显示来源仓库标签）；启动时加载平台自身配置的 scanRoots（加载失败回退到只扫本仓库）。报告页布局重排：左侧新建「仓库面板」（上半仓库目录树 + 中变更文件目录 + 下问题列表，整面板可折叠为窄条）；目录树数据源 auto fallback：优先 GitHub Trees API（`git remote get-url origin` 解析 owner/repo + `GET /repos/{o}/{r}/git/trees/{branch}?recursive=1`，token 从环境变量读，零依赖走全局 `fetch`），失败回退 `node:fs` 本地递归；问题列表精简为一行（severity + 条例 ID + 行号区间），完整内容通过 `<script type="application/json" id="issueStore">` 注入；点击问题项 → 在 diff 区间末尾行后展开堆叠菜单（含完整错误 + 修复建议，同区间多问题堆叠）+ 高亮区间按 severity 配色（blocker 红 / warning 琥珀 / info 青绿，遵守禁蓝色约束）。
 
 ## 8. 待确认事项（实施时已按默认处理）
 

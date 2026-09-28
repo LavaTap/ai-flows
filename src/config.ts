@@ -40,6 +40,13 @@ export interface DiffConfig {
   maxFileLines?: number;
 }
 
+export interface ReviewsConfig {
+  /** 评审记录聚合扫描根目录列表（相对当前仓库根或绝对路径），递归查找 .ai-review-reports/ 下的报告 JSON */
+  scanRoots?: string[];
+  /** GitHub token 所在环境变量名（用于 Trees API 拉取仓库目录树，缺省 GH_TOKEN） */
+  gitHubTokenEnv?: string;
+}
+
 export interface ReviewConfig {
   diff: DiffConfig;
   model: ModelConfig;
@@ -48,6 +55,8 @@ export interface ReviewConfig {
   targets: TargetRemote[];
   /** 自定义评审规则（预留，后续可扩展） */
   rules?: Record<string, unknown>;
+  /** 评审平台相关配置（聚合扫描、目录树数据源等） */
+  reviews?: ReviewsConfig;
 }
 
 const DEFAULT_CONFIG_PATH = "ai-review.config.json";
@@ -76,5 +85,8 @@ export function loadConfig(configPath?: string): ReviewConfig {
   cfg.diff.scope = cfg.diff.scope ?? "staged";
   cfg.diff.exclude = cfg.diff.exclude ?? [];
   cfg.diff.maxFileLines = cfg.diff.maxFileLines ?? 500;
+  cfg.reviews = cfg.reviews ?? {};
+  cfg.reviews.scanRoots = cfg.reviews.scanRoots ?? ["."];
+  cfg.reviews.gitHubTokenEnv = cfg.reviews.gitHubTokenEnv ?? "GH_TOKEN";
   return cfg;
 }

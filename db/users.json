@@ -1,19 +1,20 @@
 {
   "users": [
     {
-      "email": "zhaoli@ai-flows.com",
+      "email": "zhangli@ai-flows.com",
       "password": "123456",
       "role": "supervisor",
-      "title": "产品部门主管",
-      "department": "产品",
-      "name": "张丽"
+      "title": "用户研究部门主管",
+      "department": "用户研究部门",
+      "name": "张丽",
+      "github": "LavaTap"
     },
     {
       "email": "wangxinyi@ai-flows.com",
       "password": "123456",
       "role": "staff",
-      "title": "用户调研实习生",
-      "department": "产品调研",
+      "title": "用户研究实习生",
+      "department": "用户研究部门",
       "name": "王鑫易"
     },
     {
@@ -28,24 +29,24 @@
       "email": "chenyu@ai-flows.com",
       "password": "123456",
       "role": "staff",
-      "title": "AI 产品实习生",
-      "department": "AI产品",
+      "title": "平台开发工程师",
+      "department": "程序中台",
       "name": "陈宇"
     },
     {
       "email": "liuyang@ai-flows.com",
       "password": "123456",
       "role": "staff",
-      "title": "初级产品运营",
-      "department": "产品运营",
+      "title": "运营专员",
+      "department": "运营部门",
       "name": "刘阳"
     },
     {
       "email": "liyun@ai-flows.com",
       "password": "123456",
       "role": "staff",
-      "title": "用户调研实习生",
-      "department": "产品调研",
+      "title": "用户运营实习生",
+      "department": "运营部门",
       "name": "李云"
     }
   ]

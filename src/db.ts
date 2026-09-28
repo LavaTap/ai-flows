@@ -18,10 +18,14 @@ export interface UserAccount {
   role: Role;
   /** 岗位名，如 用户调研实习生 */
   title: string;
-  /** 归属部门节点：产品调研 / AI产品 / 程序中台 / 产品运营；主管为 产品 */
+  /** 归属部门：用户研究部门 / 程序中台 / 运营部门（主管不限部门、权限最高） */
   department: string;
   /** 中文姓名（角色卡片展示；旧数据缺省时回退邮箱前缀） */
   name?: string;
+  /** 已生效绑定的 GitHub 用户名（账号管理自助绑定；未绑定为空串/缺省） */
+  github?: string;
+  /** 待主管审核的 GitHub 用户名（员工自助绑定后落此，主管批准后转 github） */
+  githubPending?: string;
 }
 
 /** 节点运行时状态：待执行 / 执行中 / 待验收 / 已执行 */
@@ -78,6 +82,78 @@ export function loadUsers(): UserAccount[] {
   const f = join(DB_DIR, "users.json");
   const data = JSON.parse(readFileSync(f, "utf8")) as { users?: UserAccount[] };
   return data.users ?? [];
+}
+
+/** 保存全部账号（账号管理自助变更 GitHub 绑定后写回） */
+export function saveUsers(users: UserAccount[]): void {
+  mkdirSync(DB_DIR, { recursive: true });
+  writeFileSync(join(DB_DIR, "users.json"), JSON.stringify({ users }, null, 2), "utf8");
+}
+
+/** GitHub 用户名归一化：去空白与 @ 前缀；空串表示解绑；
+ *  非法（长度超 39 / 含非字母数字连字符 / 首尾连字符 / 连续连字符）返回 null */
+export function normalizeGithub(raw: string): string | null {
+  const v = raw.trim().replace(/^@/, "");
+  if (!v) return "";
+  if (!/^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/.test(v)) return null;
+  return v;
+}
+
+/** 绑定/解绑指定账号的已生效 GitHub 用户名（空串解绑）；账号不存在返回 null */
+export function setUserGithub(email: string, github: string): UserAccount | null {
+  const users = loadUsers();
+  const user = users.find((u) => u.email === email);
+  if (!user) return null;
+  if (github) user.github = github;
+  else delete user.github;
+  saveUsers(users);
+  return user;
+}
+
+/** 员工提交 GitHub 绑定：写入待审核字段（覆盖旧的待审核值）；账号不存在返回 null */
+export function setUserGithubPending(email: string, github: string): UserAccount | null {
+  const users = loadUsers();
+  const user = users.find((u) => u.email === email);
+  if (!user) return null;
+  user.githubPending = github;
+  saveUsers(users);
+  return user;
+}
+
+/** 清空某账号的待审核 GitHub 绑定（员工取消 / 主管驳回）；账号不存在返回 null */
+export function clearUserGithubPending(email: string): UserAccount | null {
+  const users = loadUsers();
+  const user = users.find((u) => u.email === email);
+  if (!user) return null;
+  delete user.githubPending;
+  saveUsers(users);
+  return user;
+}
+
+/** 主管批准：把待审核的 GitHub 转为已生效（无待审核绑定视为无效）；账号不存在返回 null */
+export function approveUserGithub(email: string): UserAccount | null {
+  const users = loadUsers();
+  const user = users.find((u) => u.email === email);
+  if (!user || !user.githubPending) return null;
+  user.github = user.githubPending;
+  delete user.githubPending;
+  saveUsers(users);
+  return user;
+}
+
+/** 修改账号的姓名/部门/职位（主管管理他人时调用）；只写传入的字段；账号不存在返回 null */
+export function setUserProfile(
+  email: string,
+  patch: { name?: string; department?: string; title?: string }
+): UserAccount | null {
+  const users = loadUsers();
+  const user = users.find((u) => u.email === email);
+  if (!user) return null;
+  if (patch.name !== undefined) user.name = patch.name;
+  if (patch.department !== undefined) user.department = patch.department;
+  if (patch.title !== undefined) user.title = patch.title;
+  saveUsers(users);
+  return user;
 }
 
 /** 邮箱 + 密码校验，命中返回账号，否则 null */
@@ -159,6 +235,8 @@ export interface ReviewRecord {
   issues: number;
   /** 评审报告页地址（平台记录落盘后回写；external 拼接报告服务地址） */
   reportUrl: string;
+  /** 来源仓库名（跨仓库聚合扫描时标记；平台本仓库记录可缺省） */
+  repo?: string;
 }
 
 /** 读取平台执行历史 */

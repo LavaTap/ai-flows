@@ -938,6 +938,18 @@ body::before {
   margin-top: 2px;
 }
 
+.review-record .rr-repo {
+  display: inline-block;
+  font: 600 10.5px/16px var(--font-sans);
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  margin-top: 4px;
+  white-space: nowrap;
+  width: fit-content;
+}
+
 .review-record .rr-badge {
   font: 600 12px/18px var(--font-sans);
   padding: 4px 12px;

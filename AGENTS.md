@@ -45,9 +45,9 @@
 | `reporter.ts` | Markdown 报告 + HTML 模板渲染 `renderTemplate()` |
 | `serve.ts` | 报告 HTTP 服务（`node:http`）+ 报告列表页 + `POST /reports/<id>/push` 确认提交（需带 commit message，有暂存先 commit 再 push；无暂存且信息与 HEAD 不同则 amend 改写） |
 | `publisher.ts` | 多目标远端推送、https token 注入；内部推送置 `AI_REVIEW_INTERNAL_PUSH=1`，防被 pre-push hook 循环拦截 |
-| `platform.ts` | 平台 HTTP 服务：登录会话 + 管线页注入 `window.__PIPELINE__` + 节点执行/提交/验收/驳回 API + 需求编辑/附件上传/目录浏览/产物下载 + `GET /api/reviews` 评审记录（平台历史 + 外部报告聚合，按视角过滤）；权限判定 `canExecute` / `canApprove` / `canEditRequirement` / `filterReviewsByUser` / `safeRepoPath`；节点 01/02 后台跑 skill、节点 03 后台跑评审链，`busy` 集合防并发 |
+| `platform.ts` | 平台 HTTP 服务：登录会话 + 管线页注入 `window.__PIPELINE__` + 节点执行/提交/验收/驳回 API + 需求编辑/附件上传/目录浏览/产物下载 + `GET /api/reviews` 评审记录（平台历史 + 外部报告聚合，按视角过滤）+ 账号管理 API（我的资料 / GitHub 自助绑定 / 主管审核绑定 / 主管改他人姓名·部门·职位）；权限判定 `canExecute` / `canApprove` / `canEditRequirement` / `filterReviewsByUser` / `safeRepoPath`；节点 01/02 后台跑 skill、节点 03 后台跑评审链，`busy` 集合防并发 |
 | `skill.ts` | skill 执行器：SKILL.md（剥 frontmatter）作系统提示 + 需求/附件组装 prompt → `callModel` 生成 Markdown 产物写入输出目录，进度经回调回写 db；不感知节点/权限 |
-| `db.ts` | JSON 库读写（`db/users.json` / `db/pipeline.json` / `db/reviews.json`）、`authenticate` 邮箱+密码校验、`appendReview` 评审历史追加 |
+| `db.ts` | JSON 库读写（`db/users.json` / `db/pipeline.json` / `db/reviews.json`）、`authenticate` 邮箱+密码校验、`appendReview` 评审历史追加、GitHub 绑定/待审核/资料修改（`setUserGithub` / `setUserGithubPending` / `clearUserGithubPending` / `approveUserGithub` / `setUserProfile`） |
 | `auth.ts` | 内存会话 + cookie 签发/解析（`HttpOnly` `SameSite=Lax`，24h，重启即失效） |
 | `redact.ts` | `maskSecrets()`：评审产出前对 `summary` / `message` / `suggestion` 打码（密钥只留首尾各 4 位） |
 
@@ -71,6 +71,10 @@
 | `run` 缺省不推送 | `run` 不带 `--push` 时一律不推送；推送只走页面「确认提交」或显式 `--push` |
 | 平台权限唯一入口 | 节点执行/验收/需求编辑判定只用 `platform.ts` 的 `canExecute` / `canApprove` / `canEditRequirement`（员工限本部门、主管不限）；前端按钮显隐只是展示，服务端校验才算数，路由内不得另写权限逻辑 |
 | 账号与密码 | 账号唯一来源 `db/users.json`，**不开放注册**；演示期密码明文 123456，上线前必须换 `node:crypto` scrypt 加盐哈希 |
+| 部门与账号数据 | 平台账号分三大部门：`用户研究部门` / `程序中台` / `运营部门`；节点 01/02 属用户研究、03 属程序中台、04 属运营，账号 `department` 与节点 `department` 需对齐（`canExecute`/角色卡片按它过滤） |
+| GitHub 自助绑定 + 主管审核 | 主管绑定即刻写入 `github`；员工绑定写 `githubPending`，主管经 `/api/account/<email>/github/{approve,reject}` 批准后转 `github` 才生效；员工可自行取消待审或解绑已生效绑定 |
+| 资料主管可改 | 设置任意账号的姓名 / 部门 / 职位只走 `POST /api/account/<email>/profile`，仅主管（`canApprove`）可调；员工只能绑自己的 GitHub，不能改任何账号资料 |
+| 角色卡片排版 | 节点详情「执行角色」卡片统一长方形：左头像 + 右侧加粗姓名 + 下方「部门/职位」（如 用户研究部门 / 用户研究实习生）；账号管理弹窗在顶栏「账号管理」按钮打开 |
 | 会话与 cookie | 内存 `Map` 会话 + `HttpOnly` `SameSite=Lax` cookie；服务重启全部失效（演示可接受，不引数据库/Redis） |
 | 节点状态机 | `todo → running → in_review → done` 四态；执行完成保持 `running` 等 `submit`，`submit` 进 `in_review`，仅主管可 `approve`（→ `done` 终态）/ `reject`（→ `running` 附意见）；状态不符的动作返回 409；服务启动把残留 `running` 复位为 `todo`、旧 `approved` 迁移为 `done` |
 | 节点异步执行 | `runner=ai-review` / `runner=skill:<name>` 先落 `running` 并立即响应，后台跑完（skill 走 `src/skill.ts`）回写 `lastResult` / `progress` / 产物（回写前重读库，避免覆盖期间其他节点变更）；执行完成保持 `running` 等提交验收 |

@@ -348,6 +348,16 @@ export interface DiffFileView {
   hunks: DiffHunkView[];
 }
 
+/** 仓库目录树节点（来自 GitHub Trees API 或本地 fs 递归） */
+export interface RepoTreeNode {
+  /** 相对仓库根的路径（目录含尾斜杠，文件不含） */
+  path: string;
+  /** "tree" 目录 / "blob" 文件 */
+  type: "tree" | "blob";
+  /** 文件大小（字节），目录恒为 0 */
+  size?: number;
+}
+
 /** 评审报告视图模型：模板渲染的唯一输入 */
 export interface ReportView {
   passed: boolean;
@@ -376,6 +386,8 @@ export interface ReportView {
   head?: CommitInfo;
   /** 代码变更视图：按文件拆分的 hunks，供右侧 diff 面板渲染 */
   diffFiles: DiffFileView[];
+  /** 仓库目录树（GitHub Trees API 优先，失败回退本地 fs 递归），供左侧目录树面板渲染；可能缺省 */
+  repoTree?: RepoTreeNode[];
 }
 
 function formatTime(d: Date): string {
@@ -451,7 +463,7 @@ export function formatReport(
   result: ReviewResult,
   files: DiffFile[],
   gate: { passed: boolean; blockers: ReviewIssue[] },
-  meta: { repo?: string; ref?: string; generatedAt?: Date; pushes?: PushResult[]; repoCwd?: string; targets?: TargetRemote[] } = {}
+  meta: { repo?: string; ref?: string; generatedAt?: Date; pushes?: PushResult[]; repoCwd?: string; targets?: TargetRemote[]; repoTree?: RepoTreeNode[] } = {}
 ): ReportView {
   const counts = { blocker: 0, warning: 0, info: 0 };
   for (const i of result.issues) {
@@ -485,5 +497,6 @@ export function formatReport(
     repoCwd: meta.repoCwd,
     targets: meta.targets,
     diffFiles: files.map((f) => ({ path: f.path, hunks: parseDiff(f.diff) })),
+    repoTree: meta.repoTree,
   };
 }

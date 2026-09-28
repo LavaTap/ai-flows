@@ -1,14 +1,14 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync } from "node:fs";
-import { join, dirname, resolve, relative, sep } from "node:path";
+import { join, dirname, basename, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, type ReviewRecord, type NodeState, type UserAccount } from "./db.js";
+import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, type ReviewRecord, type NodeState, type UserAccount } from "./db.js";
 import { createSession, destroySession, currentUser, sessionCookie, clearCookie, SESSION_COOKIE, parseCookies } from "./auth.js";
 import { loadConfig, type ReviewConfig } from "./config.js";
 import { collectDiff } from "./collector.js";
 import { reviewBatch } from "./reviewer.js";
 import { decideGate } from "./gate.js";
-import { writeReviewReport, buildReportView } from "./reporter.js";
+import { writeReviewReport, buildReportView, fetchRepoTree } from "./reporter.js";
 import { isRepo, currentBranch } from "./git.js";
 import { ensureReportServer, REPORTS_DIR } from "./serve.js";
 import { runSkill, sanitizeFilename } from "./skill.js";
@@ -108,6 +108,10 @@ interface UserView {
   role: UserAccount["role"];
   title: string;
   department: string;
+  /** 已生效绑定的 GitHub 用户名（账号管理自助绑定；未绑定为缺省） */
+  github?: string;
+  /** 待主管审核的 GitHub 用户名（员工自助绑定后展示「待审核」态；缺省表示无待审绑定） */
+  githubPending?: string;
 }
 
 /** 视图层节点模型（带当前用户权限标记，注入页面 bootstrap） */
@@ -122,7 +126,7 @@ interface NodeView extends NodeState {
 
 /** 剥离密码，输出视图层用户 */
 function toUserView(u: UserAccount): UserView {
-  return { email: u.email, name: u.name, role: u.role, title: u.title, department: u.department };
+  return { email: u.email, name: u.name, role: u.role, title: u.title, department: u.department, github: u.github, githubPending: u.githubPending };
 }
 
 /** 节点 + 权限 → 视图模型 */
@@ -253,6 +257,7 @@ async function runAiReviewNode(repo: string): Promise<{
     ref,
     repoCwd: repo,
     targets: cfg.targets,
+    repoTree: await fetchRepoTree(repo, { tokenEnv: cfg.reviews?.gitHubTokenEnv }),
   });
   const dir = join(repo, REPORTS_DIR);
   mkdirSync(dir, { recursive: true });
@@ -268,46 +273,110 @@ async function runAiReviewNode(repo: string): Promise<{
   };
 }
 
-/** 读取目标仓库 .ai-review-reports/ 下由外部触发（hook / 手动 run）落盘的全量报告，
- *  归为「外部触发」执行角色，嫁接到节点 03 所属部门，供「评审记录」面板聚合展示 */
-async function collectExternalReviews(repo: string): Promise<ReviewRecord[]> {
-  const dir = join(repo, REPORTS_DIR);
-  let files: string[];
-  try {
-    files = readdirSync(dir).filter((f) => f.endsWith(".json") && !f.startsWith("."));
-  } catch {
-    return [];
-  }
-  const records: ReviewRecord[] = [];
-  for (const f of files) {
+/** 跨仓库聚合扫描时跳过的目录名（避免扫到 node_modules/dist 等噪声） */
+const EXTERNAL_SCAN_SKIP = new Set([".git", "node_modules", "dist", "build", ".vscode", ".idea", "coverage", ".next", ".cache", ".turbo", ".ai-flows-uploads"]);
+
+/** 在 scanRoot 下递归查找所有 `.ai-review-reports/` 目录（限 3 层深度防性能问题） */
+function findReportsDirs(root: string, maxDepth = 3): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const walk = (dir: string, depth: number) => {
+    if (depth > maxDepth) return;
+    const candidate = join(dir, REPORTS_DIR);
     try {
-      const view = JSON.parse(readFileSync(join(dir, f), "utf8")) as {
-        passed?: boolean;
-        generatedAt?: string;
-        counts?: { blocker?: number; warning?: number; info?: number };
-      };
-      records.push({
-        id: f.replace(/\.json$/, ""),
-        source: "external",
-        actor: "外部触发",
-        email: "",
-        department: AI_REVIEW_DEPT,
-        role: "staff",
-        generatedAt: view.generatedAt ?? "",
-        passed: !!view.passed,
-        blockers: view.counts?.blocker ?? 0,
-        issues:
-          (view.counts?.blocker ?? 0) + (view.counts?.warning ?? 0) + (view.counts?.info ?? 0),
-        reportUrl: "",
-      });
+      if (existsSync(candidate) && statSync(candidate).isDirectory()) {
+        if (!seen.has(candidate)) {
+          seen.add(candidate);
+          out.push(candidate);
+        }
+      }
     } catch {
-      /* 单个损坏报告跳过，不影响整体列表 */
+      /* 权限或符号链接异常忽略 */
+    }
+    let entries: string[];
+    try {
+      entries = readdirSync(dir).sort();
+    } catch {
+      return;
+    }
+    for (const name of entries) {
+      if (EXTERNAL_SCAN_SKIP.has(name)) continue;
+      if (name.startsWith(".") && name !== "." && name !== "..") continue;
+      const full = join(dir, name);
+      try {
+        if (statSync(full).isDirectory()) walk(full, depth + 1);
+      } catch {
+        /* 跳过 */
+      }
+    }
+  };
+  walk(root, 0);
+  return out;
+}
+
+/** 读取 scanRoots 下所有 `.ai-review-reviews/` 中的外部触发报告（hook / 手动 run 落盘），
+ *  归为「外部触发」执行角色，嫁接到节点 03 所属部门，供「评审记录」面板聚合展示。
+ *  跨仓库报告带 repo 字段标记来源；reportUrl 仅在报告文件存在于平台当前仓库时才回填 */
+async function collectExternalReviews(
+  scanRoots: string[],
+  platformRepo: string
+): Promise<ReviewRecord[]> {
+  const records: ReviewRecord[] = [];
+  const platformRoot = resolve(platformRepo);
+  for (const root of scanRoots) {
+    // 相对路径相对平台仓库根解析；路径穿越防护：解析后若仍在 cwd 之上且未授权则跳过
+    const absRoot = resolve(platformRoot, root);
+    const dirs = findReportsDirs(absRoot);
+    for (const dir of dirs) {
+      const repoPath = dirname(dir);
+      const repoName = basename(repoPath);
+      let files: string[];
+      try {
+        files = readdirSync(dir).filter(
+          (f) => f.endsWith(".json") && !f.startsWith(".")
+        );
+      } catch {
+        continue;
+      }
+      for (const f of files) {
+        try {
+          const view = JSON.parse(readFileSync(join(dir, f), "utf8")) as {
+            passed?: boolean;
+            generatedAt?: string;
+            counts?: { blocker?: number; warning?: number; info?: number };
+          };
+          records.push({
+            id: f.replace(/\.json$/, ""),
+            source: "external",
+            actor: "外部触发",
+            email: "",
+            department: AI_REVIEW_DEPT,
+            role: "staff",
+            generatedAt: view.generatedAt ?? "",
+            passed: !!view.passed,
+            blockers: view.counts?.blocker ?? 0,
+            issues:
+              (view.counts?.blocker ?? 0) +
+              (view.counts?.warning ?? 0) +
+              (view.counts?.info ?? 0),
+            reportUrl: "",
+            repo: repoName,
+          });
+        } catch {
+          /* 单个损坏报告跳过，不影响整体列表 */
+        }
+      }
     }
   }
-  // 报告页地址依赖报告服务，取一次实例
+  // reportUrl 刷新：仅当报告 JSON 存在于平台当前仓库的 .ai-review-reports/ 时才能通过报告服务访问
   if (records.length) {
-    const base = await ensureReportServer(repo);
-    for (const r of records) r.reportUrl = `${base}/reports/${r.id}`;
+    const base = await ensureReportServer(platformRepo);
+    const dir = join(platformRepo, REPORTS_DIR);
+    for (const r of records) {
+      if (existsSync(join(dir, `${r.id}.json`))) {
+        r.reportUrl = `${base}/reports/${r.id}`;
+      }
+    }
   }
   return records;
 }
@@ -327,6 +396,21 @@ export async function startPlatformServer(
 ): Promise<PlatformServer> {
   const host = opts.host ?? "127.0.0.1";
   const repo = opts.repo ?? process.cwd();
+
+  // 加载平台自身 ai-review.config.json 的 reviews.scanRoots（跨仓库评审聚合扫描根）；
+  // 加载失败或未配置回退到 [repo] 自身（保持原行为：仅扫本仓库 .ai-review-reports/）
+  let scanRoots: string[] = [repo];
+  try {
+    const cfgPath = join(process.cwd(), "ai-review.config.json");
+    if (existsSync(cfgPath)) {
+      const cfg = loadConfig(cfgPath);
+      scanRoots = (cfg.reviews?.scanRoots ?? ["."]).map((r) =>
+        r === "." ? repo : r
+      );
+    }
+  } catch {
+    /* 平台配置加载失败，回退到只扫本仓库 */
+  }
 
   // 后台任务在途的节点 id（防并发重复执行；完成/失败后移除）
   const busy = new Set<string>();
@@ -404,6 +488,150 @@ export async function startPlatformServer(
       return;
     }
 
+    // 账号管理：我的资料 + GitHub 绑定状态；主管额外返回全部成员（供成员管理 / 绑定审核）
+    if (path === "/api/account" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      sendJson(res, 200, {
+        user: toUserView(user),
+        members: user.role === "supervisor" ? loadUsers().map(toUserView) : undefined,
+      });
+      return;
+    }
+
+    // 绑定 GitHub：主管即刻生效；员工写入待审核，等待主管批准
+    if (path === "/api/account/github/bind" && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      let raw = "";
+      try {
+        const body = JSON.parse(await readBody(req)) as { github?: unknown };
+        if (typeof body.github === "string") raw = body.github;
+      } catch {
+        sendJson(res, 400, { error: "请求体不是合法 JSON" });
+        return;
+      }
+      const github = normalizeGithub(raw);
+      if (github === null || !github) {
+        sendJson(res, 400, { error: "GitHub 用户名不合法（限字母数字连字符，≤39 位）" });
+        return;
+      }
+      const updated =
+        user.role === "supervisor"
+          ? setUserGithub(user.email, github)
+          : setUserGithubPending(user.email, github);
+      if (!updated) {
+        sendJson(res, 404, { error: "账号不存在" });
+        return;
+      }
+      sendJson(res, 200, { user: toUserView(updated), pending: !!updated.githubPending });
+      return;
+    }
+
+    // 取消待审核的 GitHub 绑定（员工自助反悔）
+    if (path === "/api/account/github/cancel" && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const updated = clearUserGithubPending(user.email);
+      if (!updated) {
+        sendJson(res, 404, { error: "账号不存在" });
+        return;
+      }
+      sendJson(res, 200, { user: toUserView(updated) });
+      return;
+    }
+
+    // 解绑已生效的 GitHub（自助；如需更换可先解绑再重新绑定）
+    if (path === "/api/account/github/unbind" && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const updated = setUserGithub(user.email, "");
+      if (!updated) {
+        sendJson(res, 404, { error: "账号不存在" });
+        return;
+      }
+      sendJson(res, 200, { user: toUserView(updated) });
+      return;
+    }
+
+    // 主管审核：批准 / 驳回某员工待审核的 GitHub 绑定
+    const gam = path.match(/^\/api\/account\/([^/\\]+)\/github\/(approve|reject)$/);
+    if (gam && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      if (!canApprove(user)) {
+        sendJson(res, 403, { error: "仅部门主管可审核 GitHub 绑定" });
+        return;
+      }
+      const updated =
+        gam[2] === "approve"
+          ? approveUserGithub(gam[1])
+          : clearUserGithubPending(gam[1]);
+      if (!updated) {
+        sendJson(res, 404, { error: "账号不存在或没有待审核的绑定" });
+        return;
+      }
+      sendJson(res, 200, { user: toUserView(updated) });
+      return;
+    }
+
+    // 主管设置账号的姓名 / 部门 / 职位（管理他人）
+    const pm = path.match(/^\/api\/account\/([^/\\]+)\/profile$/);
+    if (pm && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      if (!canApprove(user)) {
+        sendJson(res, 403, { error: "仅部门主管可设置账号的姓名/部门/职位" });
+        return;
+      }
+      let patch: { name?: string; department?: string; title?: string } = {};
+      try {
+        const body = JSON.parse(await readBody(req)) as {
+          name?: unknown;
+          department?: unknown;
+          title?: unknown;
+        };
+        if (typeof body.name === "string") patch.name = body.name.trim();
+        if (typeof body.department === "string") patch.department = body.department.trim();
+        if (typeof body.title === "string") patch.title = body.title.trim();
+      } catch {
+        sendJson(res, 400, { error: "请求体不是合法 JSON" });
+        return;
+      }
+      for (const k of ["name", "department", "title"] as const) {
+        const v = patch[k];
+        if (v !== undefined && (!v || v.length > 30)) {
+          sendJson(res, 400, { error: `${k} 不能为空且不超过 30 字符` });
+          return;
+        }
+      }
+      const updated = setUserProfile(pm[1], patch);
+      if (!updated) {
+        sendJson(res, 404, { error: "账号不存在" });
+        return;
+      }
+      sendJson(res, 200, { user: toUserView(updated) });
+      return;
+    }
+
     // 节点列表 + 当前用户权限 + 部门成员（角色卡片数据源；登录即可查看全流程）
     if (path === "/api/nodes" && req.method === "GET") {
       const user = currentUser(req);
@@ -456,7 +684,7 @@ export async function startPlatformServer(
       }
       const merged = dedupReviews([
         ...loadReviews(),
-        ...(await collectExternalReviews(repo)),
+        ...(await collectExternalReviews(scanRoots, repo)),
       ]);
       const refreshed = await refreshReviewUrls(merged, repo);
       const sorted = refreshed.sort((a, b) => b.generatedAt.localeCompare(a.generatedAt));

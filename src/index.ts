@@ -8,7 +8,7 @@ import { reviewBatch } from "./reviewer.js";
 import { decideGate, type ReviewIssue } from "./gate.js";
 import { pushToTargets, type PushResult } from "./publisher.js";
 import { isRepo, currentBranch } from "./git.js";
-import { writeReviewReport, buildReportView } from "./reporter.js";
+import { writeReviewReport, buildReportView, fetchRepoTree } from "./reporter.js";
 import { startReportServer, ensureReportServer, REPORTS_DIR, DEFAULT_REPORT_PORT } from "./serve.js";
 import { startPlatformServer, DEFAULT_PLATFORM_PORT } from "./platform.js";
 
@@ -103,7 +103,12 @@ async function run(
     } catch {
       /* detached HEAD 等场景忽略 */
     }
-    const view = buildReportView(result, files, gate, pushes, { ref, repoCwd: CWD, targets: cfg.targets });
+    const view = buildReportView(result, files, gate, pushes, {
+      ref,
+      repoCwd: CWD,
+      targets: cfg.targets,
+      repoTree: await fetchRepoTree(CWD, { tokenEnv: cfg.reviews?.gitHubTokenEnv }),
+    });
     writeFileSync(join(dir, `${id}.json`), JSON.stringify(view, null, 2), "utf8");
     const base = await ensureReportServer(CWD);
     console.log(`\n${GREEN}📄 评审结果页面：${base}/reports/${id}${RESET}`);
