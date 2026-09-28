@@ -1,3 +1,4 @@
+# 项目依赖
 node_modules/
 dist/
 .npm-cache/
@@ -8,6 +9,7 @@ ai-review.config.json
 .ai-review-reports/
 review-report.md
 
-# 其他的agents
-.agents/ui-ux-pro-max/
-.agents/writing-claude-md/
+# 其他借用的非原创agents
+.agents/skills/writing-claude-md/
+.agents/skills/skill-creator/
+.agents/skills/ui-ux-pro-max/

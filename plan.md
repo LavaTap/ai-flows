@@ -38,25 +38,31 @@
 | 5 | liuyang@ai-flows.com | 123456 | 员工 | 初级产品运营 | 产品运营 | 刘阳 |
 | 6 | liyun@ai-flows.com | 123456 | 员工 | 用户调研实习生 | 产品调研 | 李云 |
 
-> 姓名拼音为占位，待用户给真实姓名后替换。密码统一 123456（演示环境明文存 JSON；上线前加盐哈希）。
+> 姓名为真实姓名，`db/users.json` 每个账号带 `name` 字段（角色卡片显示用）。密码统一 123456（演示环境明文存 JSON；上线前加盐哈希）。
 
 ## 5. 角色与权限矩阵
 
 | 能力 | 员工 | 部门主管 |
 |---|---|---|
 | 查看管线全流程 | ✅ | ✅ |
-| 执行本部门节点（提交/触发工作流） | ✅（限本部门） | ✅ |
-| 批准节点（放行到下一环节） | ❌ | ✅（全部节点） |
+| 编辑本节点需求文本 / 上传附件 | ✅（限本部门） | ✅ |
+| 执行本部门节点（触发工作流 / skill） | ✅（限本部门） | ✅ |
+| 提交验收（执行中 → 待验收） | ✅（限本部门） | ✅ |
+| 通过验收 / 驳回（待验收 → 已执行 / 执行中） | ❌ | ✅（全部节点） |
 | 操控停用/启用节点 | ❌ | ✅（权限最高） |
+
+> 判定只走 `platform.ts` 的 `canExecute` / `canApprove` / `canEditRequirement`；前端按钮显隐仅是展示。
 
 ## 6. 管线节点模型
 
-| 节点 | 部门 | 环节 | 状态 | 说明 |
-|---|---|---|---|---|
-| 01 | 产品调研 | 产品调研 | 留空待接入 | 调用用户自研 Skill |
-| 02 | AI产品 | 产品策划案 | 留空待接入 | — |
-| 03 | 程序中台 | AI 代码评审 | 已就绪 | 接现有 ai-review 管线 |
-| 04 | 产品运营 | 运营 | 留空待接入 | — |
+| 节点 | 部门 | 环节 | runner | 状态 | 说明 |
+|---|---|---|---|---|---|
+| 01 | 产品调研 | 产品调研 | `skill:research-crawler` | 已接入 | 需求文字 + 附件 → LLM 生成调研文档；另有「需求分析」按钮（`product-analysis` skill） |
+| 02 | AI产品 | 产品策划案 | `skill:product-manager` | 已接入 | 需求文字 + 附件 → LLM 生成产品规划 |
+| 03 | 程序中台 | AI 代码评审 | `ai-review` | 已就绪 | 接现有 ai-review 管线（统一四态，执行完成保持执行中待提交） |
+| 04 | 产品运营 | 运营 | — | 留空待接入 | — |
+
+节点状态四态：`todo（待执行）→ running（执行中）→ in_review（待验收）→ done（已执行）`；主管驳回 `in_review → running`（附意见）；`done` 为终态（重复执行 409）；服务启动把残留 `running` 复位为 `todo`。
 
 ## 7. 技术方案
 
@@ -77,6 +83,7 @@ ai-flows/
     ├── db.ts                 # DONE：账号/节点读写 + authenticate（JSON + node:fs）
     ├── auth.ts               # DONE：内存会话 + cookie（HttpOnly，24h）
     ├── platform.ts           # DONE：平台 HTTP 服务（路由 + 权限 + 注入渲染）
+    ├── skill.ts              # DONE：skill 执行器（SKILL.md 作系统提示 → LLM 生成 → 产物落盘 + 进度回调）
     └── index.ts              # DONE：新增 platform 子命令
 ```
 
@@ -89,10 +96,11 @@ ai-flows/
 5. **P4 节点动作**（已完成）：`POST /api/nodes/:id/execute|approve`；员工限本部门、主管全节点，待接入节点拒绝执行；状态落 `db/pipeline.json`。
 6. **P5 接能力**（已完成）：节点 03（`runner: ai-review`）执行时在目标仓库（`--repo` 指定，缺省平台启动目录）真正触发 ai-review 评审链：状态 `todo → running → done`（失败回 `todo` 并记录原因），评审配置随目标仓库的 `ai-review.config.json`；完成后详情面板展示门禁结果与「查看评审报告」链接（报告服务复用 4310 端口自动拉起，前端 2s 轮询刷新）；空 diff / 非仓库等异常回滚并提示。节点 01/02/04 按用户后续 Skill 接入。
 7. **P6 服务整合**（已完成）：`ai-review platform [--port 4311] [--repo <path>]` 子命令，走 `dist/` 构建产物；冒烟测试 22 项全过（登录/权限/执行/批准/穿越防护），P5 后另做真实评审端到端验证（执行 → LLM 评审 → 报告页 200）。
+8. **P7 角色卡片 + 四态工作流 + Skill 接入**（已完成）：状态机改四态 `todo → running → in_review → done`（新增 `submit`/`reject` 动作；approve/reject 非 `in_review` 返回 409；旧 `approved` 启动自动迁移为 `done`）；详情面板角色卡片（首字头像按邮箱哈希 6 色取色 + 悬停浮层显示姓名/岗位）；节点 01/02 接入 `.agents` 自研 skill（SKILL.md 剥 frontmatter 作系统提示 → 平台内 LLM 生成 Markdown 产物，写入用户经目录弹窗选定的输出目录，进度 10/35/70/95/100 回写 db，产物可下载）；节点 01 另有「需求分析」按钮（`product-analysis` skill）；需求文字编辑 + 附件上传 + busy 并发防护。设计详见 `docs/superpowers/specs/2026-09-24-character-skill-design.md`。
 
 ## 8. 待确认事项（实施时已按默认处理）
 
-- [x] 6 个账号姓名拼音：沿用占位拼音（zhaoli/wangxinyi/lixiang/chenyu/liuyang/liyun），改 `db/users.json` 即可
+- [x] 6 个账号姓名：已确认为真实姓名（张丽/王鑫易/李翔/陈宇/刘阳/李云），`db/users.json` 每个账号带 `name` 字段
 - [x] 主管不区分部门：`supervisor` 角色直接放开全部节点的操控+批准（权限最高）
 - [x] 密码演示期明文存 JSON（统一 123456），上线前再换 `node:crypto` scrypt
 - [x] 平台入口：独立子命令 `platform` + 独立端口 4311，不与 `serve` 报告服务（4310）混跑

@@ -1,0 +1,1385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>游戏截图浏览器 - 批量删除工具</title>
+    <style>
+        /* ========== CSS Reset & Base ========== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            /* Color Palette - Dark Theme for Image Browsing */
+            --color-primary: #2563eb;
+            --color-primary-hover: #1d4ed8;
+            --color-danger: #dc2626;
+            --color-danger-hover: #b91c1c;
+            --color-success: #16a34a;
+            --color-surface: #ffffff;
+            --color-surface-dark: #f3f4f6;
+            --color-background: #111827;
+            --color-background-secondary: #1f2937;
+            --color-text-primary: #111827;
+            --color-text-secondary: #6b7280;
+            --color-text-inverse: #f9fafb;
+            --color-border: #e5e7eb;
+            --color-shadow: rgba(0, 0, 0, 0.1);
+            --color-shadow-lg: rgba(0, 0, 0, 0.15);
+
+            /* Spacing Scale (8px grid) */
+            --spacing-1: 4px;
+            --spacing-2: 8px;
+            --spacing-3: 12px;
+            --spacing-4: 16px;
+            --spacing-6: 24px;
+            --spacing-8: 32px;
+            --spacing-12: 48px;
+
+            /* Border Radius */
+            --radius-sm: 4px;
+            --radius-md: 8px;
+            --radius-lg: 12px;
+
+            /* Typography */
+            --font-sans: system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, Noto Sans, sans-serif;
+            --text-base: 16px;
+            --text-sm: 14px;
+            --text-xs: 12px;
+            --text-lg: 18px;
+            --text-xl: 24px;
+            --text-2xl: 30px;
+
+            /* Animation */
+            --transition-fast: 150ms ease-in-out;
+            --transition-base: 250ms ease-in-out;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            font-size: var(--text-base);
+            line-height: 1.5;
+            color: var(--color-text-primary);
+            background-color: var(--color-background);
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* ========== Layout ========== */
+        .container {
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: var(--spacing-4);
+        }
+
+        /* ========== Header ========== */
+        .header {
+            background-color: var(--color-background-secondary);
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-6);
+            margin-bottom: var(--spacing-6);
+            box-shadow: 0 4px 6px -1px var(--color-shadow);
+        }
+
+        .header h1 {
+            color: var(--color-text-inverse);
+            font-size: var(--text-2xl);
+            font-weight: 700;
+            margin-bottom: var(--spacing-2);
+        }
+
+        .header p {
+            color: #9ca3af;
+            font-size: var(--text-base);
+        }
+
+        .stats-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--spacing-6);
+            margin-top: var(--spacing-4);
+            padding-top: var(--spacing-4);
+            border-top: 1px solid #374151;
+        }
+
+        .stat-item {
+            color: var(--color-text-inverse);
+            font-size: var(--text-sm);
+        }
+
+        .stat-item strong {
+            color: #60a5fa;
+            font-size: var(--text-lg);
+            margin-left: var(--spacing-2);
+        }
+
+        /* ========== Toolbar ========== */
+        .toolbar {
+            background-color: var(--color-background-secondary);
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-4);
+            margin-bottom: var(--spacing-6);
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--spacing-4);
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 4px 6px -1px var(--color-shadow);
+        }
+
+        .toolbar-left, .toolbar-right {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--spacing-3);
+            align-items: center;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: var(--spacing-3) var(--spacing-6);
+            font-size: var(--text-sm);
+            font-weight: 500;
+            line-height: 1;
+            border: none;
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            min-height: 44px;
+            min-width: 44px;
+        }
+
+        .btn-primary {
+            background-color: var(--color-primary);
+            color: var(--color-text-inverse);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background-color: var(--color-primary-hover);
+        }
+
+        .btn-danger {
+            background-color: var(--color-danger);
+            color: var(--color-text-inverse);
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background-color: var(--color-danger-hover);
+        }
+
+        .btn-secondary {
+            background-color: #4b5563;
+            color: var(--color-text-inverse);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background-color: #374151;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn .icon {
+            margin-right: var(--spacing-2);
+        }
+
+        /* Search/Filter */
+        .search-box {
+            position: relative;
+        }
+
+        .search-box input {
+            background-color: var(--color-background);
+            color: var(--color-text-inverse);
+            border: 1px solid #374151;
+            border-radius: var(--radius-md);
+            padding: var(--spacing-3) var(--spacing-4);
+            font-size: var(--text-sm);
+            min-height: 44px;
+            width: 200px;
+            outline: none;
+            transition: border-color var(--transition-fast);
+        }
+
+        .search-box input:focus {
+            border-color: var(--color-primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+        }
+
+        .search-box input::placeholder {
+            color: #6b7280;
+        }
+
+        /* Group by selector */
+        .group-select {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-2);
+        }
+
+        .group-select label {
+            color: #9ca3af;
+            font-size: var(--text-sm);
+            white-space: nowrap;
+        }
+
+        .group-select select {
+            background-color: var(--color-background);
+            color: var(--color-text-inverse);
+            border: 1px solid #374151;
+            border-radius: var(--radius-md);
+            padding: var(--spacing-3) var(--spacing-4);
+            font-size: var(--text-sm);
+            min-height: 44px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .group-select select:focus {
+            border-color: var(--color-primary);
+        }
+
+        /* ========== Image Grid ========== */
+        .image-grid {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-4);
+            margin-bottom: var(--spacing-6);
+        }
+
+        .image-card {
+            position: relative;
+            background-color: var(--color-background-secondary);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px var(--color-shadow);
+            transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+            cursor: pointer;
+            width: 100%;
+            max-height: 70vh;
+        }
+
+        .image-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px var(--color-shadow), 0 4px 6px -2px var(--color-shadow-lg);
+        }
+
+        .image-card.selected {
+            outline: 3px solid var(--color-danger);
+            outline-offset: 2px;
+        }
+
+        .image-card.selected::after {
+            content: "✓";
+            position: absolute;
+            top: var(--spacing-2);
+            right: var(--spacing-2);
+            width: 32px;
+            height: 32px;
+            background-color: var(--color-danger);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: var(--text-lg);
+            font-weight: bold;
+        }
+
+        .image-wrapper {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .image-wrapper img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            transition: transform var(--transition-base);
+            display: block;
+        }
+
+        .image-card:hover img {
+            transform: scale(1.05);
+        }
+
+        .image-info {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
+            padding: var(--spacing-4) var(--spacing-3) var(--spacing-3);
+            color: var(--color-text-inverse);
+        }
+
+        .image-path {
+            font-size: var(--text-xs);
+            opacity: 0.9;
+            word-break: break-all;
+            line-height: 1.4;
+        }
+
+        .checkbox-overlay {
+            position: absolute;
+            top: var(--spacing-2);
+            left: var(--spacing-2);
+            width: 24px;
+            height: 24px;
+            background-color: rgba(0, 0, 0, 0.6);
+            border: 2px solid rgba(255, 255, 255, 0.8);
+            border-radius: var(--radius-sm);
+            transition: all var(--transition-fast);
+        }
+
+        .image-card.selected .checkbox-overlay {
+            background-color: var(--color-danger);
+            border-color: var(--color-danger);
+        }
+
+        .image-card.deleting {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        /* ========== Modal Preview ========== */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.9);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: var(--spacing-4);
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            position: relative;
+            max-width: 90vw;
+            max-height: 90vh;
+            background-color: var(--color-background-secondary);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+        }
+
+        .modal-content img {
+            display: block;
+            max-width: 100%;
+            max-height: 80vh;
+            object-fit: contain;
+        }
+
+        .modal-info {
+            padding: var(--spacing-4);
+            color: var(--color-text-inverse);
+        }
+
+        .modal-info .path {
+            font-size: var(--text-sm);
+            color: #9ca3af;
+            margin-bottom: var(--spacing-3);
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: var(--spacing-3);
+            justify-content: flex-end;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: var(--spacing-2);
+            right: var(--spacing-2);
+            width: 44px;
+            height: 44px;
+            background-color: rgba(0, 0, 0, 0.6);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            font-size: var(--text-xl);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color var(--transition-fast);
+        }
+
+        .modal-close:hover {
+            background-color: rgba(0, 0, 0, 0.8);
+        }
+
+        .modal-delete-btn {
+            background-color: var(--color-danger);
+            color: white;
+        }
+
+        .modal-delete-btn:hover {
+            background-color: var(--color-danger-hover);
+        }
+
+        /* ========== Confirm Dialog ========== */
+        .dialog-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.7);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+            padding: var(--spacing-4);
+        }
+
+        .dialog-overlay.active {
+            display: flex;
+        }
+
+        .dialog {
+            background-color: var(--color-background-secondary);
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-6);
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+
+        .dialog h3 {
+            color: var(--color-text-inverse);
+            font-size: var(--text-xl);
+            margin-bottom: var(--spacing-3);
+        }
+
+        .dialog p {
+            color: #9ca3af;
+            font-size: var(--text-base);
+            margin-bottom: var(--spacing-6);
+        }
+
+        .dialog-actions {
+            display: flex;
+            gap: var(--spacing-3);
+            justify-content: flex-end;
+        }
+
+        /* ========== Toast Notification ========== */
+        .toast-container {
+            position: fixed;
+            bottom: var(--spacing-6);
+            right: var(--spacing-6);
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-3);
+            z-index: 3000;
+        }
+
+        .toast {
+            background-color: var(--color-background-secondary);
+            color: var(--color-text-inverse);
+            padding: var(--spacing-4) var(--spacing-6);
+            border-radius: var(--radius-md);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+            animation: slideIn 0.3s ease-out;
+            max-width: 350px;
+            border-left: 4px solid var(--color-primary);
+        }
+
+        .toast.success {
+            border-left-color: var(--color-success);
+        }
+
+        .toast.error {
+            border-left-color: var(--color-danger);
+        }
+
+        .toast.warning {
+            border-left-color: #f59e0b;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* ========== Loading ========== */
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 4000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .loading-overlay.active {
+            display: flex;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(255, 255, 255, 0.2);
+            border-top-color: var(--color-primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            color: var(--color-text-inverse);
+            margin-left: var(--spacing-4);
+            font-size: var(--text-lg);
+        }
+
+        .loading-wrapper {
+            display: flex;
+            align-items: center;
+        }
+
+        /* ========== Empty State ========== */
+        .empty-state {
+            text-align: center;
+            padding: var(--spacing-12) var(--spacing-6);
+            background-color: var(--color-background-secondary);
+            border-radius: var(--radius-lg);
+            color: #9ca3af;
+        }
+
+        .empty-state h2 {
+            color: var(--color-text-inverse);
+            font-size: var(--text-xl);
+            margin-bottom: var(--spacing-2);
+        }
+
+        /* ========== Footer ========== */
+        .footer {
+            text-align: center;
+            padding: var(--spacing-6);
+            color: #6b7280;
+            font-size: var(--text-sm);
+        }
+
+        /* ========== Responsive ========== */
+        @media (max-width: 768px) {
+            .image-card {
+                max-height: 50vh;
+            }
+
+            .toolbar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .toolbar-left, .toolbar-right {
+                justify-content: stretch;
+            }
+
+            .toolbar-left > *, .toolbar-right > * {
+                flex: 1;
+            }
+
+            .search-box input {
+                width: 100%;
+            }
+
+            .stats-bar {
+                gap: var(--spacing-3);
+            }
+
+            .header {
+                padding: var(--spacing-4);
+            }
+
+            .header h1 {
+                font-size: var(--text-xl);
+            }
+        }
+
+        @media (max-width: 640px) {
+            .image-card {
+                max-height: 40vh;
+            }
+
+            .container {
+                padding: var(--spacing-2);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>🎮 游戏截图浏览器</h1>
+            <p>浏览并删除不需要的截图，删除后自动触发补充下载</p>
+            <div class="stats-bar">
+                <div class="stat-item">
+                    总图片数 <strong id="total-count">0</strong>
+                </div>
+                <div class="stat-item">
+                    已选择 <strong id="selected-count">0</strong>
+                </div>
+                <div class="stat-item">
+                    已删除 <strong id="deleted-count">0</strong>
+                </div>
+            </div>
+        </header>
+
+        <!-- Toolbar -->
+        <div class="toolbar">
+            <div class="toolbar-left">
+                <button class="btn btn-secondary" id="select-all-btn">
+                    <span class="icon">☑️</span>全选
+                </button>
+                <button class="btn btn-secondary" id="clear-selection-btn">
+                    <span class="icon">🔄</span>清空选择
+                </button>
+                <button class="btn btn-primary" id="add-folder-btn">
+                    <span class="icon">📁</span>添加文件夹
+                </button>
+                <div class="search-box">
+                    <input type="text" id="search-input" placeholder="🔍 搜索文件名...">
+                </div>
+                <div class="group-select">
+                    <label for="group-select">分组：</label>
+                    <select id="group-select">
+                        <option value="none">不分组</option>
+                        <option value="directory">按目录分组</option>
+                    </select>
+                </div>
+            </div>
+            <div class="toolbar-right">
+                <button class="btn btn-danger" id="delete-selected-btn" disabled>
+                    <span class="icon">🗑️</span>删除选中 (<span id="delete-count">0</span>)
+                </button>
+            </div>
+        </div>
+
+        <!-- Image Grid -->
+        <main id="image-grid-container">
+            <div id="image-grid" class="image-grid">
+                <!-- Images will be loaded here -->
+            </div>
+            <div id="empty-state" class="empty-state" style="display: none;">
+                <h2>未找到图片</h2>
+                <p>该目录下没有找到 PNG/JPG/JPEG 图片文件</p>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            game-screenshot-skills • 双击图片可放大预览
+        </footer>
+    </div>
+
+    <!-- Preview Modal -->
+    <div id="preview-modal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" id="close-modal">&times;</button>
+            <img id="modal-image" src="" alt="">
+            <div class="modal-info">
+                <div class="path" id="modal-path"></div>
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" id="modal-cancel">关闭</button>
+                    <button class="btn btn-danger modal-delete-btn" id="modal-delete">
+                        🗑️ 删除此图片
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm Delete Dialog -->
+    <div id="confirm-dialog" class="dialog-overlay">
+        <div class="dialog">
+            <h3>确认删除</h3>
+            <p id="confirm-message">确定要删除选中的图片吗？此操作不可撤销。删除后会自动尝试补充下载新的截图。</p>
+            <div class="dialog-actions">
+                <button class="btn btn-secondary" id="dialog-cancel">取消</button>
+                <button class="btn btn-danger" id="dialog-confirm">确认删除</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Folder Dialog -->
+    <div id="add-folder-dialog" class="dialog-overlay">
+        <div class="dialog">
+            <h3>添加文件夹</h3>
+            <p>输入要读取图片的文件夹路径（相对于当前目录或绝对路径）。服务器会扫描该文件夹及其子文件夹中的所有图片。</p>
+            <div style="margin-bottom: 20px;">
+                <input type="text" id="folder-path-input"
+                       placeholder="例如: ./other-images 或 C:/screenshots/my-game"
+                       style="width: 100%; padding: 12px; background: #374151; color: white; border: 1px solid #4B5563; border-radius: 6px; font-size: 14px; outline: none;"
+                       onfocus="this.style.borderColor='#2563eb'; this.style.boxShadow='0 0 0 3px rgba(37, 99, 235, 0.2)';"
+                       onblur="this.style.borderColor='#4B5563'; this.style.boxShadow='none';">
+            </div>
+            <div class="dialog-actions">
+                <button class="btn btn-secondary" id="add-folder-cancel">取消</button>
+                <button class="btn btn-primary" id="add-folder-confirm">添加文件夹</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-wrapper">
+            <div class="spinner"></div>
+            <span class="loading-text" id="loading-text">处理中...</span>
+        </div>
+    </div>
+
+    <script>
+        // ========== State ==========
+        let images = [];
+        let selectedImages = new Set();
+        let deletedCount = 0;
+        let baseUrl = window.location.origin;
+        let currentGrouping = 'none';
+        let searchQuery = '';
+
+        // ========== Add Folder Modal ==========
+        function openAddFolderDialog() {
+            const dialog = document.getElementById('add-folder-dialog');
+            dialog.classList.add('active');
+            document.getElementById('folder-path-input').value = '';
+            document.getElementById('folder-path-input').focus();
+        }
+
+        function closeAddFolderDialog() {
+            const dialog = document.getElementById('add-folder-dialog');
+            dialog.classList.remove('active');
+        }
+
+        async function handleAddFolder() {
+            const folderPath = document.getElementById('folder-path-input').value.trim();
+            if (!folderPath) {
+                showToast('请输入文件夹路径', 'warning');
+                return;
+            }
+
+            closeAddFolderDialog();
+            setLoading(true, '正在扫描文件夹...');
+
+            try {
+                const response = await fetch(`${baseUrl}/add-folder`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        folder_path: folderPath,
+                    }),
+                });
+
+                const result = await response.json();
+
+                if (!result.success) {
+                    throw new Error(result.error || '扫描失败');
+                }
+
+                // Add the new images to our collection
+                const existingPaths = new Set(images.map(img => img.path));
+                let addedCount = 0;
+
+                for (const newImg of result.images) {
+                    if (!existingPaths.has(newImg.path)) {
+                        images.push(newImg);
+                        existingPaths.add(newImg.path);
+                        addedCount++;
+                    }
+                }
+
+                renderImageGrid();
+                showToast(`成功添加 ${addedCount} 张新图片（共 ${result.total} 张）`, 'success');
+
+            } catch (error) {
+                console.error('Add folder error:', error);
+                showToast('添加失败: ' + error.message, 'error');
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        // ========== Add Folder Event Bindings ==========
+
+        // ========== Utility Functions ==========
+
+        /**
+         * Show toast notification
+         */
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.3s';
+                setTimeout(() => {
+                    container.removeChild(toast);
+                }, 300);
+            }, 3000);
+        }
+
+        /**
+         * Show/Hide loading
+         */
+        function setLoading(loading, text = '处理中...') {
+            const overlay = document.getElementById('loading-overlay');
+            const loadingText = document.getElementById('loading-text');
+            loadingText.textContent = text;
+            if (loading) {
+                overlay.classList.add('active');
+            } else {
+                overlay.classList.remove('active');
+            }
+        }
+
+        /**
+         * Update stats display
+         */
+        function updateStats() {
+            document.getElementById('total-count').textContent = filteredImages().length;
+            document.getElementById('selected-count').textContent = selectedImages.size;
+            document.getElementById('deleted-count').textContent = deletedCount;
+            document.getElementById('delete-count').textContent = selectedImages.size;
+
+            const deleteBtn = document.getElementById('delete-selected-btn');
+            deleteBtn.disabled = selectedImages.size === 0;
+        }
+
+        /**
+         * Filter images based on search and grouping
+         */
+        function filteredImages() {
+            let filtered = images;
+
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                filtered = filtered.filter(img =>
+                    img.path.toLowerCase().includes(q) ||
+                    img.filename.toLowerCase().includes(q)
+                );
+            }
+
+            return filtered;
+        }
+
+        // ========== API Calls ==========
+
+        /**
+         * Delete a single image
+         */
+        async function deleteImage(path) {
+            try {
+                const response = await fetch(`${baseUrl}/delete`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        path: path,
+                    }),
+                });
+
+                const result = await response.json();
+                return result;
+            } catch (error) {
+                console.error('Delete error:', error);
+                throw error;
+            }
+        }
+
+        /**
+         * Replenish a deleted image
+         */
+        async function replenishImage(path) {
+            try {
+                const response = await fetch(`${baseUrl}/replenish`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        path: path,
+                    }),
+                });
+
+                const result = await response.json();
+                return result;
+            } catch (error) {
+                console.error('Replenish error:', error);
+                throw error;
+            }
+        }
+
+        /**
+         * Scan directory for images via API or fallback directory listing
+         */
+        async function scanImages() {
+            try {
+                // Try API endpoint first (most reliable)
+                try {
+                    const apiUrl = `${baseUrl}/list-images`;
+                    const apiResponse = await fetch(apiUrl);
+                    if (apiResponse.ok) {
+                        const data = await apiResponse.json();
+                        if (data.success && Array.isArray(data.images)) {
+                            console.log(`Found ${data.total} images via API`);
+                            return data.images;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('API scan failed, falling back to directory listing', e);
+                }
+
+                // Fallback: Recursively scan directories via directory listing
+                const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
+                const foundImages = [];
+
+                async function scanDirectory(path) {
+                    const fullUrl = `${baseUrl}/${path}`;
+                    const response = await fetch(fullUrl);
+                    if (!response.ok) {
+                        console.warn(`Cannot access ${fullUrl}: ${response.status}`);
+                        return;
+                    }
+                    const html = await response.text();
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+
+                    // Python SimpleHTTPRequestHandler lists everything in <pre> with <a> tags
+                    const links = Array.from(doc.querySelectorAll('a'));
+
+                    for (const link of links) {
+                        const href = link.getAttribute('href');
+                        if (!href || href === '../' || href === './') continue;
+
+                        if (href.endsWith('/')) {
+                            const subPath = path ? path + '/' + href : href;
+                            await scanDirectory(subPath);
+                        } else {
+                            const lower = href.toLowerCase();
+                            if (imageExtensions.some(ext => lower.endsWith(ext))) {
+                                const pathParts = path.split('/').filter(p => p);
+                                const gameDir = pathParts.length > 0 ? pathParts[pathParts.length - 1] : '';
+                                const filePath = path ? path + '/' + href : href;
+                                const fileUrl = `${baseUrl}/${filePath}`;
+                                foundImages.push({
+                                    path: filePath,
+                                    gameDir: gameDir,
+                                    filename: href,
+                                    url: fileUrl,
+                                });
+                            }
+                        }
+                    }
+                }
+
+                await scanDirectory('');
+                foundImages.sort((a, b) => a.path.localeCompare(b.path));
+                console.log(`Found ${foundImages.length} images via directory listing`);
+                return foundImages;
+            } catch (error) {
+                console.error('Scan error:', error);
+                throw error;
+            }
+        }
+
+        // ========== Rendering ==========
+
+        /**
+         * Create image card element
+         */
+        function createImageCard(image) {
+            const card = document.createElement('div');
+            card.className = 'image-card';
+            if (selectedImages.has(image.path)) {
+                card.classList.add('selected');
+            }
+
+            card.dataset.path = image.path;
+            card.dataset.gameDir = image.gameDir;
+            card.dataset.filename = image.filename;
+
+            card.innerHTML = `
+                <div class="checkbox-overlay"></div>
+                <div class="image-wrapper">
+                    <img src="${image.url}" alt="${image.filename}" loading="lazy">
+                </div>
+                <div class="image-info">
+                    <div class="image-path">${image.path}</div>
+                </div>
+            `;
+
+            // Click toggle selection
+            card.addEventListener('click', (e) => {
+                if (e.detail === 2) {
+                    // Double click - open preview
+                    openPreview(image);
+                } else {
+                    // Single click - toggle selection
+                    toggleSelection(image.path);
+                }
+            });
+
+            return card;
+        }
+
+        /**
+         * Render image grid
+         */
+        function renderImageGrid() {
+            const container = document.getElementById('image-grid');
+            const emptyState = document.getElementById('empty-state');
+            container.innerHTML = '';
+
+            const filtered = filteredImages();
+
+            if (filtered.length === 0) {
+                container.style.display = 'none';
+                emptyState.style.display = 'block';
+            } else {
+                container.style.display = 'grid';
+                emptyState.style.display = 'none';
+
+                if (currentGrouping === 'directory') {
+                    // Group by directory
+                    const groups = new Map();
+                    for (const img of filtered) {
+                        const dir = img.gameDir || '(root)';
+                        if (!groups.has(dir)) {
+                            groups.set(dir, []);
+                        }
+                        groups.get(dir).push(img);
+                    }
+
+                    // Sort directories
+                    const sortedGroups = Array.from(groups.entries()).sort((a, b) =>
+                        a[0].localeCompare(b[0])
+                    );
+
+                    for (const [dir, imgs] of sortedGroups) {
+                        const groupHeader = document.createElement('div');
+                        groupHeader.style.width = '100%';
+                        groupHeader.style.color = 'white';
+                        groupHeader.style.fontSize = '18px';
+                        groupHeader.style.fontWeight = 'bold';
+                        groupHeader.style.marginTop = '16px';
+                        groupHeader.style.marginBottom = '8px';
+                        groupHeader.textContent = `📁 ${dir} (${imgs.length} 张)`;
+                        container.appendChild(groupHeader);
+
+                        for (const img of imgs) {
+                            container.appendChild(createImageCard(img));
+                        }
+                    }
+                } else {
+                    // No grouping
+                    for (const img of filtered) {
+                        container.appendChild(createImageCard(img));
+                    }
+                }
+            }
+
+            updateStats();
+        }
+
+        // ========== Selection ==========
+
+        /**
+         * Toggle image selection
+         */
+        function toggleSelection(path) {
+            if (selectedImages.has(path)) {
+                selectedImages.delete(path);
+            } else {
+                selectedImages.add(path);
+            }
+            renderImageGrid();
+        }
+
+        /**
+         * Select all visible images
+         */
+        function selectAll() {
+            const filtered = filteredImages();
+            for (const img of filtered) {
+                selectedImages.add(img.path);
+            }
+            renderImageGrid();
+            showToast(`已选中 ${selectedImages.size} 张图片`, 'success');
+        }
+
+        /**
+         * Clear all selections
+         */
+        function clearSelection() {
+            selectedImages.clear();
+            renderImageGrid();
+        }
+
+        // ========== Preview Modal ==========
+
+        let currentPreviewImage = null;
+
+        /**
+         * Open preview modal
+         */
+        function openPreview(image) {
+            currentPreviewImage = image;
+            const modal = document.getElementById('preview-modal');
+            const modalImg = document.getElementById('modal-image');
+            const modalPath = document.getElementById('modal-path');
+
+            modalImg.src = image.url;
+            modalPath.textContent = `路径: ${image.path}`;
+            modal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+
+        /**
+         * Close preview modal
+         */
+        function closePreview() {
+            const modal = document.getElementById('preview-modal');
+            modal.classList.remove('active');
+            document.body.style.overflow = '';
+            currentPreviewImage = null;
+        }
+
+        /**
+         * Delete from preview
+         */
+        async function deleteFromPreview() {
+            if (!currentPreviewImage) return;
+
+            openConfirmDialog([currentPreviewImage], () => {
+                closePreview();
+            });
+        }
+
+        // ========== Confirm Dialog ==========
+
+        let confirmCallback = null;
+        let imagesToDelete = [];
+
+        /**
+         * Open confirm dialog
+         */
+        function openConfirmDialog(images, callback) {
+            imagesToDelete = images;
+            confirmCallback = callback;
+            const dialog = document.getElementById('confirm-dialog');
+            const message = document.getElementById('confirm-message');
+
+            if (images.length === 1) {
+                message.textContent = `确定要删除图片 "${images[0].filename}" 吗？删除后会自动尝试补充下载新的截图。此操作不可撤销。`;
+            } else {
+                message.textContent = `确定要删除选中的 ${images.length} 张图片吗？删除后会自动尝试补充下载新的截图。此操作不可撤销。`;
+            }
+
+            dialog.classList.add('active');
+        }
+
+        /**
+         * Close confirm dialog
+         */
+        function closeConfirmDialog() {
+            const dialog = document.getElementById('confirm-dialog');
+            dialog.classList.remove('active');
+            imagesToDelete = [];
+            confirmCallback = null;
+        }
+
+        /**
+         * Handle confirmed deletion
+         */
+        async function handleConfirmedDelete() {
+            closeConfirmDialog();
+            setLoading(true, `正在删除 ${imagesToDelete.length} 张图片...`);
+
+            let successCount = 0;
+            let failCount = 0;
+
+            for (const image of imagesToDelete) {
+                try {
+                    // Mark as deleting in UI
+                    const card = document.querySelector(`[data-path="${image.path}"]`);
+                    if (card) {
+                        card.classList.add('deleting');
+                    }
+
+                    // Delete via API
+                    const deleteResult = await deleteImage(image.path);
+
+                    if (!deleteResult.success) {
+                        throw new Error(deleteResult.error || '删除失败');
+                    }
+
+                    // Try to replenish
+                    const replenishResult = await replenishImage(image.path);
+
+                    // Remove from local arrays
+                    images = images.filter(img => img.path !== image.path);
+                    selectedImages.delete(image.path);
+
+                    if (replenishResult.success) {
+                        showToast(`✅ ${image.path}: 删除成功，已补充新截图`, 'success');
+                    } else {
+                        showToast(`✅ ${image.path}: 删除成功，${replenishResult.warning || '无法补充'}`, 'warning');
+                    }
+
+                    successCount++;
+                    deletedCount++;
+                } catch (error) {
+                    failCount++;
+                    showToast(`❌ ${image.path}: ${error.message}`, 'error');
+                }
+            }
+
+            setLoading(false);
+            renderImageGrid();
+
+            const summary = `完成: 成功删除 ${successCount} 张，失败 ${failCount} 张`;
+            if (failCount === 0) {
+                showToast(summary, 'success');
+            } else {
+                showToast(summary, 'warning');
+            }
+
+            if (confirmCallback) {
+                confirmCallback();
+            }
+        }
+
+        // ========== Initialization ==========
+
+        /**
+         * Initialize the app
+         */
+        async function init() {
+            setLoading(true, '正在扫描图片...');
+            try {
+                images = await scanImages();
+                renderImageGrid();
+                updateStats();
+
+                if (images.length === 0) {
+                    showToast('未找到任何图片文件', 'warning');
+                } else {
+                    showToast(`找到 ${images.length} 张图片`, 'success');
+                }
+            } catch (error) {
+                console.error('Init error:', error);
+                showToast('初始化失败: ' + error.message, 'error');
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        // ========== Event Bindings ==========
+
+        // Search
+        document.getElementById('search-input').addEventListener('input', (e) => {
+            searchQuery = e.target.value.trim();
+            renderImageGrid();
+        });
+
+        // Grouping
+        document.getElementById('group-select').addEventListener('change', (e) => {
+            currentGrouping = e.target.value;
+            renderImageGrid();
+        });
+
+        // Buttons
+        document.getElementById('select-all-btn').addEventListener('click', selectAll);
+        document.getElementById('clear-selection-btn').addEventListener('click', clearSelection);
+        document.getElementById('delete-selected-btn').addEventListener('click', () => {
+            const selected = filteredImages().filter(img => selectedImages.has(img.path));
+            if (selected.length > 0) {
+                openConfirmDialog(selected);
+            }
+        });
+
+        // Modal
+        document.getElementById('close-modal').addEventListener('click', closePreview);
+        document.getElementById('modal-cancel').addEventListener('click', closePreview);
+        document.getElementById('modal-delete').addEventListener('click', deleteFromPreview);
+        document.getElementById('preview-modal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('preview-modal')) {
+                closePreview();
+            }
+        });
+
+        // Dialog
+        document.getElementById('dialog-cancel').addEventListener('click', closeConfirmDialog);
+        document.getElementById('dialog-confirm').addEventListener('click', handleConfirmedDelete);
+        document.getElementById('confirm-dialog').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('confirm-dialog')) {
+                closeConfirmDialog();
+            }
+        });
+
+        // Add Folder Dialog
+        document.getElementById('add-folder-btn').addEventListener('click', openAddFolderDialog);
+        document.getElementById('add-folder-cancel').addEventListener('click', closeAddFolderDialog);
+        document.getElementById('add-folder-confirm').addEventListener('click', handleAddFolder);
+        document.getElementById('add-folder-dialog').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('add-folder-dialog')) {
+                closeAddFolderDialog();
+            }
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closePreview();
+                closeConfirmDialog();
+                closeAddFolderDialog();
+            }
+        });
+
+        // Start
+        init();
+    </script>
+</body>
+</html>

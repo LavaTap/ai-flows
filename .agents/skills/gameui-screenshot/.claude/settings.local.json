@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 *)",
+      "Bash(dir *)",
+      "Bash(timeout 1s echo \"Checking server...\")",
+      "Bash(findstr \"8080\")",
+      "Bash(findstr \":8080.*LISTENING\")"
+    ]
+  }
+}

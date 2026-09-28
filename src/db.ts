@@ -20,10 +20,24 @@ export interface UserAccount {
   title: string;
   /** 归属部门节点：产品调研 / AI产品 / 程序中台 / 产品运营；主管为 产品 */
   department: string;
+  /** 中文姓名（角色卡片展示；旧数据缺省时回退邮箱前缀） */
+  name?: string;
 }
 
-/** 节点运行时状态 */
-export type NodeStatus = "todo" | "running" | "done" | "approved";
+/** 节点运行时状态：待执行 / 执行中 / 待验收 / 已执行 */
+export type NodeStatus = "todo" | "running" | "in_review" | "done";
+
+/** 节点产物：一次 skill 执行产出一个文件 */
+export interface NodeArtifact {
+  /** 产物文件名（不含路径，下载用） */
+  name: string;
+  /** 相对目标仓库根的路径 */
+  path: string;
+  /** 产出它的 skill 名（research-crawler / product-analysis / product-manager） */
+  skill: string;
+  /** ISO 时间戳 */
+  at: string;
+}
 
 /** 管线节点（db/pipeline.json，执行/批准会写回） */
 export interface NodeState {
@@ -33,16 +47,30 @@ export interface NodeState {
   department: string;
   /** 环节名：产品调研 / 产品策划案 / AI 代码评审 / 运营 */
   step: string;
-  /** 能力是否已就绪（仅 03 AI 代码评审为 true，其余留空待接入） */
+  /** 能力是否已就绪（01/02/03 已接 skill / 评审链，04 留空待接入） */
   ready: boolean;
-  /** 待执行 / 执行中 / 已执行 / 已批准 */
+  /** 待执行 / 执行中 / 待验收 / 已执行 */
   status: NodeStatus;
-  /** 执行器标识：ai-review 表示执行时触发真实 AI 评审链（目前仅节点 03） */
+  /** 执行器标识：ai-review 触发真实评审链；skill:<name> 触发自研 skill 生成 */
   runner?: string;
+  /** 调研/规划需求文字描述（节点 01/02，主管与本部门员工可编辑） */
+  requirementText?: string;
+  /** 已上传附件文件名（存于目标仓库 .ai-flows-uploads/<节点id>/） */
+  uploads?: string[];
+  /** 执行产出的文件列表（skill 节点） */
+  artifacts?: NodeArtifact[];
+  /** 执行进度 0-100（执行中才有意义） */
+  progress?: number;
+  /** 当前阶段文案，如「模型生成中」 */
+  progressLabel?: string;
+  /** 最近一次驳回意见（主管驳回时写入，重新提交后清空） */
+  rejection?: string;
   /** 最近一次执行结果摘要（评审通过 / 未通过 / 失败原因），展示在详情面板 */
   lastResult?: string;
   /** 最近一次评审报告页链接（runner=ai-review 执行成功后写入） */
   reportUrl?: string;
+  /** 最近一次执行选用的输出目录（相对目标仓库根） */
+  outputDir?: string;
 }
 
 /** 读取全部账号 */
@@ -60,11 +88,18 @@ export function authenticate(email: string, password: string): UserAccount | nul
   return user;
 }
 
-/** 读取全部管线节点 */
+/** 读取全部管线节点（旧状态 approved 自动迁移为 done 并回写） */
 export function loadNodes(): NodeState[] {
   const f = join(DB_DIR, "pipeline.json");
   const data = JSON.parse(readFileSync(f, "utf8")) as { nodes?: NodeState[] };
-  return data.nodes ?? [];
+  const nodes = data.nodes ?? [];
+  if (nodes.some((n) => (n as { status?: string }).status === "approved")) {
+    for (const n of nodes) {
+      if ((n as { status?: string }).status === "approved") n.status = "done";
+    }
+    saveNodes(nodes);
+  }
+  return nodes;
 }
 
 /** 写回管线节点（执行/批准后持久化状态） */

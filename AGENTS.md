@@ -44,7 +44,8 @@
 | `reporter.ts` | Markdown 报告 + HTML 模板渲染 `renderTemplate()` |
 | `serve.ts` | 报告 HTTP 服务（`node:http`）+ 报告列表页 + `POST /reports/<id>/push` 确认提交（需带 commit message，有暂存先 commit 再 push；无暂存且信息与 HEAD 不同则 amend 改写） |
 | `publisher.ts` | 多目标远端推送、https token 注入；内部推送置 `AI_REVIEW_INTERNAL_PUSH=1`，防被 pre-push hook 循环拦截 |
-| `platform.ts` | 平台 HTTP 服务：登录会话 + 管线页注入 `window.__PIPELINE__` + 节点执行/批准 API + `GET /api/reviews` 评审记录（平台历史 + 外部报告聚合，按视角过滤）；权限判定 `canExecute` / `canApprove` / `filterReviewsByUser`；节点 03 后台跑评审链 |
+| `platform.ts` | 平台 HTTP 服务：登录会话 + 管线页注入 `window.__PIPELINE__` + 节点执行/提交/验收/驳回 API + 需求编辑/附件上传/目录浏览/产物下载 + `GET /api/reviews` 评审记录（平台历史 + 外部报告聚合，按视角过滤）；权限判定 `canExecute` / `canApprove` / `canEditRequirement` / `filterReviewsByUser` / `safeRepoPath`；节点 01/02 后台跑 skill、节点 03 后台跑评审链，`busy` 集合防并发 |
+| `skill.ts` | skill 执行器：SKILL.md（剥 frontmatter）作系统提示 + 需求/附件组装 prompt → `callModel` 生成 Markdown 产物写入输出目录，进度经回调回写 db；不感知节点/权限 |
 | `db.ts` | JSON 库读写（`db/users.json` / `db/pipeline.json` / `db/reviews.json`）、`authenticate` 邮箱+密码校验、`appendReview` 评审历史追加 |
 | `auth.ts` | 内存会话 + cookie 签发/解析（`HttpOnly` `SameSite=Lax`，24h，重启即失效） |
 | `redact.ts` | `maskSecrets()`：评审产出前对 `summary` / `message` / `suggestion` 打码（密钥只留首尾各 4 位） |
@@ -67,11 +68,11 @@
 | 模型调用带退避重试 | 429 / 5xx 需指数退避重试，避免单个文件失败导致整批评审失败 |
 | 确认提交需 commit message | `POST /reports/<id>/push` 必须带非空 `message`，否则 400；有暂存变更先 `commitStaged` 再 `pushToTargets`，杜绝评审通过即自动推送；无暂存且 `message` 与 HEAD 不同时先 `amendCommitMessage` 改写最近一次提交。页面提交栏展示 HEAD 提交描述并预填完整信息（serve 渲染时实时注入 `view.head`） |
 | `run` 缺省不推送 | `run` 不带 `--push` 时一律不推送；推送只走页面「确认提交」或显式 `--push` |
-| 平台权限唯一入口 | 节点执行/批准判定只用 `platform.ts` 的 `canExecute` / `canApprove`（员工限本部门、主管不限）；前端按钮显隐只是展示，服务端校验才算数，路由内不得另写权限逻辑 |
+| 平台权限唯一入口 | 节点执行/验收/需求编辑判定只用 `platform.ts` 的 `canExecute` / `canApprove` / `canEditRequirement`（员工限本部门、主管不限）；前端按钮显隐只是展示，服务端校验才算数，路由内不得另写权限逻辑 |
 | 账号与密码 | 账号唯一来源 `db/users.json`，**不开放注册**；演示期密码明文 123456，上线前必须换 `node:crypto` scrypt 加盐哈希 |
 | 会话与 cookie | 内存 `Map` 会话 + `HttpOnly` `SameSite=Lax` cookie；服务重启全部失效（演示可接受，不引数据库/Redis） |
-| 节点状态机 | `todo → running → done → approved`；仅主管可 `approve`；服务启动时把残留 `running` 复位为 `todo`，防进程中断后永久卡死 |
-| 评审节点异步执行 | `runner=ai-review` 先落 `running` 并立即响应，评审在后台跑完再回写 `lastResult` / `reportUrl`（回写前重读库，避免覆盖期间其他节点变更） |
+| 节点状态机 | `todo → running → in_review → done` 四态；执行完成保持 `running` 等 `submit`，`submit` 进 `in_review`，仅主管可 `approve`（→ `done` 终态）/ `reject`（→ `running` 附意见）；状态不符的动作返回 409；服务启动把残留 `running` 复位为 `todo`、旧 `approved` 迁移为 `done` |
+| 节点异步执行 | `runner=ai-review` / `runner=skill:<name>` 先落 `running` 并立即响应，后台跑完（skill 走 `src/skill.ts`）回写 `lastResult` / `progress` / 产物（回写前重读库，避免覆盖期间其他节点变更）；执行完成保持 `running` 等提交验收 |
 | 注入 bootstrap 必须转义 | `window.__PIPELINE__` 注入用 `jsonForScript()`（转义 `<`）；节点顺序与 `web/ai-pipeline-app.js` 的 `data-idx` 一一对应，改注入结构必须同步该脚本 |
 | 评审记录按视角过滤 | `GET /api/reviews` 只用 `filterReviewsByUser`（主管全量 / 员工限本部门）；外部触发（hook/手动 run）报告无账号归属，统一归到节点 03 部门「程序中台」；平台触发记录写 `db/reviews.json` |
 
@@ -154,7 +155,8 @@ export default function main() {}
 | `reviewer.ts` | `extractJson` | 带围栏、带前后缀文字、非法 JSON 抛错 |
 | `publisher.ts` | `injectToken` | https 注入、已有凭据剥离、ssh 地址不动 |
 | `serve.ts` | `/reports/<id>` 路由 | `../` 等路径穿越必须 404 |
-| `platform.ts` | `canExecute` / `canApprove` / `filterReviewsByUser` | 员工限本部门、主管全节点可执行；员工不可批准；评审记录主管全量、员工本部门 |
+| `platform.ts` | `canExecute` / `canApprove` / `canEditRequirement` / `filterReviewsByUser` / `safeRepoPath` | 员工限本部门、主管全节点可执行；员工不可批准；需求编辑同执行权限；评审记录主管全量、员工本部门；目录穿越拦截 |
+| `skill.ts` | `sanitizeFilename` / `buildSkillPrompt` / `resolveSkillDoc` | 文件名净化；含/不含附件的 prompt 组装；未知 skill 抛错 |
 
 不要求覆盖：`index.ts` 的 CLI 编排、HTTP 服务生命周期、真实模型调用（涉及网络与凭据）。
 端到端回归用手工三档用例（info / warning / blocker）验证，方法见 `评审链路与说明.md` §3。

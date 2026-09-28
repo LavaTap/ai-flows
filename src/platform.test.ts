@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { filterReviewsByUser } from "./platform.js";
-import type { ReviewRecord, UserAccount } from "./db.js";
+import { filterReviewsByUser, canEditRequirement, safeRepoPath } from "./platform.js";
+import type { ReviewRecord, UserAccount, NodeState } from "./db.js";
 
 function user(role: "staff" | "supervisor", department: string): UserAccount {
   return {
@@ -52,4 +52,30 @@ test("should keep external records assigned to 程序中台 visible to that depa
 test("should return empty for staff of department with no records", () => {
   const out = filterReviewsByUser([rec("产品调研")], user("staff", "产品运营"));
   assert.strictEqual(out.length, 0);
+});
+
+function node(department: string): NodeState {
+  return { id: "01", department, step: "测试", ready: true, status: "todo" };
+}
+
+test("should allow requirement edit for own-department staff and supervisor only", () => {
+  const n = node("产品调研");
+  assert.strictEqual(canEditRequirement(user("staff", "产品调研"), n), true);
+  assert.strictEqual(canEditRequirement(user("staff", "程序中台"), n), false);
+  assert.strictEqual(canEditRequirement(user("supervisor", "产品"), n), true);
+});
+
+test("should resolve paths inside repo root and reject traversal outside", () => {
+  const repo = "D:/code/demo";
+  assert.strictEqual(safeRepoPath(repo, ""), "D:\\code\\demo".replace(/\//g, "\\"));
+  assert.strictEqual(safeRepoPath(repo, "output/调研"), "D:\\code\\demo\\output\\调研");
+  assert.strictEqual(safeRepoPath(repo, "output/../web"), "D:\\code\\demo\\web");
+  // 越权：逃出仓库根
+  assert.strictEqual(safeRepoPath(repo, "../other"), null);
+  assert.strictEqual(safeRepoPath(repo, "D:/other/abs"), null);
+});
+
+test("should reject sibling-prefix paths that do not live inside repo root", () => {
+  // D:/code/demo-evil 与 D:/code/demo 前缀相似但不在根内
+  assert.strictEqual(safeRepoPath("D:/code/demo", "D:/code/demo-evil/x"), null);
 });
