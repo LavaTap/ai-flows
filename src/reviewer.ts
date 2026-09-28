@@ -1,3 +1,6 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { resolveApiKey, type ModelConfig, type TargetRemote } from "./config.js";
 import type { DiffFile } from "./collector.js";
 import type { ReviewIssue, ReviewResult, Severity } from "./gate.js";
@@ -8,6 +11,18 @@ import { maskSecrets } from "./redact.js";
 const SEVERITY_DEF = `- "blocker": 阻塞级。会造成 bug / 崩溃 / 安全问题 / 明显逻辑错误，或与本次变更直接相关的严重缺陷。
 - "warning": 需要注意。潜在风险、可维护性差、命名混乱、遗漏边界处理，但不必然导致故障。
 - "info": 仅建议。风格、优化空间，不影响合入。`;
+
+/** 允许的严重级别白名单：输出格式由代码强约束，不依赖 prompt 自觉 */
+const SEVERITIES: readonly Severity[] = ["blocker", "warning", "info"];
+/** 模型给出非法 severity 时的兜底级别（避免脏级别穿透门禁） */
+const SEVERITY_FALLBACK: Severity = "warning";
+/** 模型未给 category 时的兜底 */
+const CATEGORY_FALLBACK = "其他";
+
+/** 评审输出契约：字段定义由代码持有，prompt 仅引用；实际归一以 normalizeIssues 为准 */
+const OUTPUT_CONTRACT = `{"summary": "<本文件改动的一句话总结>", "issues": [
+  {"file": "<相对路径>", "lineStart": <起始行号>, "lineEnd": <结束行号>, "severity": "blocker|warning|info", "category": "<所属维度>", "message": "<问题描述>", "suggestion": "<修改建议>"}
+]}`;
 
 /** 生成单个文件的评审 prompt */
 function buildPrompt(file: DiffFile): string {
@@ -27,10 +42,8 @@ function buildPrompt(file: DiffFile): string {
     ``,
     `要求：`,
     `- 只输出一个合法的 JSON，不要任何其他文字、代码块标记或解释。`,
-    `- JSON 结构：`,
-    `{"summary": "<本文件改动的一句话总结>", "issues": [`,
-    `  {"file": "<相对路径>", "lineStart": <起始行号>, "lineEnd": <结束行号>, "severity": "blocker|warning|info", "category": "<所属维度>", "message": "<问题描述>", "suggestion": "<修改建议>"}`,
-    `]}`,
+    `- JSON 结构（字段契约见代码常量 OUTPUT_CONTRACT，格式由下游归一器兜底）：`,
+    OUTPUT_CONTRACT,
     `- 行号取「变更后（新文件）」的行号。问题若跨多行，lineStart/lineEnd 表示起止行号；单行问题二者相等。`,
     `- 没有问题时 issues 返回空数组。没把握就别说，宁缺毋滥，降低误报。`,
     degradedNote,
@@ -116,18 +129,23 @@ function normalizeIssues(parsed: any, path: string): ReviewIssue[] {
   return arr
     .map((raw: any) => {
       if (!raw || typeof raw !== "object") return null;
-      const sev = String(raw.severity || "warning") as Severity;
-      // 兼容 lineStart/lineEnd 与旧 line 字段
+      // severity 走白名单小写归一：非法值兜底为 warning，避免脏级别穿透门禁
+      const sevRaw = String(raw.severity ?? "").trim().toLowerCase();
+      const severity = (SEVERITIES as readonly string[]).includes(sevRaw)
+        ? (sevRaw as Severity)
+        : SEVERITY_FALLBACK;
+      // 兼容 lineStart/lineEnd 与旧 line 字段，并保证 lineEnd 不小于 lineStart
       const lineStart = Number(raw.lineStart ?? raw.line) || 0;
-      const lineEnd = Number(raw.lineEnd ?? raw.lineStart ?? raw.line) || lineStart;
+      const lineEndRaw = Number(raw.lineEnd ?? raw.lineStart ?? raw.line) || lineStart;
+      const lineEnd = lineEndRaw >= lineStart ? lineEndRaw : lineStart;
       return {
         file: raw.file || path,
         line: lineStart,
         lineEnd: lineEnd !== lineStart ? lineEnd : undefined,
-        severity: sev,
-        category: raw.category || "其他",
-        message: String(raw.message || ""),
-        suggestion: raw.suggestion ? String(raw.suggestion) : undefined,
+        severity,
+        category: String(raw.category ?? "").trim() || CATEGORY_FALLBACK,
+        message: String(raw.message ?? "").trim(),
+        suggestion: raw.suggestion ? String(raw.suggestion).trim() : undefined,
       } as ReviewIssue;
     })
     .filter((i: ReviewIssue | null): i is ReviewIssue => i !== null && !!i.message);
@@ -197,7 +215,56 @@ function buildSummary(files: DiffFile[], perFile: ReviewResult[]): string {
   return `共 ${files.length} 个文件参与评审：\n${lines.join("\n")}`;
 }
 
-/** 对整批文件评审，合并为一条结果 */
+/** 对数位补零（本地时区时间格式化用） */
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/** 本地时区时间戳，精确到秒：YYYYMMDDHHmmss（与 normalize-review.mjs 命名一致） */
+export function logStamp(d: Date = new Date()): string {
+  return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+}
+
+/** 评审日志目录：默认 ai-flows 仓库内 .agents/skills/ai-flows/log/code-review，可用 AI_REVIEW_LOG_DIR 覆盖。
+ *  按模块自身定位，不受 cwd 影响——评审其他仓库时日志仍落在 ai-flows skill 目录，不污染目标仓库。 */
+export function reviewLogDir(): string {
+  const override = process.env.AI_REVIEW_LOG_DIR;
+  if (override) return override;
+  // src/reviewer.ts → 上级即仓库根；dist/reviewer.js → 上级同样是仓库根
+  const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+  return join(repoRoot, ".agents", "skills", "ai-flows", "log", "code-review");
+}
+
+/** 写一份评审日志（时间戳命名，精确到秒）。失败不阻断评审，返回日志路径或 undefined。 */
+export function writeReviewLog(result: ReviewResult, files: number): string | undefined {
+  try {
+    const counts = { blocker: 0, warning: 0, info: 0 };
+    for (const i of result.issues) counts[i.severity]++;
+    const now = new Date();
+    const dir = reviewLogDir();
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, `${logStamp(now)}.log`);
+    const body = [
+      "# ai-review 评审规范输出日志",
+      `# 时间：${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())} ${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`,
+      `# 参与文件：${files}`,
+      `# 统计：total=${result.issues.length} blocker=${counts.blocker} warning=${counts.warning} info=${counts.info}`,
+      "--- 标准评审 JSON ---",
+      JSON.stringify(
+        { summary: result.summary, issues: result.issues, counts, total: result.issues.length },
+        null,
+        2
+      ),
+      "",
+    ].join("\n");
+    writeFileSync(file, body, "utf8");
+    return file;
+  } catch {
+    return undefined; // 日志失败不影响评审主流程
+  }
+}
+
+/** 对整批文件评审，合并为一条结果（并落一份时间戳评审日志） */
 export async function reviewBatch(
   files: DiffFile[],
   model: ModelConfig
@@ -210,7 +277,7 @@ export async function reviewBatch(
       message: maskSecrets(i.message),
       suggestion: i.suggestion ? maskSecrets(i.suggestion) : undefined,
     }));
-  return {
+  const result: ReviewResult = {
     passed: !issues.some((i) => i.severity === "blocker"),
     summary: maskSecrets(buildSummary(files, perFile)),
     issues,
@@ -219,6 +286,8 @@ export async function reviewBatch(
       degradedCount: perFile.reduce((n, r) => n + r.stats.degradedCount, 0),
     },
   };
+  writeReviewLog(result, files.length);
+  return result;
 }
 
 // ────────────────────────────────────────────────────────────────

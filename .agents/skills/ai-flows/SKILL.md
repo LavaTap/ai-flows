@@ -9,7 +9,7 @@ description: ai-flows 能力总入口，只做目录与路由，不承载业务�
 
 ## 强制约束（先读，必须遵守）
 
-- **只读一个**：每轮对话只允许读取与当前意图匹配的**一个**业务文档；其余业务文档严禁打开、严禁 `Grep`、严禁凭印象引用。
+- **只读需求的文档**：每轮对话只允许读取与当前意图匹配的**相关需求**业务文档；其余业务文档严禁打开、严禁 `Grep`、严禁凭印象引用。
 - **按需下钻**：业务文档内部若再指向支撑文件（如 `references/reviewers/` 下的规则子文档），由该业务文档自己决定是否读取，主文档不管，也不能提前读。
 - **意图不明先问用户**，不要为了“了解全貌”把所有业务文档读一遍。
 - **不越界**：用户没提的业务，不读、不做、不提示。
@@ -20,13 +20,13 @@ description: ai-flows 能力总入口，只做目录与路由，不承载业务�
 |---|---|---|
 | 初始化仓库、接入评审、装 ai-review、给仓库配评审、检查/重配模型密钥 | `references/repository-manager/init.md` | `<skill-dir>/scripts/init-repo.mjs`、`<skill-dir>/scripts/check-key.mjs` |
 | 代码评审、按规范评审代码、Python 规范检查 | `references/reviewers/code-review.md` | — |
-| 跑评审、起报告服务、起平台、装 hook、ai-review CLI 用法 | `references/ai-flows/review-chain.md` | — |
+| 跑评审、起报告服务、起平台、装 hook、ai-review CLI 用法、评审输出规范化 | `references/ai-flows/review-chain.md` | `<skill-dir>/scripts/normalize-review.mjs` |
 
 ## 读取方式
 
 `<skill-dir>` = 本 `SKILL.md` 所在目录（`…/.agents/skills/ai-flows`）。
 
-1. 按路由表确定唯一一行。
+1. 按路由表确定当前需求对应的业务文档。
 2. **只** Read 该行对应的业务文档。
 3. 按业务文档的指引执行（脚本一律用 `<skill-dir>/scripts/` 下的相对路径）。
 
@@ -39,9 +39,11 @@ ai-flows/
 │   ├── repository-manager/init.md        # 仓库初始化 + 密钥检查业务
 │   ├── reviewers/code-review.md          # Python 代码评审业务（+ 规则子文档 *.md）
 │   └── ai-flows/review-chain.md          # ai-review 评审链用法业务
+├── log/code-review/                      # 评审日志（时间戳命名，已 gitignore）
 └── scripts/
     ├── init-repo.mjs                     # 拷贝 config + 装 pre-push hook
-    └── check-key.mjs                     # 校验模型密钥有效性
+    ├── check-key.mjs                     # 校验模型密钥有效性
+    └── normalize-review.mjs              # 评审输出强制归一（不靠 prompt）
 ```
 
 ## 红线

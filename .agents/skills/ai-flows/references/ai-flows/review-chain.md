@@ -61,6 +61,33 @@ CLI --config <path>  >  环境变量 AI_REVIEW_CONFIG  >  默认 ./ai-review.con
 - 报告服务：`serve`，列表页 `GET /`，报告页 `GET /reports/<id>`；页面「确认提交」= `POST /reports/<id>/push`（必须带非空 commit message）。
 - 平台服务：`platform`，登录页 `/login`，管线页 `/pipeline`；账号见 `db/users.json`（演示密码统一 123456）。
 
-## 6. 验证手段
+## 6. 规范输出（不靠 prompt）
+
+评审输出格式**由代码保证，不依赖 prompt 约束模型自觉守格式**。两侧各有一道归一器，契约一致：
+
+| 侧 | 位置 | 作用 |
+|---|---|---|
+| 项目 | `src/reviewer.ts` `normalizeIssues` / `writeReviewLog` | 评审链内强制校验：severity 走白名单（非法值兜底 `warning`）、`line`/`lineStart`/`lineEnd` 兼容、无 message 条目丢弃、兜底 category |
+| 技能 | `<skill-dir>/scripts/normalize-review.mjs` | 把模型原始输出（含围栏/前后缀）归一成标准 JSON，供手工核对或接入 |
+
+技能侧脚本用法：
+
+```bash
+node <skill-dir>/scripts/normalize-review.mjs <input-file>   # 或 - 从 stdin 读
+node <skill-dir>/scripts/normalize-review.mjs raw.txt --out out.json --no-log
+```
+
+标准评审 JSON：`{ summary, issues[{file,lineStart,lineEnd,severity,category,message,suggestion?}], counts, total }`。
+退出码：`0` 归一成功 / `1` 无法解析出 JSON。
+
+## 7. 评审日志
+
+每次评审落一份日志到 `.agents/skills/ai-flows/log/code-review/`，文件名 `YYYYMMDDHHmmss`（本地时区，精确到秒），例如 `20260928112130.log`。
+
+- 项目侧：`src/reviewer.ts` 的 `reviewBatch` 自动落盘，按模块自身定位（评审其他仓库时也写回 ai-flows skill 目录，不污染目标仓库）；可用 `AI_REVIEW_LOG_DIR` 覆盖目录；写失败不阻断评审。
+- 技能侧：`normalize-review.mjs` 默认同目录落日志，`--no-log` 可关。
+- 日志已被 `.gitignore` 的 `*.log` 忽略，不进版本库。
+
+## 8. 验证手段
 
 本项目**没有** linter / formatter / 测试框架 / CI。不存在 `npm run lint`、`npm test` 等 script——不要执行，也不要把它们当作“已验证”的依据。改完代码的最低验证标准是 `npx tsc --noEmit` 通过。
