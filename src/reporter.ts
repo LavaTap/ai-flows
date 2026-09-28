@@ -856,42 +856,6 @@ export function renderTemplate(v: ReportView): string {
 
 <main class="main">
 
-  <section class="verdict ${v.passed ? "" : "block"}" aria-label="评审结论">
-    <div class="verdict-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        ${v.passed ? passIcon : blockIcon}
-      </svg>
-    </div>
-    <div class="verdict-text">
-      <h1>${v.passed ? "评审通过" : "评审未通过"}</h1>
-      <p class="verdict-meta">${esc(v.generatedAt)} · 由 ai-review 自动生成 · ${v.filesReviewed} 个文件参与评审${
-        v.passed ? "" : ` · ${v.counts.blocker} 个阻塞级问题已拦截`
-      }</p>
-    </div>
-    <span class="verdict-pill ${v.passed ? "" : "block"}">${v.passed ? "PASS" : "BLOCK"}</span>
-  </section>
-
-  <section class="summary" id="summary" aria-label="评审摘要">
-    <div class="summary-head" id="summaryHead">
-      <h2>评审摘要</h2>
-      <button type="button" class="summary-toggle" aria-label="展开/收纳摘要" aria-expanded="true">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-      </button>
-    </div>
-    <div class="summary-body" id="summaryBody">
-      <p>${esc(v.summary)}</p>
-      <button type="button" class="summary-toggle-all" id="summaryToggleAll" data-expanded="false" aria-label="展开/收起摘要全部"></button>
-    </div>
-  </section>
-
-  <section class="stats" aria-label="评审指标">
-    ${statCards(v)}
-  </section>
-
-  ${submitBar(v)}
-
-  ${pushSection(v)}
-
   <div class="layout">
     <aside class="repo-panel" id="repoPanel" aria-label="仓库目录">
       <button type="button" class="repo-panel-toggle" id="repoPanelToggle" title="折叠/展开仓库目录" aria-label="折叠/展开仓库目录">
@@ -923,6 +887,42 @@ export function renderTemplate(v: ReportView): string {
       </div>
     </aside>
     <div class="layout-main">
+      <section class="verdict ${v.passed ? "" : "block"}" aria-label="评审结论">
+        <div class="verdict-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            ${v.passed ? passIcon : blockIcon}
+          </svg>
+        </div>
+        <div class="verdict-text">
+          <h1>${v.passed ? "评审通过" : "评审未通过"}</h1>
+          <p class="verdict-meta">${esc(v.generatedAt)} · 由 ai-review 自动生成 · ${v.filesReviewed} 个文件参与评审${
+            v.passed ? "" : ` · ${v.counts.blocker} 个阻塞级问题已拦截`
+          }</p>
+        </div>
+        <span class="verdict-pill ${v.passed ? "" : "block"}">${v.passed ? "PASS" : "BLOCK"}</span>
+      </section>
+
+      <section class="summary" id="summary" aria-label="评审摘要">
+        <div class="summary-head" id="summaryHead">
+          <h2>评审摘要</h2>
+          <button type="button" class="summary-toggle" aria-label="展开/收纳摘要" aria-expanded="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+        </div>
+        <div class="summary-body" id="summaryBody">
+          <p>${esc(v.summary)}</p>
+          <button type="button" class="summary-toggle-all" id="summaryToggleAll" data-expanded="false" aria-label="展开/收起摘要全部"></button>
+        </div>
+      </section>
+
+      <section class="stats" aria-label="评审指标">
+        ${statCards(v)}
+      </section>
+
+      ${submitBar(v)}
+
+      ${pushSection(v)}
+
       <section class="diff-panel">
         <div class="diff-panel-head">
           <h2>代码变更</h2>

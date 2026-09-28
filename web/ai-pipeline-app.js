@@ -73,15 +73,26 @@
     "border:1px solid var(--teal-line);border-radius:999px;padding:4px 12px;cursor:pointer;white-space:nowrap;}",
     ".top-right .accbtn:hover{color:#fff;background:var(--teal);}",
     ".user-chip .rname{color:var(--ink-soft);font-weight:500;}",
-    /* 角色卡片（长方形：左头像 + 右侧姓名/部门职位） */
+    /* 执行角色：紧凑列表（小头像 + 名字），hover 弹出详情卡片 */
     ".d-roles{margin-top:12px;border-top:1px solid var(--glass-line);padding-top:10px;}",
     ".d-roles-head{font:600 12px/18px var(--font-sans);color:var(--ink-soft);margin-bottom:8px;}",
-    ".d-roles-list{display:flex;gap:10px;flex-wrap:wrap;}",
-    ".role-card{display:flex;align-items:center;gap:12px;padding:10px 14px;",
-    "border:1px solid var(--glass-line);border-radius:12px;background:var(--glass-fill);cursor:default;min-width:150px;}",
+    ".d-roles-list{display:flex;gap:8px;flex-wrap:wrap;}",
+    ".role-chip{position:relative;display:inline-flex;align-items:center;gap:6px;padding:4px 10px 4px 4px;",
+    "border:1px solid var(--glass-line);border-radius:999px;background:var(--glass-fill);cursor:default;white-space:nowrap;}",
+    ".role-chip:hover{background:rgba(255,255,255,.75);}",
+    ".rc-chip-avatar{width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;",
+    "color:#fff;font:600 11px/1 var(--font-sans);flex:none;box-shadow:0 1px 3px rgba(20,20,20,.15);}",
+    ".rc-chip-name{font:500 12px/18px var(--font-sans);color:var(--ink-soft);}",
+    /* hover 弹出的完整长方形卡片 */
+    ".role-card{position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);",
+    "display:none;width:220px;padding:12px 14px;border:1px solid var(--glass-line-strong);",
+    "border-radius:12px;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);",
+    "box-shadow:0 8px 24px rgba(20,20,20,.12),0 2px 6px rgba(20,20,20,.08);",
+    "z-index:20;pointer-events:none;}",
+    ".role-chip:hover .role-card{display:flex;}",
     ".rc-avatar{width:42px;height:42px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;",
     "color:#fff;font:600 18px/1 var(--font-sans);flex:none;box-shadow:0 2px 6px rgba(20,20,20,.15);}",
-    ".rc-body{display:flex;flex-direction:column;min-width:0;}",
+    ".rc-body{display:flex;flex-direction:column;min-width:0;margin-left:12px;justify-content:center;}",
     ".rc-name{font:700 15px/22px var(--font-sans);color:var(--ink-soft);white-space:nowrap;}",
     ".rc-sub{font:400 12px/18px var(--font-sans);color:var(--muted);white-space:nowrap;}",
     /* 进度条 */
@@ -380,7 +391,7 @@
 
   /* ────────────────────────────── 角色卡片 ────────────────────────────── */
 
-  /** 渲染本节点部门的执行角色卡片：长方形 —— 左头像 + 右侧加粗姓名 + 下方「部门/职位」 */
+  /** 渲染本节点部门的执行角色：紧凑头像+名字列表，hover 弹出长方形详情卡 */
   function renderRoles(idx, panel) {
     var node = nodes[idx];
     if (!node) return;
@@ -396,6 +407,19 @@
     var list = document.createElement("div");
     list.className = "d-roles-list";
     team.forEach(function (m) {
+      /* 紧凑 chip：小头像 + 名字 */
+      var chip = document.createElement("span");
+      chip.className = "role-chip";
+      var chipAv = document.createElement("span");
+      chipAv.className = "rc-chip-avatar";
+      chipAv.style.background = colorOf(m.email);
+      chipAv.textContent = firstChar(m);
+      var chipNm = document.createElement("span");
+      chipNm.className = "rc-chip-name";
+      chipNm.textContent = displayName(m);
+      chip.appendChild(chipAv);
+      chip.appendChild(chipNm);
+      /* hover 弹出的完整长方形卡片 */
       var card = document.createElement("span");
       card.className = "role-card";
       var av = document.createElement("span");
@@ -414,7 +438,8 @@
       body.appendChild(sub);
       card.appendChild(av);
       card.appendChild(body);
-      list.appendChild(card);
+      chip.appendChild(card);
+      list.appendChild(chip);
     });
     box.appendChild(head);
     box.appendChild(list);
