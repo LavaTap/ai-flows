@@ -10,7 +10,13 @@
   <header class="topbar">
     <div class="brand">
       <span class="dot" aria-hidden="true"></span>
-      <h1 class="brand-title"><span>研产</span><span class="led-word">AI</span><span>管线</span></h1>
+      <h1 class="brand-title" id="topbarTitle">
+        <span class="tt-pipeline">管线</span>
+        <span class="tt-sep">/</span>
+        <span class="tt-repo">仓库</span>
+        <span class="tt-sep">/</span>
+        <span class="tt-page">report</span>
+      </h1>
     </div>
     <div class="top-right">
       <span class="tab on">AI 管线</span>
@@ -20,79 +26,102 @@
     </div>
   </header>
 
-  <main class="shell">
-    <section class="pipeline" id="pipeline">
-      <div class="rail" aria-hidden="true"></div>
+  <div class="layout">
+    <!-- 左侧管线列表侧栏 -->
+    <aside class="pipeline-sidebar" id="pipelineSidebar">
+      <div class="sidebar-head">
+        <span class="sidebar-title">管线列表</span>
+      </div>
+      <ul class="pipeline-list" id="pipelineList">
+        <li class="pipeline-item active" data-name="text-flow">
+          <span class="pi-name">text-flow</span>
+        </li>
+      </ul>
+      <div class="sidebar-add">
+        <input type="text" id="newPipelineInput" placeholder="新管线名…" maxlength="40" />
+        <button type="button" id="addPipelineBtn" title="添加管线" aria-label="添加管线">+</button>
+      </div>
+      <div class="sidebar-foot">
+        <span class="sf-label">当前仓库</span>
+        <span class="sf-repo" id="sidebarRepo">—</span>
+      </div>
+    </aside>
 
-      <span class="cell" data-idx="0">
-        <div class="tip" role="dialog" aria-label="产品调研详情"></div>
-        <button type="button" class="node" data-idx="0" aria-pressed="false">
-          <span class="n-title">产品调研</span>
-        </button>
-      </span>
+    <!-- 管线主体 -->
+    <main class="shell">
+      <section class="pipeline" id="pipeline">
+        <div class="rail" aria-hidden="true"></div>
 
-      <span class="arrow" aria-hidden="true">
-        <svg viewBox="0 0 40 10">
-          <defs>
-            <marker id="am0" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
-              <path d="M1 1 L7 4 L1 7 Z" fill="rgba(0,0,0,0.32)"></path>
-            </marker>
-          </defs>
-          <path d="M0 5 H33" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1.5" marker-end="url(#am0)"></path>
-        </svg>
-      </span>
+        <span class="cell" data-idx="0">
+          <div class="tip" role="dialog" aria-label="产品调研详情"></div>
+          <button type="button" class="node" data-idx="0" aria-pressed="false">
+            <span class="n-title">产品调研</span>
+          </button>
+        </span>
 
-      <span class="cell" data-idx="1">
-        <div class="tip" role="dialog" aria-label="产品规划详情"></div>
-        <button type="button" class="node" data-idx="1" aria-pressed="false">
-          <span class="n-title">产品规划</span>
-        </button>
-      </span>
+        <span class="arrow" aria-hidden="true">
+          <svg viewBox="0 0 40 10">
+            <defs>
+              <marker id="am0" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+                <path d="M1 1 L7 4 L1 7 Z" fill="rgba(0,0,0,0.32)"></path>
+              </marker>
+            </defs>
+            <path d="M0 5 H33" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1.5" marker-end="url(#am0)"></path>
+          </svg>
+        </span>
 
-      <span class="arrow" aria-hidden="true">
-        <svg viewBox="0 0 40 10">
-          <defs>
-            <marker id="am1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
-              <path d="M1 1 L7 4 L1 7 Z" fill="rgba(0,0,0,0.32)"></path>
-            </marker>
-          </defs>
-          <path d="M0 5 H33" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1.5" marker-end="url(#am0)"></path>
-        </svg>
-      </span>
+        <span class="cell" data-idx="1">
+          <div class="tip" role="dialog" aria-label="产品规划详情"></div>
+          <button type="button" class="node" data-idx="1" aria-pressed="false">
+            <span class="n-title">产品规划</span>
+          </button>
+        </span>
 
-      <span class="cell" data-idx="2">
-        <div class="tip" role="dialog" aria-label="程序执行详情"></div>
-        <button type="button" class="node" data-idx="2" aria-pressed="false">
-          <span class="n-title">程序执行</span>
-        </button>
-      </span>
+        <span class="arrow" aria-hidden="true">
+          <svg viewBox="0 0 40 10">
+            <defs>
+              <marker id="am1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+                <path d="M1 1 L7 4 L1 7 Z" fill="rgba(0,0,0,0.32)"></path>
+              </marker>
+            </defs>
+            <path d="M0 5 H33" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1.5" marker-end="url(#am0)"></path>
+          </svg>
+        </span>
 
-      <span class="arrow" aria-hidden="true">
-        <svg viewBox="0 0 40 10">
-          <defs>
-            <marker id="am2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
-              <path d="M1 1 L7 4 L1 7 Z" fill="rgba(0,0,0,0.32)"></path>
-            </marker>
-          </defs>
-          <path d="M0 5 H33" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1.5" marker-end="url(#am0)"></path>
-        </svg>
-      </span>
+        <span class="cell" data-idx="2">
+          <div class="tip" role="dialog" aria-label="程序执行详情"></div>
+          <button type="button" class="node" data-idx="2" aria-pressed="false">
+            <span class="n-title">程序执行</span>
+          </button>
+        </span>
 
-      <span class="cell" data-idx="3">
-        <div class="tip" role="dialog" aria-label="产品运营详情"></div>
-        <button type="button" class="node" data-idx="3" aria-pressed="false">
-          <span class="n-title">产品运营</span>
-        </button>
-      </span>
-    </section>
+        <span class="arrow" aria-hidden="true">
+          <svg viewBox="0 0 40 10">
+            <defs>
+              <marker id="am2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+                <path d="M1 1 L7 4 L1 7 Z" fill="rgba(0,0,0,0.32)"></path>
+              </marker>
+            </defs>
+            <path d="M0 5 H33" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1.5" marker-end="url(#am0)"></path>
+          </svg>
+        </span>
 
-    <footer class="foot">
-      <span class="legend"><span class="ldot brand"></span>已就绪</span>
-      <span class="legend"><span class="ldot muted"></span>待接入（先留空）</span>
-      <span class="foot-hint">悬停看详情 · 滚轮缩放 · 左键拖拽移动 · 双击复位</span>
-      <span class="foot-rule">权限：员工可执行 / 查看工作流 · 部门主管可操控并批准所有节点</span>
-    </footer>
-  </main>
+        <span class="cell" data-idx="3">
+          <div class="tip" role="dialog" aria-label="产品运营详情"></div>
+          <button type="button" class="node" data-idx="3" aria-pressed="false">
+            <span class="n-title">产品运营</span>
+          </button>
+        </span>
+      </section>
+
+      <footer class="foot">
+        <span class="legend"><span class="ldot brand"></span>已就绪</span>
+        <span class="legend"><span class="ldot muted"></span>待接入（先留空）</span>
+        <span class="foot-hint">悬停看详情 · 滚轮缩放 · 左键拖拽移动 · 双击复位</span>
+        <span class="foot-rule">权限：员工可执行 / 查看工作流 · 部门主管可操控并批准所有节点</span>
+      </footer>
+    </main>
+  </div>
 
   <!-- 各节点悬停详情模板 -->
   <template data-idx="0">

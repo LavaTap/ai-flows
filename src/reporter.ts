@@ -179,9 +179,6 @@ a:hover { text-decoration:underline; }
 .brand-mark::before, .brand-mark::after { content:""; position:absolute; left:50%; transform:translateX(-50%); border-left:4px solid transparent; border-right:4px solid transparent; }
 .brand-mark::before { top:4px; border-bottom:5px solid #1a130c; }
 .brand-mark::after { bottom:4px; border-top:5px solid #1a130c; }
-.crumbs { font-family:var(--mono); font-size:12.5px; color:var(--dim); display:flex; align-items:center; gap:8px; }
-.crumbs .sep { opacity:.5; }
-.crumbs .here { color:var(--muted); }
 .back-link { font-size:13px; color:var(--muted); padding:6px 12px; border:1px solid var(--border); border-radius:8px; transition:all 150ms ease; }
 .back-link:hover { color:var(--text); border-color:var(--border-strong); background:var(--surface); text-decoration:none; }
 .main { max-width:1320px; margin:0 auto; padding:36px 28px 80px; }
@@ -209,7 +206,12 @@ a:hover { text-decoration:underline; }
 .summary.collapsed .summary-toggle svg { transform:rotate(-90deg); }
 .summary-body { margin-top:10px; max-height:2000px; overflow:hidden; transition:max-height 300ms ease, margin-top 200ms ease; }
 .summary.collapsed .summary-body { max-height:0; margin-top:0; }
-.summary p { margin:0; color:var(--text); font-size:14.5px; white-space:pre-line; }
+.summary p { margin:0; color:var(--text); font-size:14.5px; white-space:pre-line; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:10; overflow:hidden; }
+.summary-body.expanded p { -webkit-line-clamp:unset; display:block; }
+.summary-toggle-all { margin-top:12px; appearance:none; background:var(--surface-2); border:1px solid var(--border); color:var(--accent); font-family:var(--sans); font-size:12px; font-weight:600; padding:5px 14px; border-radius:8px; cursor:pointer; transition:all 150ms ease; }
+.summary-toggle-all:hover { border-color:var(--border-strong); background:var(--elevated); }
+.summary-toggle-all[data-expanded="true"]::before { content:"收起"; }
+.summary-toggle-all[data-expanded="false"]::before { content:"展开全部"; }
 .stats { margin-top:26px; display:grid; grid-template-columns:repeat(6,1fr); gap:12px; }
 .stat { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; position:relative; overflow:hidden; }
 .stat .num { font-size:28px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-1px; line-height:1.1; }
@@ -281,8 +283,14 @@ code { font-family:var(--mono); font-size:.92em; }
 .diff-panel-head .count { font-family:var(--mono); font-size:12px; color:var(--dim); }
 .diff-file { border-bottom:1px solid var(--border); }
 .diff-file:last-child { border-bottom:none; }
-.diff-file-head { display:flex; align-items:center; gap:10px; padding:8px 14px; font-family:var(--mono); font-size:12.5px; color:var(--accent); background:var(--surface-2); }
+.diff-file-head { display:flex; align-items:center; gap:10px; padding:8px 14px; font-family:var(--mono); font-size:12.5px; color:var(--accent); background:var(--surface-2); cursor:pointer; user-select:none; }
 .diff-file-head .badge { color:var(--dim); font-size:11px; }
+.diff-file-head .chevron { flex:0 0 auto; width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; transition:transform 200ms ease; color:var(--dim); }
+.diff-file[data-collapsed="true"] .diff-file-head .chevron { transform:rotate(-90deg); }
+.diff-file-head .issue-count { margin-left:auto; flex:0 0 auto; font-size:11px; font-weight:700; padding:1px 8px; border-radius:999px; background:var(--warn-soft); color:var(--warn); }
+.diff-file-head .issue-count.zero { background:transparent; color:var(--dim); }
+.diff-file-body { overflow:hidden; }
+.diff-file[data-collapsed="true"] .diff-file-body { max-height:0; overflow:hidden; }
 .diff-hunk-head { padding:4px 14px; font-family:var(--mono); font-size:11px; color:var(--dim); background:var(--diff-hunk-bg); }
 .diff-line { display:flex; align-items:flex-start; font-family:var(--mono); font-size:12.5px; line-height:1.55; }
 .diff-line .gutter { flex:0 0 42px; padding:0 6px; text-align:right; color:var(--dim); background:var(--surface-2); user-select:none; border-right:1px solid var(--border); }
@@ -296,12 +304,39 @@ code { font-family:var(--mono); font-size:.92em; }
 .diff-line.target-range { background:var(--warn-soft); box-shadow:inset 3px 0 0 var(--warn); }
 @keyframes flash { 0%{background:var(--flash);} 100%{background:transparent;} }
 .diff-empty { padding:32px 20px; text-align:center; color:var(--dim); font-size:13px; }
+/* 左侧文件目录面板 + 主区域布局 */
+.layout { display:grid; grid-template-columns:220px 1fr; gap:24px; align-items:start; margin-top:8px; }
+.layout-main { min-width:0; }
+.file-panel { position:sticky; top:20px; max-height:calc(100vh - 40px); overflow:auto; background:var(--surface); border:1px solid var(--border); border-radius:12px; }
+.file-panel-head { padding:14px 18px; border-bottom:1px solid var(--border); background:var(--surface-2); border-radius:12px 12px 0 0; }
+.file-panel-head h2 { margin:0; font-size:12px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:var(--dim); }
+.file-list { list-style:none; margin:0; padding:0; }
+.file-entry { display:flex; align-items:center; gap:8px; padding:8px 14px; border-bottom:1px solid var(--border); font-family:var(--mono); font-size:12px; color:var(--muted); cursor:pointer; transition:background 150ms ease, color 150ms ease; text-decoration:none; }
+.file-entry:last-child { border-bottom:none; }
+.file-entry:hover, .file-entry.active { background:var(--surface-2); color:var(--text); text-decoration:none; }
+.file-entry .file-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.file-entry .file-count { flex:0 0 auto; font-size:10px; font-weight:700; padding:1px 7px; border-radius:999px; background:var(--accent-soft); color:var(--accent); }
+.file-entry .file-count.zero { background:transparent; color:var(--dim); }
+.file-empty { padding:24px 16px; text-align:center; color:var(--dim); font-size:12px; }
+/* 顶栏左对齐标题 + 右侧账号信息 */
+.topbar-left { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+.brand-name { font-weight:700; font-size:14px; }
+.page-title { font-family:var(--mono); font-size:13px; color:var(--muted); display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.page-title .sep { color:var(--dim); }
+.page-title .here { color:var(--text); font-weight:600; }
+.account-info { display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border:1px solid var(--border); border-radius:8px; font-family:var(--mono); font-size:11.5px; color:var(--muted); background:var(--surface); flex-wrap:wrap; max-width:100%; }
+.account-info .ai-badge { display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius:999px; background:var(--accent-soft); color:var(--accent); font-weight:700; letter-spacing:.5px; font-size:10.5px; }
+.account-info .acc-sep { color:var(--dim); }
+.account-info .acc-ref { color:var(--accent); }
+.account-info .acc-time { color:var(--muted); }
+.account-info .acc-author { color:var(--dim); }
+@media (max-width:1180px){ .layout { grid-template-columns:1fr; } .file-panel { position:static; max-height:none; } }
 .issue { cursor:pointer; }
 .issue[data-file]:focus { outline:none; border-color:var(--accent); }
 @media (max-width:980px) { .split { grid-template-columns:1fr; } .diff-panel { position:static; max-height:none; } }
 @media (max-width:860px) { .stats { grid-template-columns:repeat(3,1fr); } }
 @media (max-width:560px) {
-  .topbar { flex-wrap:wrap; padding:16px 18px; } .crumbs { order:3; width:100%; }
+  .topbar { flex-wrap:wrap; padding:16px 18px; }
   .main { padding:24px 18px 60px; }
   .verdict { flex-direction:column; align-items:flex-start; gap:14px; padding:20px; }
   .stats { grid-template-columns:repeat(2,1fr); } .stat .num { font-size:24px; }
@@ -309,13 +344,33 @@ code { font-family:var(--mono); font-size:.92em; }
 }
 `;
 
-/** 顶栏面包屑：repo / ref / report（缺失项自动省略） */
-function crumbs(v: ReportView): string {
+/** 顶栏左对齐标题：管线名 / 仓库名 / report。
+ *  管线名取自 ref（分支），仓库名取自 repo 或 repoCwd 末段，缺省时各回退到占位文案。 */
+function titleParts(v: ReportView): { pipeline: string; repo: string } {
+  const pipeline = v.ref || "评审管线";
+  let repo = v.repo || "";
+  if (!repo && v.repoCwd) {
+    const segs = v.repoCwd.replace(/\\/g, "/").replace(/\/+$/, "").split("/");
+    repo = segs[segs.length - 1] || v.repoCwd;
+  }
+  if (!repo) repo = "未命名仓库";
+  return { pipeline, repo };
+}
+
+/** 顶栏标题 HTML：pipeline / repo / report */
+function titleHtml(v: ReportView): string {
+  const { pipeline, repo } = titleParts(v);
+  return `<span>${esc(pipeline)}</span><span class="sep">/</span><span>${esc(repo)}</span><span class="sep">/</span><span class="here">report</span>`;
+}
+
+/** 右上账号信息：AI Review 徽标 + 分支 + 生成时间 + HEAD 作者（缺省项自动省略） */
+function accountHtml(v: ReportView): string {
   const parts: string[] = [];
-  if (v.repo) parts.push(`<span>${esc(v.repo)}</span>`);
-  if (v.ref) parts.push(`<span>${esc(v.ref)}</span>`);
-  parts.push(`<span class="here">report</span>`);
-  return parts.join(`<span class="sep">/</span>`);
+  parts.push(`<span class="ai-badge">AI Review</span>`);
+  if (v.ref) parts.push(`<span class="acc-ref">${esc(v.ref)}</span>`);
+  if (v.generatedAt) parts.push(`<span class="acc-time">${esc(v.generatedAt)}</span>`);
+  if (v.head?.author) parts.push(`<span class="acc-author">${esc(v.head.author)}</span>`);
+  return parts.join(`<span class="acc-sep">·</span>`);
 }
 
 /** 问题区标题右侧的统计文案 */
@@ -373,10 +428,16 @@ function issueList(v: ReportView): string {
     .join("\n\n  ");
 }
 
-/** 右侧 diff 面板：按文件渲染 hunks，新增绿、删除红、上下文灰，行号对应 AI 报告行号 */
+/** 右侧 diff 面板：按文件渲染 hunks，新增绿、删除红、上下文灰，行号对应 AI 报告行号。
+ *  每个文件默认折叠（仅显示文件名 + 增删行数 + 问题数），点击表头展开。 */
 function diffPanel(v: ReportView): string {
   if (!v.diffFiles || !v.diffFiles.length) {
     return `<div class="diff-empty">无代码变更数据。</div>`;
+  }
+  // 按文件统计问题数
+  const issueCount = new Map<string, number>();
+  for (const i of v.issues) {
+    issueCount.set(i.file, (issueCount.get(i.file) ?? 0) + 1);
   }
   return v.diffFiles
     .map((f) => {
@@ -406,15 +467,38 @@ function diffPanel(v: ReportView): string {
           return `    ${head}\n${lines}`;
         })
         .join("\n");
-      return `  <div class="diff-file">
+      const ic = issueCount.get(f.path) ?? 0;
+      const icClass = ic === 0 ? " zero" : "";
+      return `  <div class="diff-file" data-file="${esc(f.path)}" data-collapsed="true">
     <div class="diff-file-head">
+      <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
       <span>${esc(f.path)}</span>
       <span class="badge">+${addCount} / -${delCount}</span>
+      <span class="issue-count${icClass}">${ic} 问题</span>
     </div>
+    <div class="diff-file-body">
 ${body}
+    </div>
   </div>`;
     })
     .join("\n");
+}
+
+/** 左侧文件目录面板：列出全部变更文件 + 各自问题数，点击滚动到对应评审段 */
+function filePanel(v: ReportView): string {
+  if (!v.diffFiles || !v.diffFiles.length) {
+    return `<div class="file-empty">无文件变更。</div>`;
+  }
+  const issueCount = new Map<string, number>();
+  for (const i of v.issues) {
+    issueCount.set(i.file, (issueCount.get(i.file) ?? 0) + 1);
+  }
+  const items = v.diffFiles.map((f) => {
+    const ic = issueCount.get(f.path) ?? 0;
+    const cls = ic === 0 ? " zero" : "";
+    return `<li><a class="file-entry" data-file="${esc(f.path)}" href="#" title="${esc(f.path)}"><span class="file-name">${esc(f.path)}</span><span class="file-count${cls}">${ic}</span></a></li>`;
+  });
+  return `<div class="file-panel-head"><h2>文件目录</h2></div><ul class="file-list">${items.join("")}</ul>`;
 }
 
 function pushSection(v: ReportView): string {
@@ -490,12 +574,15 @@ export function renderTemplate(v: ReportView): string {
 <body>
 
 <header class="topbar">
-  <div class="brand">
-    <span class="brand-mark" aria-hidden="true"></span>
-    <span>ai-review</span>
+  <div class="topbar-left">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">ai-review</span>
+    </div>
+    <div class="page-title">${titleHtml(v)}</div>
   </div>
-  <nav class="crumbs" aria-label="breadcrumb">${crumbs(v)}</nav>
   <div class="topbar-actions">
+    <span class="account-info">${accountHtml(v)}</span>
     <button type="button" class="theme-toggle" id="themeToggle" title="切换日间/夜间主题" aria-label="切换日间/夜间主题">
       <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
       <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><line x1="12" y1="2" x2="12" y2="5"></line><line x1="12" y1="19" x2="12" y2="22"></line><line x1="2" y1="12" x2="5" y2="12"></line><line x1="19" y1="12" x2="22" y2="12"></line><line x1="4.6" y1="4.6" x2="6.7" y2="6.7"></line><line x1="17.3" y1="17.3" x2="19.4" y2="19.4"></line><line x1="4.6" y1="19.4" x2="6.7" y2="17.3"></line><line x1="17.3" y1="6.7" x2="19.4" y2="4.6"></line></svg>
@@ -530,6 +617,7 @@ export function renderTemplate(v: ReportView): string {
     </div>
     <div class="summary-body" id="summaryBody">
       <p>${esc(v.summary)}</p>
+      <button type="button" class="summary-toggle-all" id="summaryToggleAll" data-expanded="false" aria-label="展开/收起摘要全部"></button>
     </div>
   </section>
 
@@ -541,22 +629,29 @@ export function renderTemplate(v: ReportView): string {
 
   ${pushSection(v)}
 
-  <div class="split">
-    <section class="split-left">
-      <div class="section-head">
-        <h2>问题明细</h2>
-        <span class="count">${countText(v)}</span>
-        <span class="filter-clear" id="filterClear">清除筛选 &times;</span>
+  <div class="layout">
+    <aside class="file-panel" aria-label="文件目录">
+      ${filePanel(v)}
+    </aside>
+    <div class="layout-main">
+      <div class="split">
+        <section class="split-left">
+          <div class="section-head">
+            <h2>问题明细</h2>
+            <span class="count">${countText(v)}</span>
+            <span class="filter-clear" id="filterClear">清除筛选 &times;</span>
+          </div>
+          ${issueList(v)}
+        </section>
+        <section class="split-right diff-panel">
+          <div class="diff-panel-head">
+            <h2>代码变更</h2>
+            <span class="count">${v.diffFiles?.length ?? 0} 个文件</span>
+          </div>
+          ${diffPanel(v)}
+        </section>
       </div>
-      ${issueList(v)}
-    </section>
-    <section class="split-right diff-panel">
-      <div class="diff-panel-head">
-        <h2>代码变更</h2>
-        <span class="count">${v.diffFiles?.length ?? 0} 个文件</span>
-      </div>
-      ${diffPanel(v)}
-    </section>
+    </div>
   </div>
 
   <footer class="footer">
@@ -631,6 +726,9 @@ export function renderTemplate(v: ReportView): string {
     issueEls.forEach(function(el){
       el.addEventListener('click', function(){
         var file = el.getAttribute('data-file');
+        /* 先展开对应 diff 文件，确保目标行可见（diff 默认折叠） */
+        var df = findDiffFile(file);
+        if(df) df.setAttribute('data-collapsed', 'false');
         var ls = parseInt(el.getAttribute('data-line-start'),10) || 0;
         var le = parseInt(el.getAttribute('data-line-end'),10) || ls;
         if(!ls) return;
@@ -670,6 +768,63 @@ export function renderTemplate(v: ReportView): string {
       });
     });
   }
+  /* 查找指定路径对应的 diff 文件块（用属性值逐项比较，避免 CSS 选择器转义问题） */
+  function findDiffFile(path){
+    var all = document.querySelectorAll('.diff-file[data-file]');
+    for(var i=0;i<all.length;i++){
+      if(all[i].getAttribute('data-file') === path) return all[i];
+    }
+    return null;
+  }
+  /* 查找指定路径对应的第一条问题 */
+  function findFirstIssue(path){
+    var all = document.querySelectorAll('.issue[data-file]');
+    for(var i=0;i<all.length;i++){
+      if(all[i].getAttribute('data-file') === path) return all[i];
+    }
+    return null;
+  }
+  /* diff 文件表头点击：折叠/展开代码内容（默认折叠，仅显示文件名 + 问题数） */
+  var diffFileHeads = document.querySelectorAll('.diff-file-head');
+  diffFileHeads.forEach(function(head){
+    head.addEventListener('click', function(){
+      var fileEl = head.closest('.diff-file');
+      if(!fileEl) return;
+      var collapsed = fileEl.getAttribute('data-collapsed') === 'true';
+      fileEl.setAttribute('data-collapsed', collapsed ? 'false' : 'true');
+    });
+  });
+  /* 摘要「展开全部 / 收起」按钮：默认仅显示前 10 行 */
+  var summaryToggleAll = document.getElementById('summaryToggleAll');
+  var summaryBody = document.getElementById('summaryBody');
+  if(summaryToggleAll && summaryBody){
+    summaryToggleAll.addEventListener('click', function(){
+      var expanded = summaryBody.classList.toggle('expanded');
+      summaryToggleAll.setAttribute('data-expanded', expanded ? 'true' : 'false');
+    });
+  }
+  /* 左侧文件目录点击：优先滚动到该文件的第一条问题（触发联动高亮 + 展开 diff）；
+     无问题则滚动到对应 diff 文件并展开 */
+  var fileEntries = document.querySelectorAll('.file-entry');
+  fileEntries.forEach(function(entry){
+    entry.addEventListener('click', function(e){
+      e.preventDefault();
+      var path = entry.getAttribute('data-file');
+      if(!path) return;
+      entry.classList.add('active');
+      var firstIssue = findFirstIssue(path);
+      if(firstIssue){
+        firstIssue.scrollIntoView({behavior:'smooth', block:'center'});
+        firstIssue.click();
+        return;
+      }
+      var df = findDiffFile(path);
+      if(df){
+        df.setAttribute('data-collapsed', 'false');
+        df.scrollIntoView({behavior:'smooth', block:'start'});
+      }
+    });
+  });
   var btn = document.getElementById('pushBtn');
   var commitInput = document.getElementById('commitMsg');
   // 提交按钮只在用户输入非空 commit 信息后启用

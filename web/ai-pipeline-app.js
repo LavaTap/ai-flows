@@ -1,7 +1,8 @@
 /* ai-pipeline 平台增强脚本：由 platform 服务在 /pipeline 注入 window.__PIPELINE__ 后加载。
    静态预览（无 bootstrap）时完全不生效，不影响纯静态打开。
-   平台态能力：顶栏登录用户 + 退出、角色卡片、四态状态徽章、需求编辑/附件上传、
-   skill 执行（输出目录选择 + 进度条）、提交验收 / 主管通过 / 驳回。 */
+   平台态能力：左侧管线列表侧栏（新增/重命名）、顶栏标题（管线名/仓库名/report）+ 登录用户 + 退出、
+   角色卡片、四态状态徽章、需求编辑/附件上传（色块分区）、skill 执行（输出目录选择 + 进度条）、
+   提交验收 / 主管通过 / 驳回、评审记录宽面板（≥60vw）。 */
 (function () {
   var boot = window.__PIPELINE__;
   if (!boot) return;
@@ -16,6 +17,13 @@
   /* 头像调色板：按邮箱哈希取色，前端保证同一账号颜色稳定 */
   var PALETTE = ["#ad314d", "#2aa198", "#b58900", "#6c71c4", "#cb4b16", "#859900"];
 
+  /* 管线列表：首项为服务端真实管线，其余为前端虚拟管线 */
+  var pipelineName = boot.pipelineName || "text-flow";
+  var repoName = boot.repoName || "—";
+  var repoPath = boot.repoPath || "";
+  var pipelines = [pipelineName];
+  var activePipeline = pipelineName;
+
   function colorOf(email) {
     var h = 0;
     for (var i = 0; i < email.length; i++) h = (h * 31 + email.charCodeAt(i)) >>> 0;
@@ -28,7 +36,6 @@
   var style = document.createElement("style");
   style.textContent = [
     ".n-status{font:400 11px/16px var(--font-sans);color:var(--muted);}",
-    ".d-actions{display:flex;flex-direction:column;gap:10px;position:relative;margin-top:4px;}",
     ".d-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}",
     ".d-status{font:400 12px/18px var(--font-sans);color:var(--muted);}",
     ".d-status b{color:var(--ink-soft);font-weight:500;}",
@@ -40,13 +47,20 @@
     ".d-actions .note{font:400 12px/18px var(--font-sans);color:var(--muted-2);}",
     ".d-actions .btn{font:500 13px/18px var(--font-sans);min-height:36px;padding:7px 18px;",
     "border:none;border-radius:999px;background:var(--led);color:#fff;cursor:pointer;",
-    "transition:transform 200ms cubic-bezier(.22,1,.36,1),box-shadow 200ms ease;}",
+    "transition:transform 200ms cubic-bezier(.22,1,.36,1),box-shadow 200ms ease,background 150ms ease,color 150ms ease;}",
     ".d-actions .btn:hover:not(:disabled),.d-actions .btn:focus-visible:not(:disabled){",
     "transform:translateY(-1px);box-shadow:0 6px 16px var(--led-glow);}",
     ".d-actions .btn.ghost{background:transparent;border:1px solid var(--glass-line);color:var(--copy);}",
     ".d-actions a.btn{display:inline-flex;align-items:center;text-decoration:none;background:transparent;",
     "border:1px solid rgba(173,49,77,.35);color:var(--led);}",
     ".d-actions a.btn:hover,.d-actions a.btn:focus-visible{transform:translateY(-1px);box-shadow:0 6px 16px var(--led-glow);}",
+    /* 色块按钮修饰：ghost 按钮按区域着色 */
+    ".d-actions .btn.ghost.amber{border-color:var(--amber-line);color:var(--amber);}",
+    ".d-actions .btn.ghost.amber:hover:not(:disabled){background:var(--amber-soft);border-color:var(--amber);box-shadow:0 6px 16px rgba(181,137,0,.2);}",
+    ".d-actions .btn.ghost.teal{border-color:var(--teal-line);color:var(--teal);}",
+    ".d-actions .btn.ghost.teal:hover:not(:disabled){background:var(--teal-soft);border-color:var(--teal);box-shadow:0 6px 16px rgba(42,161,152,.2);}",
+    ".d-actions .btn.ghost.purple{border-color:var(--purple-line);color:var(--purple);}",
+    ".d-actions .btn.ghost.purple:hover:not(:disabled){background:var(--purple-soft);border-color:var(--purple);box-shadow:0 6px 16px rgba(108,113,196,.2);}",
     ".d-actions .result{font:400 12px/18px var(--font-sans);color:var(--muted);}",
     ".d-actions .result.fail{color:var(--led);}",
     ".d-actions .btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;transform:none;}",
@@ -78,38 +92,26 @@
     ".d-progress .bar i{display:block;height:100%;border-radius:999px;background:var(--led);",
     "transition:width 600ms cubic-bezier(.22,1,.36,1);}",
     ".d-progress .lbl{font:400 11px/16px var(--font-sans);color:var(--muted);margin-top:4px;}",
-    /* 需求编辑器 */
-    ".d-req{width:100%;display:flex;flex-direction:column;gap:8px;}",
-    ".d-req-head{font:600 12px/18px var(--font-sans);color:var(--ink-soft);}",
+    /* 需求编辑器（琥珀色块内） */
+    ".d-req-head{font:600 12px/18px var(--font-sans);color:var(--amber);display:flex;align-items:center;gap:6px;}",
+    ".d-req-head .sec-dot{width:6px;height:6px;border-radius:50%;background:var(--amber);flex:none;}",
     ".d-req textarea{width:100%;min-height:72px;resize:vertical;padding:10px 12px;border-radius:12px;",
     "border:1px solid var(--glass-line);background:rgba(255,255,255,.7);font:400 13px/20px var(--font-sans);",
     "color:var(--copy);box-sizing:border-box;}",
     ".d-req textarea:disabled{opacity:.6;cursor:not-allowed;}",
-    ".d-req .files{display:flex;flex-wrap:wrap;gap:6px;}",
-    ".d-req .file{font:400 11px/16px var(--font-sans);color:var(--muted);padding:2px 10px;",
-    "border:1px solid var(--glass-line);border-radius:999px;background:var(--glass-fill);}",
+    /* 提交文件区（青绿色块内） */
+    ".d-files-head{font:600 12px/18px var(--font-sans);color:var(--teal);display:flex;align-items:center;gap:6px;}",
+    ".d-files-head .sec-dot{width:6px;height:6px;border-radius:50%;background:var(--teal);flex:none;}",
+    ".d-files .files{display:flex;flex-wrap:wrap;gap:6px;}",
+    ".d-files .file{font:400 11px/16px var(--font-sans);color:var(--teal);padding:2px 10px;",
+    "border:1px solid var(--teal-line);border-radius:999px;background:var(--teal-soft);}",
+    /* 评审记录触发区（紫色色块内） */
+    ".d-reviews-trigger .btn{white-space:nowrap;}",
     /* 产物列表 */
     ".d-arts{width:100%;display:flex;flex-direction:column;gap:6px;}",
     ".d-arts-head{font:600 12px/18px var(--font-sans);color:var(--ink-soft);}",
     ".d-arts a{font:500 12px/18px var(--font-sans);color:var(--led);text-decoration:none;}",
     ".d-arts a:hover{text-decoration:underline;}",
-    /* 评审记录（沿用） */
-    ".d-reviews{margin-top:14px;border-top:1px solid var(--glass-line);padding-top:12px;width:100%;}",
-    ".d-reviews-head{font:600 13px/20px var(--font-sans);color:var(--ink-soft);margin-bottom:10px;}",
-    ".d-reviews-empty{font:400 12px/18px var(--font-sans);color:var(--muted);}",
-    ".d-reviews-list{list-style:none;margin:0;padding:0;display:grid;gap:8px;max-height:220px;overflow-y:auto;}",
-    ".d-reviews-list li{display:flex;align-items:center;gap:12px;padding:10px 12px;",
-    "border:1px solid var(--glass-line);border-radius:12px;background:var(--glass-fill);}",
-    ".dr-main{flex:1;min-width:0;}",
-    ".dr-who{font:500 12px/18px var(--font-sans);color:var(--copy);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
-    ".dr-time{font:400 11px/16px var(--font-sans);color:var(--muted);}",
-    ".dr-badge{font:600 11px/16px var(--font-sans);padding:2px 8px;border-radius:999px;white-space:nowrap;}",
-    ".dr-badge.pass{color:var(--ok,#2aa198);background:rgba(42,161,152,.12);}",
-    ".dr-badge.block{color:var(--led);background:rgba(173,49,77,.12);}",
-    ".dr-num{font:600 12px/18px var(--font-sans);color:var(--muted);white-space:nowrap;}",
-    ".dr-actions{min-width:44px;text-align:right;}",
-    ".dr-actions a{font:500 12px/18px var(--font-sans);color:var(--led);text-decoration:none;border:1px solid rgba(173,49,77,.3);border-radius:999px;padding:3px 10px;}",
-    ".dr-actions a:hover{background:var(--led);color:#fff;}",
     /* 弹窗（挂在 body，脱离缩放容器） */
     ".ai-modal{position:fixed;inset:0;background:rgba(20,20,20,.35);backdrop-filter:blur(3px);z-index:900;",
     "display:flex;align-items:center;justify-content:center;}",
@@ -174,6 +176,122 @@
     }
     return true;
   }
+
+  /* ────────────────────────────── 顶栏标题 + 侧栏 ────────────────────────────── */
+
+  /** 更新顶栏标题（管线名 / 仓库名 / report）与侧栏仓库名 */
+  function updateTitle() {
+    var ttPipeline = document.querySelector(".tt-pipeline");
+    var ttRepo = document.querySelector(".tt-repo");
+    if (ttPipeline) ttPipeline.textContent = activePipeline;
+    if (ttRepo) ttRepo.textContent = repoName;
+    var sfRepo = document.getElementById("sidebarRepo");
+    if (sfRepo) sfRepo.textContent = repoName;
+    document.title = activePipeline + " / " + repoName + " · AI 管线";
+  }
+
+  /** 渲染左侧管线列表 */
+  function renderSidebar() {
+    var list = document.getElementById("pipelineList");
+    if (!list) return;
+    list.textContent = "";
+    pipelines.forEach(function (name) {
+      var li = document.createElement("li");
+      li.className = "pipeline-item" + (name === activePipeline ? " active" : "");
+      li.setAttribute("data-name", name);
+
+      var span = document.createElement("span");
+      span.className = "pi-name";
+      span.textContent = name;
+      li.appendChild(span);
+
+      /* 重命名按钮 */
+      var renameBtn = document.createElement("button");
+      renameBtn.type = "button";
+      renameBtn.className = "pi-rename";
+      renameBtn.title = "重命名";
+      renameBtn.setAttribute("aria-label", "重命名管线");
+      renameBtn.textContent = "✎";
+      renameBtn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        handleRename(name);
+      });
+      li.appendChild(renameBtn);
+
+      /* 点击选中管线 */
+      li.addEventListener("click", function () {
+        if (name === activePipeline) return;
+        activePipeline = name;
+        renderSidebar();
+      });
+
+      list.appendChild(li);
+    });
+  }
+
+  /** 重命名管线：活动管线调 API，非活动管线仅前端更新 */
+  function handleRename(oldName) {
+    var newName = prompt("重命名管线：", oldName);
+    if (newName === null) return;
+    newName = newName.trim();
+    if (!newName || newName === oldName) return;
+    if (pipelines.indexOf(newName) >= 0) {
+      alert("管线名已存在");
+      return;
+    }
+    /* 活动管线（服务端真实管线）调用重命名 API */
+    if (oldName === activePipeline) {
+      post("/api/pipeline/rename", { name: newName }).then(function (res) {
+        if (!handleAuth(res)) return;
+        if (res.ok) {
+          var idx = pipelines.indexOf(oldName);
+          if (idx >= 0) pipelines[idx] = newName;
+          activePipeline = newName;
+          pipelineName = newName;
+          updateTitle();
+          renderSidebar();
+        } else {
+          alert((res.data && res.data.error) || "重命名失败");
+        }
+      }).catch(function () { alert("网络异常"); });
+    } else {
+      /* 非活动管线：仅前端虚拟更新 */
+      var idx = pipelines.indexOf(oldName);
+      if (idx >= 0) pipelines[idx] = newName;
+      renderSidebar();
+    }
+  }
+
+  /** 添加新管线（前端虚拟） */
+  function handleAddPipeline() {
+    var input = document.getElementById("newPipelineInput");
+    if (!input) return;
+    var name = input.value.trim();
+    if (!name) return;
+    if (pipelines.indexOf(name) >= 0) {
+      alert("管线名已存在");
+      return;
+    }
+    pipelines.push(name);
+    activePipeline = name;
+    input.value = "";
+    renderSidebar();
+  }
+
+  /* 初始化侧栏 */
+  (function initSidebar() {
+    renderSidebar();
+    updateTitle();
+    var addBtn = document.getElementById("addPipelineBtn");
+    var input = document.getElementById("newPipelineInput");
+    if (addBtn) addBtn.addEventListener("click", handleAddPipeline);
+    if (input) {
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") handleAddPipeline();
+      });
+    }
+  })();
 
   /* 顶栏：登录用户信息（头像配色 + 姓名/岗位）+ 退出 */
   (function renderTopbar() {
@@ -483,93 +601,132 @@
     });
   }
 
-  /* ────────────────────────────── 评审记录面板 ────────────────────────────── */
+  /* ────────────────────────────── 评审记录宽面板（≥60vw） ────────────────────────────── */
 
-  function renderReviews(list) {
-    var tip = tipEl();
-    if (!tip) return;
-    var old = tip.querySelector(".d-reviews");
-    if (old) old.remove();
-    var box = document.createElement("div");
-    box.className = "d-reviews";
+  /** 打开评审记录宽面板：独立模态，脱离 tooltip 缩放容器，展示完整评审记录 */
+  function openReviewPanel() {
+    var overlay = document.createElement("div");
+    overlay.className = "review-overlay";
+    var panel = document.createElement("div");
+    panel.className = "review-panel";
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+
+    /* 头部 */
     var head = document.createElement("div");
-    head.className = "d-reviews-head";
-    head.textContent = "评审记录（" + list.length + "）";
-    box.appendChild(head);
-    if (!list.length) {
-      var empty = document.createElement("p");
-      empty.className = "d-reviews-empty";
-      empty.textContent = "暂无评审记录";
-      box.appendChild(empty);
-    } else {
-      var ul = document.createElement("ul");
-      ul.className = "d-reviews-list";
-      list.forEach(function (re) {
-        var li = document.createElement("li");
+    head.className = "review-panel-head";
+    var h3 = document.createElement("h3");
+    h3.textContent = "评审记录";
+    var countSpan = document.createElement("span");
+    countSpan.className = "rp-count";
+    head.appendChild(h3);
+    head.appendChild(countSpan);
+    var closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "review-panel-close";
+    closeBtn.textContent = "关闭";
+    head.appendChild(closeBtn);
+    panel.appendChild(head);
+
+    /* 主体 */
+    var body = document.createElement("div");
+    body.className = "review-panel-body";
+    var loading = document.createElement("div");
+    loading.className = "review-panel-loading";
+    loading.textContent = "加载中…";
+    body.appendChild(loading);
+    panel.appendChild(body);
+
+    /* 关闭交互：按钮 + 点击遮罩 + Esc */
+    function close() { overlay.remove(); }
+    closeBtn.addEventListener("click", close);
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay) close();
+    });
+    function onEsc(e) { if (e.key === "Escape") { close(); document.removeEventListener("keydown", onEsc); } }
+    document.addEventListener("keydown", onEsc);
+
+    /* 拉取评审记录 */
+    fetch("/api/reviews").then(function (r) {
+      if (r.status === 401) { location.href = "/login"; return null; }
+      return r.json();
+    }).then(function (d) {
+      body.textContent = "";
+      if (!d || !d.reviews) {
+        var err = document.createElement("div");
+        err.className = "review-panel-empty";
+        err.textContent = (d && d.error) || "加载失败";
+        body.appendChild(err);
+        return;
+      }
+      countSpan.textContent = "（" + d.reviews.length + " 条）";
+      if (!d.reviews.length) {
+        var empty = document.createElement("div");
+        empty.className = "review-panel-empty";
+        empty.textContent = "暂无评审记录";
+        body.appendChild(empty);
+        return;
+      }
+      d.reviews.forEach(function (re) {
+        var rec = document.createElement("div");
+        rec.className = "review-record";
+
         var main = document.createElement("div");
-        main.className = "dr-main";
+        main.className = "rr-main";
         var who = document.createElement("div");
-        who.className = "dr-who";
+        who.className = "rr-who";
         who.textContent = re.actor + " · " + (re.email ? re.department + " · " + re.email : re.department);
         var time = document.createElement("div");
-        time.className = "dr-time";
-        var d = new Date(re.generatedAt);
-        time.textContent = isNaN(d.getTime()) ? re.generatedAt : d.toLocaleString();
+        time.className = "rr-time";
+        var dt = new Date(re.generatedAt);
+        time.textContent = isNaN(dt.getTime()) ? re.generatedAt : dt.toLocaleString();
         main.appendChild(who);
         main.appendChild(time);
+        rec.appendChild(main);
+
         var badge = document.createElement("span");
-        badge.className = "dr-badge " + (re.passed ? "pass" : "block");
+        badge.className = "rr-badge " + (re.passed ? "pass" : "block");
         badge.textContent = re.passed ? "PASS · " + re.blockers + " 拦" : "BLOCK · " + re.blockers;
+        rec.appendChild(badge);
+
         var num = document.createElement("span");
-        num.className = "dr-num";
+        num.className = "rr-num";
         num.textContent = re.issues > 0 ? re.issues + " 条" : "—";
-        li.appendChild(main);
-        li.appendChild(badge);
-        li.appendChild(num);
+        rec.appendChild(num);
+
         var acts = document.createElement("span");
-        acts.className = "dr-actions";
+        acts.className = "rr-actions";
         if (re.reportUrl) {
           var a = document.createElement("a");
           a.href = re.reportUrl;
           a.target = "_blank";
           a.rel = "noopener";
-          a.textContent = "报告";
+          a.textContent = "查看报告";
           acts.appendChild(a);
         }
-        li.appendChild(acts);
-        ul.appendChild(li);
+        rec.appendChild(acts);
+        body.appendChild(rec);
       });
-      box.appendChild(ul);
-    }
-    tip.appendChild(box);
+    }).catch(function () {
+      body.textContent = "";
+      var err = document.createElement("div");
+      err.className = "review-panel-empty";
+      err.textContent = "网络异常，请重试";
+      body.appendChild(err);
+    });
   }
 
+  /** 在动作区添加「评审记录」按钮（紫色色块触发区），点击打开宽面板 */
   function addReviewsButton(wrap) {
+    var trigger = document.createElement("div");
+    trigger.className = "d-reviews-trigger";
     var btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "btn ghost";
+    btn.className = "btn ghost purple";
     btn.textContent = "评审记录";
-    btn.addEventListener("click", function () {
-      var tip = tipEl();
-      if (!tip) return;
-      if (tip.querySelector(".d-reviews")) {
-        tip.querySelector(".d-reviews").remove();
-        return;
-      }
-      btn.disabled = true;
-      fetch("/api/reviews").then(function (r) {
-        if (r.status === 401) { location.href = "/login"; return null; }
-        return r.json();
-      }).then(function (d) {
-        btn.disabled = false;
-        if (!d || !d.reviews) { alert((d && d.error) || "加载失败"); return; }
-        renderReviews(d.reviews);
-      }).catch(function () {
-        btn.disabled = false;
-        alert("网络异常");
-      });
-    });
-    wrap.appendChild(btn);
+    btn.addEventListener("click", openReviewPanel);
+    trigger.appendChild(btn);
+    wrap.appendChild(trigger);
   }
 
   /* ────────────────────────────── 详情动作区 ────────────────────────────── */
@@ -676,7 +833,7 @@
       wrap.appendChild(rowR);
     }
 
-    /* 需求编辑器 + 附件（skill 节点） */
+    /* 需求编辑器 + 附件（skill 节点）：拆为 琥珀色需求区 + 青绿附件区 */
     if (isSkillNode(node)) {
       renderRequirementEditor(node, idx, wrap);
     }
@@ -690,39 +847,32 @@
     panel.appendChild(wrap);
   }
 
-  /** 需求文本编辑 + 附件上传（节点 01/02；主管与本部门员工可编辑） */
+  /** 需求文本编辑（琥珀区）+ 附件上传（青绿区）：拆为两个色块分区 */
   function renderRequirementEditor(node, idx, wrap) {
-    var box = document.createElement("div");
-    box.className = "d-req";
-    var head = document.createElement("div");
-    head.className = "d-req-head";
-    head.textContent = node.id === "01" ? "调研需求内容" : "需求描述";
-    box.appendChild(head);
+    /* —— 琥珀区：需求文本编辑 —— */
+    var reqBox = document.createElement("div");
+    reqBox.className = "d-req";
+    var reqHead = document.createElement("div");
+    reqHead.className = "d-req-head";
+    var reqDot = document.createElement("span");
+    reqDot.className = "sec-dot";
+    reqHead.appendChild(reqDot);
+    reqHead.appendChild(document.createTextNode(node.id === "01" ? "调研需求内容" : "需求描述"));
+    reqBox.appendChild(reqHead);
 
     var editable = !!node.canEdit;
     var ta = document.createElement("textarea");
     ta.placeholder = editable ? "填写需求文字描述…" : "（只读：仅本部门员工或主管可编辑）";
     ta.value = node.requirementText || "";
     ta.disabled = !editable;
-    box.appendChild(ta);
-
-    /* 附件区：已上传文件名 + 提交文件按钮 */
-    var files = document.createElement("div");
-    files.className = "files";
-    (node.uploads || []).forEach(function (f) {
-      var chip = document.createElement("span");
-      chip.className = "file";
-      chip.textContent = "📎 " + f;
-      files.appendChild(chip);
-    });
-    box.appendChild(files);
+    reqBox.appendChild(ta);
 
     if (editable) {
-      var row = document.createElement("div");
-      row.className = "d-row";
+      var reqRow = document.createElement("div");
+      reqRow.className = "d-row";
       var save = document.createElement("button");
       save.type = "button";
-      save.className = "btn ghost";
+      save.className = "btn ghost amber";
       save.textContent = "保存需求";
       save.addEventListener("click", function () {
         save.disabled = true;
@@ -737,7 +887,7 @@
             var okChip = document.createElement("span");
             okChip.className = "note";
             okChip.textContent = "已保存 ✓";
-            row.appendChild(okChip);
+            reqRow.appendChild(okChip);
             setTimeout(function () { okChip.remove(); }, 1600);
           } else {
             alert((res.data && res.data.error) || "保存失败");
@@ -748,29 +898,57 @@
           alert("网络异常");
         });
       });
-      row.appendChild(save);
+      reqRow.appendChild(save);
+      reqBox.appendChild(reqRow);
+    }
+    wrap.appendChild(reqBox);
 
+    /* —— 青绿区：附件文件 —— */
+    var fileBox = document.createElement("div");
+    fileBox.className = "d-files";
+    var fileHead = document.createElement("div");
+    fileHead.className = "d-files-head";
+    var fileDot = document.createElement("span");
+    fileDot.className = "sec-dot";
+    fileHead.appendChild(fileDot);
+    fileHead.appendChild(document.createTextNode("提交文件 / 附件"));
+    fileBox.appendChild(fileHead);
+
+    var files = document.createElement("div");
+    files.className = "files";
+    (node.uploads || []).forEach(function (f) {
+      var chip = document.createElement("span");
+      chip.className = "file";
+      chip.textContent = "📎 " + f;
+      files.appendChild(chip);
+    });
+    fileBox.appendChild(files);
+
+    if (editable) {
+      var fileRow = document.createElement("div");
+      fileRow.className = "d-row";
       var uploadBtn = document.createElement("button");
       uploadBtn.type = "button";
-      uploadBtn.className = "btn ghost";
+      uploadBtn.className = "btn ghost teal";
       uploadBtn.textContent = "提交文件";
       uploadBtn.addEventListener("click", function () {
         openUploadDialog(node, function () {
           renderActions(idx);
         });
       });
-      row.appendChild(uploadBtn);
-      box.appendChild(row);
+      fileRow.appendChild(uploadBtn);
+      fileBox.appendChild(fileRow);
     }
-    wrap.appendChild(box);
+    wrap.appendChild(fileBox);
   }
 
   /** 状态驱动的动作按钮 */
   function renderButtons(node, idx, wrap) {
-    function addBtn(label, ghost, onClick) {
+    function addBtn(label, ghost, onClick, colorCls) {
       var btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "btn" + (ghost ? " ghost" : "");
+      var cls = "btn" + (ghost ? " ghost" : "") + (colorCls ? " " + colorCls : "");
+      btn.className = cls;
       btn.textContent = label;
       btn.addEventListener("click", function () {
         btn.disabled = true;
@@ -873,14 +1051,14 @@
     if (isSkillNode(node)) {
       addBtn(node.id === "01" ? (isRunning ? "重新执行" : "直接执行") : (isRunning ? "重新执行" : "执行"),
         false, function () { runSkillFlow(); });
-      /* 节点 01 专属：需求分析（product-analysis skill，先提交材料） */
+      /* 节点 01 专属：需求分析（product-analysis skill，先提交材料）—— 琥珀色 */
       if (node.id === "01") {
         addBtn("需求分析", true, function () {
           openUploadDialog(node, function () {
             runSkillFlow("product-analysis");
           });
           return Promise.resolve();
-        });
+        }, "amber");
       }
     } else if (node.runner === "ai-review") {
       addBtn(isRunning ? "重新执行" : "执行", false, function () {
@@ -909,7 +1087,7 @@
 
   /* ────────────────────────────── 轮询 ────────────────────────────── */
 
-  /** 拉取 /api/nodes 刷新本地状态（含 busy 列表与成员） */
+  /** 拉取 /api/nodes 刷新本地状态（含 busy 列表、成员与管线名） */
   function refreshNodes() {
     return fetch("/api/nodes").then(function (r) {
       if (r.status === 401) {
@@ -923,6 +1101,17 @@
       nodes = d.nodes;
       if (d.members) members = d.members;
       if (d.busy) busyIds = d.busy;
+      /* 同步管线名（可能被其他端重命名） */
+      if (d.pipelineName && d.pipelineName !== pipelineName) {
+        pipelineName = d.pipelineName;
+        var idx = pipelines.indexOf(activePipeline);
+        if (idx >= 0) {
+          pipelines[idx] = pipelineName;
+          activePipeline = pipelineName;
+        }
+        updateTitle();
+        renderSidebar();
+      }
       if (detailIdx >= 0) renderActions(detailIdx);
     });
   }

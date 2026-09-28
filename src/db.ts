@@ -88,10 +88,36 @@ export function authenticate(email: string, password: string): UserAccount | nul
   return user;
 }
 
+/** 管线数据（db/pipeline.json） */
+export interface PipelineData {
+  /** 管线名称 */
+  name?: string;
+  /** 管线节点列表 */
+  nodes: NodeState[];
+}
+
+/** 读取管线名称（缺省 "text-flow"） */
+export function loadPipelineName(): string {
+  const f = join(DB_DIR, "pipeline.json");
+  try {
+    const data = JSON.parse(readFileSync(f, "utf8")) as PipelineData;
+    return data.name ?? "text-flow";
+  } catch {
+    return "text-flow";
+  }
+}
+
+/** 写回管线名称 */
+export function savePipelineName(name: string): void {
+  const nodes = loadNodes();
+  mkdirSync(DB_DIR, { recursive: true });
+  writeFileSync(join(DB_DIR, "pipeline.json"), JSON.stringify({ name, nodes }, null, 2), "utf8");
+}
+
 /** 读取全部管线节点（旧状态 approved 自动迁移为 done 并回写） */
 export function loadNodes(): NodeState[] {
   const f = join(DB_DIR, "pipeline.json");
-  const data = JSON.parse(readFileSync(f, "utf8")) as { nodes?: NodeState[] };
+  const data = JSON.parse(readFileSync(f, "utf8")) as PipelineData;
   const nodes = data.nodes ?? [];
   if (nodes.some((n) => (n as { status?: string }).status === "approved")) {
     for (const n of nodes) {
@@ -104,8 +130,9 @@ export function loadNodes(): NodeState[] {
 
 /** 写回管线节点（执行/批准后持久化状态） */
 export function saveNodes(nodes: NodeState[]): void {
+  const name = loadPipelineName();
   mkdirSync(DB_DIR, { recursive: true });
-  writeFileSync(join(DB_DIR, "pipeline.json"), JSON.stringify({ nodes }, null, 2), "utf8");
+  writeFileSync(join(DB_DIR, "pipeline.json"), JSON.stringify({ name, nodes }, null, 2), "utf8");
 }
 
 /** 节点历史评审记录：一次 AI 评审 = 一条。平台可追溯「谁在何时评了什么」 */

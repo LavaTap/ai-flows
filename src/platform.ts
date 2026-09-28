@@ -2,7 +2,7 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadNodes, saveNodes, authenticate, loadUsers, loadReviews, appendReview, type ReviewRecord, type NodeState, type UserAccount } from "./db.js";
+import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, type ReviewRecord, type NodeState, type UserAccount } from "./db.js";
 import { createSession, destroySession, currentUser, sessionCookie, clearCookie, SESSION_COOKIE, parseCookies } from "./auth.js";
 import { loadConfig, type ReviewConfig } from "./config.js";
 import { collectDiff } from "./collector.js";
@@ -171,6 +171,8 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   "/login.css": { file: "login.css", type: "text/css; charset=utf-8" },
   "/ai-pipeline.css": { file: "ai-pipeline.css", type: "text/css; charset=utf-8" },
   "/ai-pipeline-app.js": { file: "ai-pipeline-app.js", type: "text/javascript; charset=utf-8" },
+  "/ai-review-report.css": { file: "ai-review-report.css", type: "text/css; charset=utf-8" },
+  "/ai-review-report.js": { file: "ai-review-report.js", type: "text/javascript; charset=utf-8" },
 };
 
 /** 读 web/ 下静态文件并响应，不存在返回 false */
@@ -193,7 +195,11 @@ async function pipelineHtml(user: UserAccount, repo: string): Promise<string> {
   const nodesWithUrls = await Promise.all(
     loadNodes().map((n) => refreshNodeReportUrl(n, repo)),
   );
+  const repoName = repo.replace(/[\\/]/g, "").split(".").slice(-2).join(".") || repo;
   const boot = {
+    pipelineName: loadPipelineName(),
+    repoName: repoName.replace(/^.*[\\/]/, ""),
+    repoPath: repo,
     user: toUserView(user),
     members: loadUsers().map(toUserView),
     nodes: nodesWithUrls.map((n) => toNodeView(user, n)),
@@ -409,11 +415,35 @@ export async function startPlatformServer(
         loadNodes().map((n) => refreshNodeReportUrl(n, repo)),
       );
       sendJson(res, 200, {
+        pipelineName: loadPipelineName(),
         user: toUserView(user),
         members: loadUsers().map(toUserView),
         nodes: nodesWithUrls.map((n) => toNodeView(user, n)),
         busy: [...busy],
       });
+      return;
+    }
+
+    // 重命名管线
+    if (path === "/api/pipeline/rename" && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      try {
+        const body = JSON.parse(await readBody(req)) as { name?: string };
+        const name = (body.name ?? "").trim();
+        if (!name) {
+          sendJson(res, 400, { error: "管线名称不能为空" });
+          return;
+        }
+        savePipelineName(name);
+        sendJson(res, 200, { name });
+      } catch {
+        sendJson(res, 400, { error: "请求格式错误" });
+        return;
+      }
       return;
     }
 
