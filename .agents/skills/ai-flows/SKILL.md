@@ -18,8 +18,8 @@ description: ai-flows 能力总入口，只做目录与路由，不承载业务�
 
 | 用户意图 / 触发词 | 只读这个业务文档 | 配套脚本 |
 |---|---|---|
-| 初始化仓库、接入评审、装 ai-review、给仓库配评审、检查/重配模型密钥 | `references/repository-manager/init.md` | `<skill-dir>/scripts/init-repo.mjs`、`<skill-dir>/scripts/check-key.mjs` |
-| 代码评审、按规范评审代码、Python 规范检查 | `references/reviewers/code-review.md` | — |
+| 初始化仓库、接入评审、装 ai-review、给仓库配评审、检查/重配模型密钥、私有仓库推送凭据 | `references/repository-manager/init.md` | `<skill-dir>/scripts/init-repo.mjs`、`<skill-dir>/scripts/check-key.mjs`、`<skill-dir>/scripts/check-remote-auth.mjs` |
+| 代码评审、按规范评审代码、Python 规范检查 | `references/reviewers/CODE-REVIEW.MD` | — |
 | 跑评审、起报告服务、起平台、装 hook、ai-review CLI 用法、评审输出规范化 | `references/ai-flows/review-chain.md` | `<skill-dir>/scripts/normalize-review.mjs` |
 
 ## 读取方式
@@ -37,12 +37,13 @@ ai-flows/
 ├── SKILL.md                              # 本文件：唯一入口，纯路由
 ├── references/
 │   ├── repository-manager/init.md        # 仓库初始化 + 密钥检查业务
-│   ├── reviewers/code-review.md          # Python 代码评审业务（+ 规则子文档 *.md）
+│   ├── reviewers/CODE-REVIEW.MD          # Python 代码评审业务（+ 规则子文档 *.md）
 │   └── ai-flows/review-chain.md          # ai-review 评审链用法业务
 ├── log/code-review/                      # 评审日志（时间戳命名，已 gitignore）
 └── scripts/
     ├── init-repo.mjs                     # 拷贝 config + 装 pre-push hook
     ├── check-key.mjs                     # 校验模型密钥有效性
+    ├── check-remote-auth.mjs             # 推送前置检查（远端认证 + 凭据泄露）
     └── normalize-review.mjs              # 评审输出强制归一（不靠 prompt）
 ```
 

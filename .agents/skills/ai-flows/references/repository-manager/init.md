@@ -38,7 +38,42 @@
    - **退出码 0（密钥有效）**：把结果转告用户，提示可以正常跑评审。
    - **退出码 1（缺失/无效）**：脚本已打印「重新配置密钥与模型」指引，**原样转达给用户**，并等用户配好后再重跑本脚本确认。
 
-## 3. 收尾提醒
+## 3. 推送前置检查（私有仓库凭据）
+
+推送前先跑检查，确认「认证可用 + 无凭据泄露」：
+
+```bash
+node <skill-dir>/scripts/check-remote-auth.mjs [repo-path]
+```
+
+脚本**只读**检查三件事，不做任何修改：远端可达性、凭据就绪、泄露风险。
+退出码 `0` 无问题 / `1` 有阻塞项。
+
+### 密钥配置由谁做
+
+agent **可以**自己完成密钥全流程，但分两截：
+
+| 环节 | agent 能否自动化 | 做法 |
+|---|---|---|
+| 生成密钥对 | 能 | `ssh-keygen -t ed25519 -N "" -C "<邮箱>"` |
+| 写 `~/.ssh/config` | 能 | 22 被墙时配 `Host github.com` → `HostName ssh.github.com` / `Port 443` / `User git` |
+| 验证认证 | 能 | `ssh -T git@github.com`（成功也返回非 0，看输出文本） |
+| **上传公钥到平台** | 看情况 | 有 `gh` CLI 且已登录 → `gh ssh-key add ~/.ssh/id_ed25519.pub`；否则要 PAT（`admin:public_key`）或浏览器操作，或用户手动粘贴 |
+
+**上传公钥是唯一需要外部授权的一步**：既没有 `gh` 也没有 PAT 时，agent 做不到，必须由用户手动粘贴一次。
+
+### 泄露风险是硬门禁
+
+`git ls-files` 里若出现 cookie / `.pkl` / `secret` / `.env` / `accounts.json` 之类文件，**推送会把它们一并上传**（包括推送到私有仓库——私有不等于安全）。处理方式：
+
+```bash
+git rm --cached "<file>"     # 只停止跟踪，本地文件保留
+# 再把规则写进 .gitignore，避免再次误加
+```
+
+若这些文件**已经推到过远端**，凭据必须视为已泄露，直接轮换，仅删除跟踪不够。
+
+## 4. 收尾提醒
 
 - 设置模型 API Key 环境变量（默认 `DEEPSEEK_API_KEY`，或改 config 的 `model.apiKeyEnv`）
 - 按需修改 `ai-review.config.json` 里的 `model` 与 `targets`
@@ -46,7 +81,7 @@
 
 ## 路径约定
 
-业务脚本位于 `<skill-dir>/scripts/`：`init-repo.mjs`、`check-key.mjs`。
+业务脚本位于 `<skill-dir>/scripts/`：`init-repo.mjs`、`check-key.mjs`、`check-remote-auth.mjs`。
 `init-repo.mjs` 相对自身定位 ai-flows 项目根（向上 4 级），再找 `config.example.json` 与 `src/index.ts`，无需用户手传 ai-flows 路径。
 
 ## 不做什么

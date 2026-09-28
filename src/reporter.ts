@@ -201,7 +201,14 @@ a:hover { text-decoration:underline; }
 .verdict-pill.block { color:var(--block); background:var(--block-soft); border-color:var(--block-line-strong); }
 .topbar-actions { display:inline-flex; align-items:center; gap:8px; }
 .summary { margin-top:18px; padding:18px 22px; background:var(--surface); border:1px solid var(--border); border-radius:12px; }
-.summary h2 { margin:0 0 6px; font-size:12px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:var(--dim); }
+.summary-head { display:flex; align-items:center; justify-content:space-between; gap:12px; cursor:pointer; user-select:none; }
+.summary h2 { margin:0; font-size:12px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:var(--dim); }
+.summary-toggle { flex:0 0 auto; appearance:none; background:var(--surface-2); border:1px solid var(--border); color:var(--muted); width:28px; height:28px; border-radius:6px; display:grid; place-items:center; cursor:pointer; transition:all 150ms ease; padding:0; }
+.summary-toggle:hover { color:var(--text); border-color:var(--border-strong); }
+.summary-toggle svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; transition:transform 200ms ease; }
+.summary.collapsed .summary-toggle svg { transform:rotate(-90deg); }
+.summary-body { margin-top:10px; max-height:2000px; overflow:hidden; transition:max-height 300ms ease, margin-top 200ms ease; }
+.summary.collapsed .summary-body { max-height:0; margin-top:0; }
 .summary p { margin:0; color:var(--text); font-size:14.5px; white-space:pre-line; }
 .stats { margin-top:26px; display:grid; grid-template-columns:repeat(6,1fr); gap:12px; }
 .stat { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; position:relative; overflow:hidden; }
@@ -211,6 +218,16 @@ a:hover { text-decoration:underline; }
 .stat.n-red .num { color:var(--block); } .stat.n-red .bar { background:var(--block); }
 .stat.n-yellow .num { color:var(--warn); } .stat.n-yellow .bar { background:var(--warn); }
 .stat.n-green .num { color:var(--ok); } .stat.n-green .bar { background:var(--ok); }
+.stat.sev-tog { cursor:pointer; transition:border-color 150ms ease, box-shadow 150ms ease; }
+.stat.sev-tog:hover { border-color:var(--border-strong); }
+.stat.sev-tog.active { box-shadow:0 0 0 2px var(--accent); }
+.stat.n-red.active { box-shadow:0 0 0 2px var(--block); }
+.stat.n-yellow.active { box-shadow:0 0 0 2px var(--warn); }
+.stat.n-green.active { box-shadow:0 0 0 2px var(--ok); }
+.filter-clear { display:none; align-items:center; gap:6px; font-size:12px; color:var(--accent); cursor:pointer; padding:2px 10px; border:1px solid var(--accent); border-radius:999px; background:var(--accent-soft); user-select:none; }
+.filter-clear:hover { text-decoration:underline; }
+.filter-clear.show { display:inline-flex; }
+.issue.hidden { display:none; }
 .section-head { margin:40px 0 16px; display:flex; align-items:baseline; justify-content:space-between; }
 .section-head h2 { margin:0; font-size:18px; font-weight:700; letter-spacing:-.3px; }
 .section-head .count { font-family:var(--mono); font-size:12.5px; color:var(--dim); }
@@ -276,6 +293,7 @@ code { font-family:var(--mono); font-size:.92em; }
 .diff-line.del .content { color:var(--block); }
 .diff-line.ctx .content { color:var(--muted); }
 .diff-line.target { animation:flash 1.4s ease-out; box-shadow:inset 3px 0 0 var(--warn); }
+.diff-line.target-range { background:var(--warn-soft); box-shadow:inset 3px 0 0 var(--warn); }
 @keyframes flash { 0%{background:var(--flash);} 100%{background:transparent;} }
 .diff-empty { padding:32px 20px; text-align:center; color:var(--dim); font-size:13px; }
 .issue { cursor:pointer; }
@@ -311,18 +329,20 @@ function countText(v: ReportView): string {
 }
 
 function statCards(v: ReportView): string {
-  const cards: [number, string, string][] = [
-    [v.filesReviewed, "评审文件", ""],
-    [v.degradedCount, "降级文件", ""],
-    [v.total, "问题总数", ""],
-    [v.counts.blocker, "blocker", "n-red"],
-    [v.counts.warning, "warning", "n-yellow"],
-    [v.counts.info, "info", "n-green"],
+  const cards: [number, string, string, string][] = [
+    [v.filesReviewed, "评审文件", "", ""],
+    [v.degradedCount, "降级文件", "", ""],
+    [v.total, "问题总数", "", ""],
+    [v.counts.blocker, "blocker", "n-red", "sev-tog"],
+    [v.counts.warning, "warning", "n-yellow", "sev-tog"],
+    [v.counts.info, "info", "n-green", "sev-tog"],
   ];
   return cards
     .map(
-      ([num, lbl, cls]) =>
-        `<div class="stat ${cls}"><div class="num">${num}</div><div class="lbl">${lbl}</div><div class="bar"></div></div>`
+      ([num, lbl, cls, tog]) => {
+        const sev = tog ? ` data-severity="${lbl}"` : "";
+        return `<div class="stat ${cls} ${tog}"${sev}><div class="num">${num}</div><div class="lbl">${lbl}</div><div class="bar"></div></div>`;
+      }
     )
     .join("\n    ");
 }
@@ -331,7 +351,7 @@ function issueList(v: ReportView): string {
   if (!v.issues.length) return `<div class="empty">未发现问题。</div>`;
   return v.issues
     .map(
-      (i) => `<article class="issue ${i.severity}" data-file="${esc(i.file)}" data-line-start="${i.lineStart}" data-line-end="${i.lineEnd}" tabindex="0">
+      (i) => `<article class="issue ${i.severity}" data-severity="${i.severity}" data-file="${esc(i.file)}" data-line-start="${i.lineStart}" data-line-end="${i.lineEnd}" tabindex="0">
     <div class="issue-body">
       <div class="issue-head">
         <span class="sev ${i.severity}">${esc(i.severity)}</span>
@@ -501,9 +521,16 @@ export function renderTemplate(v: ReportView): string {
     <span class="verdict-pill ${v.passed ? "" : "block"}">${v.passed ? "PASS" : "BLOCK"}</span>
   </section>
 
-  <section class="summary" aria-label="评审摘要">
-    <h2>评审摘要</h2>
-    <p>${esc(v.summary)}</p>
+  <section class="summary" id="summary" aria-label="评审摘要">
+    <div class="summary-head" id="summaryHead">
+      <h2>评审摘要</h2>
+      <button type="button" class="summary-toggle" aria-label="展开/收纳摘要" aria-expanded="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      </button>
+    </div>
+    <div class="summary-body" id="summaryBody">
+      <p>${esc(v.summary)}</p>
+    </div>
   </section>
 
   <section class="stats" aria-label="评审指标">
@@ -519,6 +546,7 @@ export function renderTemplate(v: ReportView): string {
       <div class="section-head">
         <h2>问题明细</h2>
         <span class="count">${countText(v)}</span>
+        <span class="filter-clear" id="filterClear">清除筛选 &times;</span>
       </div>
       ${issueList(v)}
     </section>
@@ -554,28 +582,90 @@ export function renderTemplate(v: ReportView): string {
       applyTheme(next);
     });
   }
-  var issues = document.querySelectorAll('.issue[data-file]');
+  /* 摘要展开/收纳 */
+  var summaryHead = document.getElementById('summaryHead');
+  var summary = document.getElementById('summary');
+  if(summaryHead && summary){
+    summaryHead.addEventListener('click', function(){
+      summary.classList.toggle('collapsed');
+      var btn = summaryHead.querySelector('.summary-toggle');
+      if(btn) btn.setAttribute('aria-expanded', summary.classList.contains('collapsed') ? 'false' : 'true');
+    });
+  }
+  /* 统计卡点击筛选问题 */
+  var sevCards = document.querySelectorAll('.stat.sev-tog[data-severity]');
+  var filterClear = document.getElementById('filterClear');
+  var issueEls = document.querySelectorAll('.issue[data-severity]');
+  var currentFilter = null;
+  function applyFilter(sev){
+    currentFilter = sev;
+    issueEls.forEach(function(el){
+      if(!sev || el.getAttribute('data-severity') === sev){
+        el.classList.remove('hidden');
+      } else {
+        el.classList.add('hidden');
+      }
+    });
+    sevCards.forEach(function(c){
+      var active = c.getAttribute('data-severity') === sev;
+      c.classList.toggle('active', active);
+    });
+    if(filterClear){
+      filterClear.classList.toggle('show', !!sev);
+    }
+  }
+  sevCards.forEach(function(c){
+    c.addEventListener('click', function(){
+      var sev = c.getAttribute('data-severity');
+      applyFilter(currentFilter === sev ? null : sev);
+    });
+  });
+  if(filterClear){
+    filterClear.addEventListener('click', function(){
+      applyFilter(null);
+    });
+  }
+  /* 点击问题 → 高亮 lineStart 到 lineEnd 范围 */
   var panel = document.querySelector('.diff-panel');
-  if(issues.length && panel){
-    issues.forEach(function(el){
+  if(issueEls.length && panel){
+    issueEls.forEach(function(el){
       el.addEventListener('click', function(){
         var file = el.getAttribute('data-file');
         var ls = parseInt(el.getAttribute('data-line-start'),10) || 0;
+        var le = parseInt(el.getAttribute('data-line-end'),10) || ls;
         if(!ls) return;
         var lines = panel.querySelectorAll('.diff-line[data-line]');
-        lines.forEach(function(l){ l.classList.remove('target'); });
-        // 只高亮单行：优先精确命中 lineStart；若该行是删除行（无 newNo）则取最接近的一行
-        var hit = null;
-        var best = Infinity;
+        lines.forEach(function(l){ l.classList.remove('target','target-range'); });
+        /* 高亮 lineStart 到 lineEnd 范围内的所有行 */
+        var hits = [];
+        var firstHit = null;
+        var bestDist = Infinity;
         lines.forEach(function(l){
           if(l.getAttribute('data-file') !== file) return;
           var n = parseInt(l.getAttribute('data-line'),10);
-          var diff = Math.abs(n - ls);
-          if(diff < best){ best = diff; hit = l; }
+          if(n >= ls && n <= le){
+            l.classList.add('target-range');
+            hits.push(l);
+            if(!firstHit) firstHit = l;
+          }
         });
-        if(hit){
-          hit.classList.add('target');
-          hit.scrollIntoView({behavior:'smooth', block:'center'});
+        /* 若范围内无命中（行可能是删除行无 newNo），回退取最接近 lineStart 的行 */
+        if(!firstHit){
+          lines.forEach(function(l){
+            if(l.getAttribute('data-file') !== file) return;
+            var n = parseInt(l.getAttribute('data-line'),10);
+            var diff = Math.abs(n - ls);
+            if(diff < bestDist){ bestDist = diff; firstHit = l; }
+          });
+          if(firstHit){
+            firstHit.classList.add('target');
+          }
+        } else {
+          /* 起始行加闪烁动画 */
+          firstHit.classList.add('target');
+        }
+        if(firstHit){
+          firstHit.scrollIntoView({behavior:'smooth', block:'center'});
         }
       });
     });

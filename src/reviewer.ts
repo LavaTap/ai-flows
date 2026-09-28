@@ -251,7 +251,21 @@ export function writeReviewLog(result: ReviewResult, files: number): string | un
       `# 统计：total=${result.issues.length} blocker=${counts.blocker} warning=${counts.warning} info=${counts.info}`,
       "--- 标准评审 JSON ---",
       JSON.stringify(
-        { summary: result.summary, issues: result.issues, counts, total: result.issues.length },
+        {
+          summary: result.summary,
+          // 落盘用标准契约字段名（lineStart/lineEnd），与 normalize-review.mjs 一致
+          issues: result.issues.map((i) => ({
+            file: i.file,
+            lineStart: i.line,
+            lineEnd: i.lineEnd ?? i.line,
+            severity: i.severity,
+            category: i.category,
+            message: i.message,
+            ...(i.suggestion ? { suggestion: i.suggestion } : {}),
+          })),
+          counts,
+          total: result.issues.length,
+        },
         null,
         2
       ),

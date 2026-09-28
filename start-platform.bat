@@ -1,26 +1,34 @@
 @echo off
 chcp 65001 >nul
-setlocal
-cd /d "%~dp0"
-
-rem 平台端口（可用 AI_FLOWS_PORT 覆盖）
-set PORT=4311
-rem 评审目标仓库（请输入要评审的仓库绝对路径）
-set REPO=d:/code/private/text-code
-
-echo ============================================
-echo   AI-FLOWS 管线平台启动
-echo   目标仓库 : %REPO%
-echo   端口     : %PORT%
-echo   按 Ctrl+C 停止
-echo ============================================
+title AI 评审平台
+echo ========================================
+echo   AI 评审平台启动中...
+echo   端口: 4311
+echo   演示密码: 123456
+echo   输入 quit 回车可停止服务
+echo ========================================
 echo.
 
-npx tsx src/index.ts platform --port %PORT% --repo %REPO%
-
-if errorlevel 1 (
-  echo.
-  echo 平台启动失败，请检查 node / npx 环境。
-  pause
+REM 检查并清理 4311 端口占用
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":4311 " ^| findstr "LISTENING"') do (
+  echo 检测到端口 4311 被进程 %%a 占用，正在终止...
+  taskkill /F /PID %%a >nul 2>&1
+  timeout /t 1 /nobreak >nul
 )
-endlocal
+
+echo 启动平台服务...
+start /b npx tsx src/index.ts platform --port 4311
+
+:WAITLOOP
+set /p input=
+if /i "%input%"=="quit" (
+  echo 正在停止平台服务...
+  for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":4311 " ^| findstr "LISTENING"') do (
+    taskkill /F /PID %%a >nul 2>&1
+  )
+  taskkill /F /IM node.exe /FI "WINDOWTITLE eq AI 评审平台*" >nul 2>&1
+  echo 已停止。
+  timeout /t 1 /nobreak >nul
+  exit
+)
+goto WAITLOOP
