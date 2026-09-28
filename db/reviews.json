@@ -12,6 +12,19 @@
       "blockers": 7,
       "issues": 24,
       "reportUrl": "http://127.0.0.1:4312/reports/review-mufmg85h"
+    },
+    {
+      "id": "review-mukzcdgf",
+      "source": "platform",
+      "actor": "前端开发设计师",
+      "email": "lixiang@ai-flows.com",
+      "department": "程序中台",
+      "role": "staff",
+      "generatedAt": "2026-09-28T08:22:47.692Z",
+      "passed": true,
+      "blockers": 0,
+      "issues": 0,
+      "reportUrl": "http://127.0.0.1:4310/reports/review-mukzcdgf"
     }
   ]
 }

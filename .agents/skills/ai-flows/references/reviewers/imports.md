@@ -4,7 +4,7 @@
 
 ## 规则
 
-### IMP-01（建议）禁止 `from xxx import yyy` 直接导入类或函数
+### IMP-01（INFO）禁止 `from xxx import yyy` 直接导入类或函数
 - `yyy` 只能是 module 或 package，不能是类或函数。
 - 目的：调用关系清晰，`x.obj` 表明 `obj` 定义在 `x` 模块，避免命名冲突。
 
@@ -20,15 +20,15 @@ from os import unlink
 unlink(path)
 ```
 
-### IMP-02（建议，PY002）禁止 `from xxx import *`
+### IMP-02（INFO，PY002）禁止 `from xxx import *`
 会污染命名空间、掩盖来源，静态分析工具也无法追踪。
 
-### IMP-03（建议，PY003）import 必须用 package 全路径
+### IMP-03（INFO，PY003）import 必须用 package 全路径
 - 相对 `PYTHONPATH` 的绝对包路径。
 - 禁止 `sys.path.append('../../')` 之类修改环境变量。
 - 禁止包内相对导入（`.`/`..`），除非项目已明确使用 namespace package 且全仓一致。
 
-### IMP-04（建议，PY037）每行只导入一个库
+### IMP-04（INFO，PY037）每行只导入一个库
 **YES**
 ```python
 import os
@@ -45,7 +45,7 @@ import os, sys
 from third.party import lib, foobar
 ```
 
-### IMP-05（建议）import 必须按三段顺序，段间空一行
+### IMP-05（INFO）import 必须按三段顺序，段间空一行
 1. 标准库
 2. 第三方库
 3. 应用自有库

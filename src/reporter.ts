@@ -78,7 +78,7 @@ export function buildReviewMarkdown(
   if (result.issues.length === 0) {
     L.push("未发现问题。");
   } else {
-    L.push("| 严重级别 | 位置 | 类别 | 问题 | 建议 |");
+    L.push("| 严重级别 | 位置 | 类别 | 问题 | INFO |");
     L.push("|---|---|---|---|---|");
     for (const i of result.issues) {
       const loc = i.line ? `${i.file}:${i.line}` : i.file;
@@ -417,7 +417,7 @@ function issueList(v: ReportView): string {
       ${
         i.suggestion
           ? `<div class="suggestion">
-        <span class="tag">建议</span>
+        <span class="tag">INFO</span>
         <p>${rich(i.suggestion)}</p>
       </div>`
           : ""

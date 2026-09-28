@@ -78,7 +78,7 @@ def main():
     print("=" * 70)
 
     # 遍历每个游戏目录
-    # 强制 os.listdir 用 UTF-8 解码（解决 Windows 中文编码问题）
+    # ERROR os.listdir 用 UTF-8 解码（解决 Windows 中文编码问题）
     for game_name in os.listdir(OUTPUT_DIR):
         # 确保名称是正确 Unicode
         if isinstance(game_name, bytes):

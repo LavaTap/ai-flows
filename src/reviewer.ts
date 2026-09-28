@@ -10,7 +10,7 @@ import { maskSecrets } from "./redact.js";
 
 const SEVERITY_DEF = `- "blocker": 阻塞级。会造成 bug / 崩溃 / 安全问题 / 明显逻辑错误，或与本次变更直接相关的严重缺陷。
 - "warning": 需要注意。潜在风险、可维护性差、命名混乱、遗漏边界处理，但不必然导致故障。
-- "info": 仅建议。风格、优化空间，不影响合入。`;
+- "info": 仅INFO。风格、优化空间，不影响合入。`;
 
 /** 允许的严重级别白名单：输出格式由代码强约束，不依赖 prompt 自觉 */
 const SEVERITIES: readonly Severity[] = ["blocker", "warning", "info"];
@@ -21,7 +21,7 @@ const CATEGORY_FALLBACK = "其他";
 
 /** 评审输出契约：字段定义由代码持有，prompt 仅引用；实际归一以 normalizeIssues 为准 */
 const OUTPUT_CONTRACT = `{"summary": "<本文件改动的一句话总结>", "issues": [
-  {"file": "<相对路径>", "lineStart": <起始行号>, "lineEnd": <结束行号>, "severity": "blocker|warning|info", "category": "<所属维度>", "message": "<问题描述>", "suggestion": "<修改建议>"}
+  {"file": "<相对路径>", "lineStart": <起始行号>, "lineEnd": <结束行号>, "severity": "blocker|warning|info", "category": "<所属维度>", "message": "<问题描述>", "suggestion": "<修改INFO>"}
 ]}`;
 
 /** 生成单个文件的评审 prompt */

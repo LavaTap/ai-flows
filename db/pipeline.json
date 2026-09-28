@@ -25,7 +25,9 @@
       "step": "AI 代码评审",
       "ready": true,
       "status": "todo",
-      "runner": "ai-review"
+      "runner": "ai-review",
+      "lastResult": "平台重启导致执行中断，请重新执行",
+      "reportUrl": "http://127.0.0.1:4310/reports/review-mukzcdgf"
     },
     {
       "id": "04",

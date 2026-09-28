@@ -38,7 +38,7 @@ function printIssues(issues: ReviewIssue[], blocked: Set<string>): void {
       `${severityColor(it.severity)}${mark} [${it.severity}] ${loc}${RESET}`
     );
     console.log(`    ${it.category}: ${it.message}`);
-    if (it.suggestion) console.log(`${DIM}    建议: ${it.suggestion}${RESET}`);
+    if (it.suggestion) console.log(`${DIM}    INFO: ${it.suggestion}${RESET}`);
   }
 }
 
@@ -299,7 +299,7 @@ async function main(): Promise<void> {
   if (sub === "run") {
     const args = parseArgs(process.argv.slice(3));
     const cfg = loadConfig(args.config || undefined);
-    // --push 裸参数或 --push=true 视为开启；--no-push 强制关闭；缺省关闭（避免误触发自动提交）
+    // --push 裸参数或 --push=true 视为开启；--no-push ERROR关闭；缺省关闭（避免误触发自动提交）
     const pushTrue = "push" in args && (args["push"] === "" || args["push"] === "true");
     const noPush = "no-push" in args && args["no-push"] !== "false";
     const push = pushTrue && !noPush;

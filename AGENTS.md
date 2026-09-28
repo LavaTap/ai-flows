@@ -10,7 +10,8 @@
 | 范围 | 说明 |
 |------|------|
 | 生效 | 本仓库 `src/**` 全部源码、`web/**`（平台静态页）、`db/*.json`（账号与节点数据），以及 `package.json` / `tsconfig.json` |
-| 排除 | `dist/**` 是 `tsc` 构建产物，**禁止手工编辑**（下次构建即被覆盖）；`.agents/**` 是独立第三方 skill，各有自己的 SKILL.md/CLAUDE.md，不受本文件约束 |
+| 排除 | `dist/**` 是 `tsc` 构建产物，**禁止手工编辑**（下次构建即被覆盖）；`.agents/skills/` 下**借用的第三方 skill**（`writing-claude-md`、`skill-creator`、`ui-ux-pro-max`，均已 gitignore）各有自己的 SKILL.md/CLAUDE.md，不受本文件约束 |
+| 自有 skill | `.agents/skills/ai-flows/` 是本仓库自己的 agent 操作入口（与 `src/index.ts` 同源），用户说「初始化仓库 / 接入评审 / 检查密钥 / 代码评审 / 跑评审」时**先读它的 `SKILL.md` 路由表，只读命中的那一份业务文档**（`references/` 下），其余业务文档禁止打开或 `Grep` |
 | 本地文件 | `ai-review.config.json` 已 gitignore，属本地配置非源码；要维护的模板是 `config.example.json` |
 | 文档同步 | `plan.md`（平台账号/权限/节点模型）、`评审链路与说明.md`（评审链实操）、`评审触发指令.md`（触发评审的工具链指令速查）、`架构与数据流.md`（数据流图）——平台行为变更时必须同步对应文档 |
 

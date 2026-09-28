@@ -4,7 +4,7 @@
 
 ## 规则
 
-### STR-01（建议）复杂字符串格式化用 `%` 或 `.format`
+### STR-01（INFO）复杂字符串格式化用 `%` 或 `.format`
 - 只有 `a + b` 这种最简单的情况允许用 `+`。
 
 **YES**
@@ -19,7 +19,7 @@ x = imperative + ', ' + expletive + '!'
 x = 'name: ' + name + '; score: ' + str(n)
 ```
 
-### STR-02（建议）字符串列表拼接用 `''.join`，不要 `+=`
+### STR-02（INFO）字符串列表拼接用 `''.join`，不要 `+=`
 - Python 字符串不可变，每次 `+=` 都新建对象，循环里性能差。
 - 前提：列表元素全是 `str`；若混了数字等类型，用 `+=` 也可接受。
 
@@ -38,14 +38,14 @@ for last, first in employee_list:
     employee_table += '<tr><td>%s</td></tr>' % last
 ```
 
-### STR-03（强制）含非 ASCII 字符必须在文件前两行声明编码
+### STR-03（ERROR）含非 ASCII 字符必须在文件前两行声明编码
 ```python
 # -*- coding: utf-8 -*-
 ```
 - 允许 UTF-8 或 GB18030，推荐 UTF-8。
 - 位置必须在前两行。
 
-### STR-04（建议）禁止 `reload(sys); sys.setdefaultencoding('utf-8')`
+### STR-04（INFO）禁止 `reload(sys); sys.setdefaultencoding('utf-8')`
 - 这是 Py2 的老 hack，会带来隐式类型转换、第三方库兼容等问题。
 - 正确做法：程序内部统一 `unicode`，边界处尽早 decode、输出时 encode。
 

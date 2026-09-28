@@ -67,7 +67,7 @@ CLI --config <path>  >  环境变量 AI_REVIEW_CONFIG  >  默认 ./ai-review.con
 
 | 侧 | 位置 | 作用 |
 |---|---|---|
-| 项目 | `src/reviewer.ts` `normalizeIssues` / `writeReviewLog` | 评审链内强制校验：severity 走白名单（非法值兜底 `warning`）、`line`/`lineStart`/`lineEnd` 兼容、无 message 条目丢弃、兜底 category |
+| 项目 | `src/reviewer.ts` `normalizeIssues` / `writeReviewLog` | 评审链内ERROR校验：severity 走白名单（非法值兜底 `warning`）、`line`/`lineStart`/`lineEnd` 兼容、无 message 条目丢弃、兜底 category |
 | 技能 | `<skill-dir>/scripts/normalize-review.mjs` | 把模型原始输出（含围栏/前后缀）归一成标准 JSON，供手工核对或接入 |
 
 技能侧脚本用法：

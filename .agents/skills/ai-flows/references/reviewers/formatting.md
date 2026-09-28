@@ -4,34 +4,34 @@
 
 ## 规则
 
-### FMT-01（建议，PY021）禁止以分号结束语句
+### FMT-01（INFO，PY021）禁止以分号结束语句
 **NO**
 ```python
 do_thing();
 ```
 
-### FMT-02（建议，PY022）一行只能写一条语句
+### FMT-02（INFO，PY022）一行只能写一条语句
 **NO**
 ```python
 foo = 1; bar = 2
 ```
 
-### FMT-03（强制，PY023）每行 ≤ 120 字符
+### FMT-03（ERROR，PY023）每行 ≤ 120 字符
 - 字符串过长用括号隐式拼接：
 ```python
 x = ('This will build a very long long '
      'long long long long long long string')
 ```
 
-### FMT-04（强制）缩进用 4 个空格，禁止 Tab
+### FMT-04（ERROR）缩进用 4 个空格，禁止 Tab
 - 续行对齐：要么与首行括号对齐，要么首行留空、第二行起 4 空格悬挂。
 - 禁止 2 空格悬挂。
 
-### FMT-05（建议，PY027）空行
+### FMT-05（INFO，PY027）空行
 - 文件级定义（class / 顶层 def）之间隔 **两个**空行。
 - 类内方法之间隔 **一个**空行。
 
-### FMT-06（建议）避免冗余括号
+### FMT-06（INFO）避免冗余括号
 **YES**
 ```python
 if foo:
@@ -46,15 +46,15 @@ if not(x): bar()
 return (foo)
 ```
 
-### FMT-07（建议，PY028）括号内侧不加空格
+### FMT-07（INFO，PY028）括号内侧不加空格
 **YES** `spam(ham[1], {eggs: 2}, [])`
 **NO**  `spam( ham[ 1 ], { eggs: 2 }, [ ] )`
 
-### FMT-08（建议，PY029）函数名与左括号之间不加空格；索引左括号前不加空格
+### FMT-08（INFO，PY029）函数名与左括号之间不加空格；索引左括号前不加空格
 **YES** `spam(1)` `d['k']` `a[i]`
 **NO**  `spam (1)` `d ['k']`
 
-### FMT-09（强制，PY030）逗号/分号/冒号前不加空格，后面加一个空格
+### FMT-09（ERROR，PY030）逗号/分号/冒号前不加空格，后面加一个空格
 **YES**
 ```python
 if x == 4:
@@ -66,11 +66,11 @@ if x == 4 :
     print(x , y)
 ```
 
-### FMT-10（强制，PY031）二元运算符前后各一个空格
+### FMT-10（ERROR，PY031）二元运算符前后各一个空格
 **YES** `x == 1`、`a + b`
 **NO**  `x<1`、`a+b`
 
-### FMT-11（强制，PY032）关键字参数 / 默认值 `=` 两侧不加空格
+### FMT-11（ERROR，PY032）关键字参数 / 默认值 `=` 两侧不加空格
 **YES**
 ```python
 def complex(real, imag=0.0):
