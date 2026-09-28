@@ -1,4 +1,4 @@
-import { writeFileSync, readdirSync, statSync } from "node:fs";
+﻿import { writeFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { ReviewResult, ReviewIssue } from "./gate.js";
 import type { PushResult } from "./publisher.js";
@@ -175,7 +175,7 @@ body {
 }
 a { color:var(--info); text-decoration:none; }
 a:hover { text-decoration:underline; }
-.topbar { max-width:1320px; margin:0 auto; padding:16px 28px; display:flex; align-items:center; justify-content:space-between; gap:16px; border-bottom:1px solid var(--border); background:rgba(22,18,12,.85); backdrop-filter:blur(10px); position:sticky; top:0; z-index:10; }
+.topbar { max-width:1320px; margin:0 auto; padding:22px 28px; display:flex; align-items:center; justify-content:space-between; gap:16px; border-bottom:1px solid var(--border); }
 .brand { display:inline-flex; align-items:center; gap:10px; font-weight:700; letter-spacing:-.2px; font-size:15px; }
 .brand-mark { width:22px; height:22px; border-radius:6px; background:linear-gradient(145deg,#ff9a71 0%,#ff724c 60%,#e95235 100%); box-shadow:0 0 12px rgba(255,112,69,.45), inset 0 1px 0 rgba(255,255,255,.3); position:relative; }
 .brand-mark::before, .brand-mark::after { content:""; position:absolute; left:50%; transform:translateX(-50%); border-left:4px solid transparent; border-right:4px solid transparent; }
@@ -183,7 +183,7 @@ a:hover { text-decoration:underline; }
 .brand-mark::after { bottom:4px; border-top:5px solid #1a130c; }
 .back-link { font-size:13px; color:var(--muted); padding:6px 12px; border:1px solid var(--border); border-radius:8px; transition:all 150ms ease; }
 .back-link:hover { color:var(--text); border-color:var(--border-strong); background:var(--surface); text-decoration:none; }
-.main { max-width:1320px; margin:0 auto; padding:20px 28px 40px; }
+.main { max-width:1320px; margin:0 auto; padding:36px 28px 80px; }
 .verdict { display:flex; align-items:center; gap:22px; padding:26px 28px; background:linear-gradient(180deg, var(--ok-grad-1), var(--ok-grad-2)); border:1px solid var(--ok-line); border-radius:14px; position:relative; overflow:hidden; }
 .verdict::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--ok); box-shadow:0 0 18px var(--ok-glow); }
 .verdict-icon { width:52px; height:52px; flex:0 0 auto; border-radius:50%; display:grid; place-items:center; background:var(--ok-soft); border:1px solid var(--ok-line-strong); }
@@ -259,6 +259,7 @@ code { font-family:var(--mono); font-size:.92em; }
 .pushes h2 { margin:0 0 10px; font-size:12px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:var(--dim); }
 .pushes .row { display:flex; gap:10px; align-items:baseline; font-family:var(--mono); font-size:13px; padding:3px 0; }
 .pushes .ok { color:var(--ok); } .pushes .bad { color:var(--block); }
+.submit-bar { margin-top:22px; padding:18px 22px; background:var(--surface); border:1px solid var(--border); border-radius:12px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
 .push-btn { appearance:none; border:1px solid var(--accent); background:linear-gradient(180deg, var(--btn-grad-1), var(--btn-grad-2)); color:var(--accent); font-family:var(--sans); font-size:14px; font-weight:700; letter-spacing:.3px; padding:10px 22px; border-radius:10px; cursor:pointer; transition:all 150ms ease; }
 .push-btn:hover:not(:disabled) { background:linear-gradient(180deg, var(--btn-grad-hover-1), var(--btn-grad-hover-2)); box-shadow:0 0 0 3px var(--accent-soft); }
 .push-btn:active:not(:disabled) { transform:translateY(1px); }
@@ -274,62 +275,14 @@ code { font-family:var(--mono); font-size:.92em; }
 .push-result { flex:1; min-width:200px; font-family:var(--mono); font-size:12.5px; }
 .push-result .row { display:flex; gap:8px; align-items:baseline; padding:2px 0; flex-wrap:wrap; }
 .push-result .ok { color:var(--ok); } .push-result .bad { color:var(--block); }
-/* ===== 主体两栏：左 320 + 右 1fr ===== */
-.workspace { display:grid; grid-template-columns:320px 1fr; gap:14px; align-items:start; }
-/* 左侧：单一面板，内含仓库目录/变更文件/违反条例三段，冻结不随页面滚动 */
-.left-stack { position:sticky; top:92px; height:calc(100vh - 112px); }
-.left-panel { height:100%; background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column; }
-.left-panel-body { flex:1; min-height:0; overflow:auto; }
-.left-panel-body::-webkit-scrollbar { width:6px; }
-.left-panel-body::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:3px; }
-.left-section { border-bottom:1px solid var(--border); }
-.left-section:last-child { border-bottom:none; }
-.left-summary { padding:11px 14px; cursor:pointer; font-size:12px; font-weight:700; letter-spacing:1px; color:var(--dim); background:var(--surface-2); display:flex; align-items:center; gap:8px; list-style:none; }
-.left-summary::-webkit-details-marker { display:none; }
-.left-summary .icon { font-size:14px; }
-.left-summary .count { margin-left:auto; font-family:var(--mono); font-size:10.5px; padding:1px 7px; border-radius:999px; background:var(--accent-soft); color:var(--accent); }
-.left-sec-body { padding:4px 0; }
-/* 违反条例列表（按 category 分组） */
-.rule-list { padding:2px 0; }
-.rule-item { display:flex; align-items:center; gap:8px; padding:8px 14px; border-bottom:1px solid var(--border); cursor:pointer; transition:background 150ms ease; }
-.rule-item:last-child { border-bottom:none; }
-.rule-item:hover { background:var(--surface-2); }
-.rule-item .rule-sev { flex:0 0 auto; width:8px; height:8px; border-radius:50%; }
-.rule-item .rule-sev.blocker { background:var(--block); box-shadow:0 0 6px var(--block); }
-.rule-item .rule-sev.warning { background:var(--warn); box-shadow:0 0 6px var(--warn); }
-.rule-item .rule-sev.info { background:var(--ok); box-shadow:0 0 6px var(--ok); }
-.rule-item .rule-name { flex:1; min-width:0; font-size:12px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.rule-item .rule-count { flex:0 0 auto; font-size:10.5px; font-weight:700; padding:1px 8px; border-radius:999px; background:var(--accent-soft); color:var(--accent); }
-
-/* 右栏 */
-.right-col { display:flex; flex-direction:column; gap:12px; min-width:0; }
-/* 评审结果板块：可折叠 */
-.result-section { background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
-.result-head { padding:11px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; cursor:pointer; user-select:none; background:var(--surface-2); }
-.result-head h2 { margin:0; font-size:13px; font-weight:700; letter-spacing:.5px; }
-.result-head .result-caret { flex:0 0 auto; font-size:11px; color:var(--dim); transition:transform 200ms ease; }
-.result-section.collapsed .result-caret { transform:rotate(-90deg); }
-.result-body { padding:14px 16px 16px; }
-.result-section.collapsed .result-body { display:none; }
-.result-body .verdict { margin:0; }
-.result-body .summary { margin-top:12px; }
-.result-body .stats { margin-top:14px; }
-.result-body .pushes { margin-top:14px; }
-
-/* 提交按钮（顶栏） */
-.submit-toggle { appearance:none; border:1px solid var(--accent); background:linear-gradient(180deg, var(--btn-grad-1), var(--btn-grad-2)); color:var(--accent); font-family:var(--sans); font-size:13px; font-weight:700; padding:7px 16px; border-radius:8px; cursor:pointer; transition:all 150ms ease; display:inline-flex; align-items:center; gap:6px; }
-.submit-toggle:hover { background:linear-gradient(180deg, var(--btn-grad-hover-1), var(--btn-grad-hover-2)); box-shadow:0 0 0 3px var(--accent-soft); }
-.submit-toggle .dot { width:7px; height:7px; border-radius:50%; background:var(--accent); box-shadow:0 0 8px var(--accent); }
-/* 确认提交栏（顶栏下方展开） */
-.submit-bar-wrap { max-height:0; overflow:hidden; transition:max-height 300ms ease; }
-.submit-bar-wrap.open { max-height:300px; }
-.submit-bar { margin:10px 22px 0; padding:14px 20px; background:var(--surface); border:1px solid var(--border); border-radius:12px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
-/* 代码变更区（右侧，可滚动） */
-.diff-panel { background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:auto; display:flex; flex-direction:column; max-height:calc(100vh - 160px); }
-.diff-panel-head { padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; background:var(--surface-2); position:sticky; top:0; z-index:2; }
-.diff-panel-head h2 { margin:0; font-size:13px; font-weight:700; }
-.diff-panel-head .count { font-family:var(--mono); font-size:11.5px; color:var(--dim); }
-.diff-panel-head .filter-clear { margin-left:auto; }
+.footer { margin-top:50px; padding-top:20px; border-top:1px solid var(--border); font-size:12px; color:var(--dim); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+/* 左右分栏布局 */
+.split { display:grid; grid-template-columns:4fr 6fr; gap:24px; align-items:start; margin-top:8px; }
+.split-left, .split-right { min-width:0; }
+.diff-panel { position:sticky; top:20px; max-height:calc(100vh - 40px); overflow:auto; background:var(--surface); border:1px solid var(--border); border-radius:12px; }
+.diff-panel-head { padding:14px 18px; border-bottom:1px solid var(--border); display:flex; align-items:baseline; justify-content:space-between; background:var(--surface-2); border-radius:12px 12px 0 0; }
+.diff-panel-head h2 { margin:0; font-size:14px; font-weight:700; }
+.diff-panel-head .count { font-family:var(--mono); font-size:12px; color:var(--dim); }
 .diff-file { border-bottom:1px solid var(--border); }
 .diff-file:last-child { border-bottom:none; }
 .diff-file-head { display:flex; align-items:center; gap:10px; padding:8px 14px; font-family:var(--mono); font-size:12.5px; color:var(--accent); background:var(--surface-2); cursor:pointer; user-select:none; }
@@ -338,7 +291,7 @@ code { font-family:var(--mono); font-size:.92em; }
 .diff-file[data-collapsed="true"] .diff-file-head .chevron { transform:rotate(-90deg); }
 .diff-file-head .issue-count { margin-left:auto; flex:0 0 auto; font-size:11px; font-weight:700; padding:1px 8px; border-radius:999px; background:var(--warn-soft); color:var(--warn); }
 .diff-file-head .issue-count.zero { background:transparent; color:var(--dim); }
-.diff-file-body { overflow:visible; }
+.diff-file-body { overflow:hidden; }
 .diff-file[data-collapsed="true"] .diff-file-body { max-height:0; overflow:hidden; }
 .diff-hunk-head { padding:4px 14px; font-family:var(--mono); font-size:11px; color:var(--dim); background:var(--diff-hunk-bg); }
 .diff-line { display:flex; align-items:flex-start; font-family:var(--mono); font-size:12.5px; line-height:1.55; }
@@ -378,6 +331,25 @@ code { font-family:var(--mono); font-size:.92em; }
 .issue-menu-card .menu-sug p { margin:0; font-size:12.5px; color:var(--muted); line-height:1.55; white-space:pre-wrap; word-break:break-word; }
 @keyframes flash { 0%{background:var(--flash);} 100%{background:transparent;} }
 .diff-empty { padding:32px 20px; text-align:center; color:var(--dim); font-size:13px; }
+/* 左侧双面板（仓库目录 + 问题列表）+ 主区域布局 */
+.layout { display:grid; grid-template-columns:min-content min-content 1fr; gap:20px; align-items:start; margin-top:8px; }
+.layout-main { min-width:0; }
+.repo-panel, .issue-panel { position:sticky; top:20px; max-height:calc(100vh - 40px); display:flex; background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; transition:width 200ms ease, max-width 200ms ease, min-width 200ms ease; width:280px; }
+.issue-panel { width:240px; }
+.repo-panel.collapsed, .issue-panel.collapsed { width:36px; max-width:36px; min-width:36px; }
+.repo-panel.collapsed .repo-panel-body, .issue-panel.collapsed .repo-panel-body { display:none; }
+.repo-panel-toggle { flex:0 0 36px; width:36px; min-width:36px; border:none; border-right:1px solid var(--border); background:var(--surface-2); color:var(--muted); cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; transition:background 150ms ease, color 150ms ease; }
+.repo-panel-toggle:hover { color:var(--text); background:var(--surface-2); }
+.repo-panel-toggle svg { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; transition:transform 200ms ease; }
+.repo-panel.collapsed .repo-panel-toggle svg, .issue-panel.collapsed .repo-panel-toggle svg { transform:rotate(180deg); }
+.repo-panel-body { flex:1; min-width:0; overflow:auto; display:flex; flex-direction:column; }
+.repo-section { border-bottom:1px solid var(--border); }
+.repo-section:last-child { border-bottom:none; }
+.repo-summary { padding:12px 16px; cursor:pointer; font-size:12px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:var(--dim); background:var(--surface-2); display:flex; align-items:center; gap:8px; list-style:none; }
+.repo-summary::-webkit-details-marker { display:none; }
+.repo-sec-icon { font-size:14px; }
+.repo-sec-count { margin-left:auto; font-family:var(--mono); font-size:10.5px; padding:1px 7px; border-radius:999px; background:var(--accent-soft); color:var(--accent); }
+.repo-sec-body { padding:8px 4px 12px; }
 /* 目录树 */
 .tree-root, .tree-dir details { margin:0; }
 .tree-root > summary, .tree-summary { padding:4px 10px; cursor:pointer; font-size:12.5px; color:var(--muted); display:flex; align-items:center; gap:6px; border-radius:6px; transition:background 120ms ease; list-style:none; }
@@ -399,6 +371,18 @@ code { font-family:var(--mono); font-size:.92em; }
 .file-entry .file-count { flex:0 0 auto; font-size:10px; font-weight:700; padding:1px 7px; border-radius:999px; background:var(--accent-soft); color:var(--accent); }
 .file-entry .file-count.zero { background:transparent; color:var(--dim); }
 .file-empty { padding:18px 16px; text-align:center; color:var(--dim); font-size:12px; }
+/* 精简问题列表（一行） */
+.issue-list { padding:4px 0 8px; }
+.issue-row { display:flex; align-items:center; gap:8px; padding:7px 14px; border-bottom:1px solid var(--border); cursor:pointer; transition:background 150ms ease; outline:none; }
+.issue-row:last-child { border-bottom:none; }
+.issue-row:hover, .issue-row:focus { background:var(--surface-2); }
+.issue-row .sev { flex:0 0 auto; font-size:9.5px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; padding:2px 6px; border-radius:4px; }
+.issue-row.blocker .sev { background:var(--block); color:#fff; }
+.issue-row.warning .sev { background:var(--warn); color:#1a130c; }
+.issue-row.info .sev { background:var(--ok); color:#1a130c; }
+.issue-row .rule { flex:1; min-width:0; font-family:var(--mono); font-size:11px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+.issue-row .loc { flex:0 0 auto; font-family:var(--mono); font-size:10.5px; color:var(--dim); }
+.issue-filter-hint { padding:6px 14px; font-family:var(--mono); font-size:11px; color:var(--dim); }
 .empty { padding:18px 16px; text-align:center; color:var(--dim); font-size:12px; }
 /* 顶栏左对齐标题 + 右侧账号信息 */
 .topbar-left { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
@@ -412,7 +396,7 @@ code { font-family:var(--mono); font-size:.92em; }
 .account-info .acc-ref { color:var(--accent); }
 .account-info .acc-time { color:var(--muted); }
 .account-info .acc-author { color:var(--dim); }
-@media (max-width:1180px){ .workspace { grid-template-columns:1fr; } .left-stack { position:static; height:auto; } .diff-panel { max-height:none; } }
+@media (max-width:1180px){ .layout { grid-template-columns:1fr; } .repo-panel, .issue-panel { position:static; max-height:none; width:auto; } }
 @media (max-width:980px) { .diff-panel { position:static; max-height:none; } }
 @media (max-width:860px) { .stats { grid-template-columns:repeat(3,1fr); } }
 @media (max-width:560px) {
@@ -452,6 +436,16 @@ function accountHtml(v: ReportView): string {
   return parts.join(`<span class="acc-sep">·</span>`);
 }
 
+/** 问题区标题右侧的统计文案 */
+function countText(v: ReportView): string {
+  if (!v.total) return "0 条";
+  const parts: string[] = [];
+  if (v.counts.blocker) parts.push(`${v.counts.blocker} blocker`);
+  if (v.counts.warning) parts.push(`${v.counts.warning} warning`);
+  if (v.counts.info) parts.push(`${v.counts.info} info`);
+  return `${v.total} 条 · ${parts.join(" / ")}`;
+}
+
 function statCards(v: ReportView): string {
   const cards: [number, string, string, string][] = [
     [v.filesReviewed, "评审文件", "", ""],
@@ -471,29 +465,28 @@ function statCards(v: ReportView): string {
     .join("\n    ");
 }
 
-/** 违反条例列表：按 category（条例名）分组，统计命中次数，取最高 severity 着色。
- *  点击某项 → 自动展开对应 diff 文件并弹出该条例首条问题的菜单。 */
-function ruleList(v: ReportView): string {
+/** 问题列表精简为一行：[severity][rule][行号区间]，点击触发堆叠菜单在 diff 区间末尾展开。
+ *  完整问题内容 + 修复建议通过 buildIssueStore 注入 <script type="application/json">，
+ *  JS 点击列表项时按 file#lineEnd 分组取出堆叠渲染。 */
+function issueList(v: ReportView): string {
   if (!v.issues.length) return `<div class="empty">未发现问题。</div>`;
-  const groups = new Map<string, { count: number; sev: string }>();
-  const rank: Record<string, number> = { blocker: 3, warning: 2, info: 1 };
-  for (const i of v.issues) {
-    const g = groups.get(i.category) ?? { count: 0, sev: "info" };
-    g.count++;
-    if (rank[i.severity] > rank[g.sev]) g.sev = i.severity;
-    groups.set(i.category, g);
-  }
-  const items = [...groups.entries()]
-    .sort((a, b) => rank[b[1].sev] - rank[a[1].sev] || b[1].count - a[1].count)
-    .map(([cat, g]) => {
-      return `<div class="rule-item" data-rule="${esc(cat)}"><span class="rule-sev ${g.sev}"></span><span class="rule-name" title="${esc(cat)}">${esc(cat)}</span><span class="rule-count">${g.count}</span></div>`;
-    });
-  return `<div class="rule-list">${items.join("\n")}</div>`;
+  return v.issues
+    .map((i) => {
+      const range =
+        i.lineStart === i.lineEnd
+          ? `L${i.lineStart}`
+          : `L${i.lineStart}-${i.lineEnd}`;
+      return `<article class="issue-row ${i.severity}" data-severity="${i.severity}" data-file="${esc(i.file)}" data-line-start="${i.lineStart}" data-line-end="${i.lineEnd}" tabindex="0">
+    <span class="sev ${i.severity}">${esc(i.severity)}</span>
+    <code class="rule" title="${esc(i.category)}">${esc(i.category)}</code>
+    <span class="loc">${esc(range)}</span>
+  </article>`;
+    })
+    .join("\n  ");
 }
 
 /** 右侧 diff 面板：按文件渲染 hunks，新增绿、删除红、上下文灰，行号对应 AI 报告行号。
- *  每个文件默认折叠（仅显示文件名 + 增删行数 + 问题数），点击表头展开。
- *  问题行在渲染时预标注 hl-{severity} 类，便于用户直接看到问题位置并点击展开菜单。 */
+ *  每个文件默认折叠（仅显示文件名 + 增删行数 + 问题数），点击表头展开。 */
 function diffPanel(v: ReportView): string {
   if (!v.diffFiles || !v.diffFiles.length) {
     return `<div class="diff-empty">无代码变更数据。</div>`;
@@ -503,22 +496,10 @@ function diffPanel(v: ReportView): string {
   for (const i of v.issues) {
     issueCount.set(i.file, (issueCount.get(i.file) ?? 0) + 1);
   }
-  // 预计算每行的最高 severity（blocker > warning > info），用于初始高亮
-  const sevRank: Record<string, number> = { blocker: 3, warning: 2, info: 1 };
-  const lineSev = new Map<string, Map<number, string>>();
-  for (const i of v.issues) {
-    if (!lineSev.has(i.file)) lineSev.set(i.file, new Map());
-    const m = lineSev.get(i.file)!;
-    for (let n = i.lineStart; n <= i.lineEnd; n++) {
-      const cur = m.get(n);
-      if (!cur || sevRank[i.severity] > sevRank[cur]) m.set(n, i.severity);
-    }
-  }
   return v.diffFiles
     .map((f) => {
       let addCount = 0;
       let delCount = 0;
-      const sevMap = lineSev.get(f.path);
       const body = f.hunks
         .map((h) => {
           const head = `<div class="diff-hunk-head">@@ -${h.oldStart},${h.oldEnd - h.oldStart + 1} +${h.newStart},${h.newEnd - h.newStart + 1} @@</div>`;
@@ -528,17 +509,12 @@ function diffPanel(v: ReportView): string {
               else if (l.type === "del") delCount++;
               const oldG = l.oldNo !== undefined ? String(l.oldNo) : "";
               const newG = l.newNo !== undefined ? String(l.newNo) : "";
-              // 仅 add/ctx 行带 data-line（newNo），供问题联动定位；del 行无 newNo 不参与
+              // 仅 add/ctx 行带 data-line（newNo），供左侧问题联动定位；del 行无 newNo 不参与
               const dataLine =
                 l.newNo !== undefined
                   ? ` data-file="${esc(f.path)}" data-line="${l.newNo}"`
                   : "";
-              // 预标注问题行高亮
-              const hlCls =
-                l.newNo !== undefined && sevMap?.has(l.newNo)
-                  ? ` hl-${sevMap.get(l.newNo)}`
-                  : "";
-              return `      <div class="diff-line ${l.type}${hlCls}"${dataLine}>
+              return `      <div class="diff-line ${l.type}"${dataLine}>
         <span class="gutter">${oldG}</span>
         <span class="gutter">${newG}</span>
         <code class="content">${esc(l.text)}</code>
@@ -836,6 +812,7 @@ function submitBar(v: ReportView): string {
 export function renderTemplate(v: ReportView): string {
   const passIcon = `<polyline points="4 12 10 18 20 6"></polyline>`;
   const blockIcon = `<line x1="6" y1="6" x2="18" y2="18"></line><line x1="18" y1="6" x2="6" y2="18"></line>`;
+  const rules = v.categories.length ? v.categories.join(" · ") : "default";
   return `<!doctype html>
 <html lang="zh">
 <head>
@@ -869,7 +846,6 @@ export function renderTemplate(v: ReportView): string {
   </div>
   <div class="topbar-actions">
     <span class="account-info">${accountHtml(v)}</span>
-    <button type="button" class="submit-toggle" id="submitToggle" title="展开确认提交栏"><span class="dot"></span>提交</button>
     <button type="button" class="theme-toggle" id="themeToggle" title="切换日间/夜间主题" aria-label="切换日间/夜间主题">
       <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
       <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><line x1="12" y1="2" x2="12" y2="5"></line><line x1="12" y1="19" x2="12" y2="22"></line><line x1="2" y1="12" x2="5" y2="12"></line><line x1="19" y1="12" x2="22" y2="12"></line><line x1="4.6" y1="4.6" x2="6.7" y2="6.7"></line><line x1="17.3" y1="17.3" x2="19.4" y2="19.4"></line><line x1="4.6" y1="19.4" x2="6.7" y2="17.3"></line><line x1="17.3" y1="6.7" x2="19.4" y2="4.6"></line></svg>
@@ -878,73 +854,74 @@ export function renderTemplate(v: ReportView): string {
   </div>
 </header>
 
-<div class="submit-bar-wrap" id="submitBarWrap">${submitBar(v)}</div>
-
 <main class="main">
-  <div class="workspace">
-    <!-- 左栏：单一面板，内含仓库目录/变更文件/违反条例三段 -->
-    <div class="left-stack">
-      <div class="left-panel">
-        <div class="left-panel-body">
-          <details class="left-section" open>
-            <summary class="left-summary"><span class="icon">📁</span>仓库目录</summary>
-            <div class="left-sec-body">${repoTreeHtml(v)}</div>
-          </details>
-          <details class="left-section" open>
-            <summary class="left-summary"><span class="icon">📝</span>变更文件 <span class="count">${v.diffFiles?.length ?? 0}</span></summary>
-            <div class="left-sec-body">${filePanel(v)}</div>
-          </details>
-          <details class="left-section" open>
-            <summary class="left-summary"><span class="icon">⚠</span>违反条例 <span class="count">${v.total}</span></summary>
-            <div class="left-sec-body">${ruleList(v)}</div>
-          </details>
-        </div>
+
+  <div class="layout">
+    <aside class="repo-panel" id="repoPanel" aria-label="仓库目录">
+      <button type="button" class="repo-panel-toggle" id="repoPanelToggle" title="折叠/展开仓库目录" aria-label="折叠/展开仓库目录">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>
+      </button>
+      <div class="repo-panel-body" id="repoPanelBody">
+        <details class="repo-section" open>
+          <summary class="repo-summary"><span class="repo-sec-icon">📁</span>仓库目录</summary>
+          <div class="repo-sec-body">${repoTreeHtml(v)}</div>
+        </details>
+        <details class="repo-section" open>
+          <summary class="repo-summary"><span class="repo-sec-icon">📝</span>变更文件 <span class="repo-sec-count">${v.diffFiles?.length ?? 0}</span></summary>
+          <div class="repo-sec-body">${filePanel(v)}</div>
+        </details>
       </div>
-    </div>
-
-    <!-- 右栏：评审结果 + 代码变更 -->
-    <div class="right-col">
-      <section class="result-section" id="resultSection">
-        <div class="result-head" id="resultHead">
-          <span class="result-caret">▾</span>
-          <h2>评审结果</h2>
+    </aside>
+    <aside class="issue-panel" id="issuePanel" aria-label="问题列表">
+      <button type="button" class="repo-panel-toggle" id="issuePanelToggle" title="折叠/展开问题列表" aria-label="折叠/展开问题列表">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>
+      </button>
+      <div class="repo-panel-body" id="issuePanelBody">
+        <details class="repo-section" open>
+          <summary class="repo-summary"><span class="repo-sec-icon">⚠</span>问题列表 <span class="repo-sec-count">${v.total}</span></summary>
+          <div class="repo-sec-body">
+            <div class="issue-filter-hint" id="issueFilterHint">${countText(v)}</div>
+            <div class="issue-list">${issueList(v)}</div>
+          </div>
+        </details>
+      </div>
+    </aside>
+    <div class="layout-main">
+      <section class="verdict ${v.passed ? "" : "block"}" aria-label="评审结论">
+        <div class="verdict-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            ${v.passed ? passIcon : blockIcon}
+          </svg>
         </div>
-        <div class="result-body">
-          <section class="verdict ${v.passed ? "" : "block"}" aria-label="评审结论">
-            <div class="verdict-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                ${v.passed ? passIcon : blockIcon}
-              </svg>
-            </div>
-            <div class="verdict-text">
-              <h1>${v.passed ? "评审通过" : "评审未通过"}</h1>
-              <p class="verdict-meta">${esc(v.generatedAt)} · 由 ai-review 自动生成 · ${v.filesReviewed} 个文件参与评审${
-                v.passed ? "" : ` · ${v.counts.blocker} 个阻塞级问题已拦截`
-              }</p>
-            </div>
-            <span class="verdict-pill ${v.passed ? "" : "block"}">${v.passed ? "PASS" : "BLOCK"}</span>
-          </section>
+        <div class="verdict-text">
+          <h1>${v.passed ? "评审通过" : "评审未通过"}</h1>
+          <p class="verdict-meta">${esc(v.generatedAt)} · 由 ai-review 自动生成 · ${v.filesReviewed} 个文件参与评审${
+            v.passed ? "" : ` · ${v.counts.blocker} 个阻塞级问题已拦截`
+          }</p>
+        </div>
+        <span class="verdict-pill ${v.passed ? "" : "block"}">${v.passed ? "PASS" : "BLOCK"}</span>
+      </section>
 
-          <section class="summary" id="summary" aria-label="评审摘要">
-            <div class="summary-head" id="summaryHead">
-              <h2>评审摘要</h2>
-              <button type="button" class="summary-toggle" aria-label="展开/收纳摘要" aria-expanded="true">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-              </button>
-            </div>
-            <div class="summary-body" id="summaryBody">
-              <p>${esc(v.summary)}</p>
-              <button type="button" class="summary-toggle-all" id="summaryToggleAll" data-expanded="false" aria-label="展开/收起摘要全部"></button>
-            </div>
-          </section>
-
-          <section class="stats" aria-label="评审指标">
-            ${statCards(v)}
-          </section>
-
-          ${pushSection(v)}
+      <section class="summary" id="summary" aria-label="评审摘要">
+        <div class="summary-head" id="summaryHead">
+          <h2>评审摘要</h2>
+          <button type="button" class="summary-toggle" aria-label="展开/收纳摘要" aria-expanded="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+        </div>
+        <div class="summary-body" id="summaryBody">
+          <p>${esc(v.summary)}</p>
+          <button type="button" class="summary-toggle-all" id="summaryToggleAll" data-expanded="false" aria-label="展开/收起摘要全部"></button>
         </div>
       </section>
+
+      <section class="stats" aria-label="评审指标">
+        ${statCards(v)}
+      </section>
+
+      ${submitBar(v)}
+
+      ${pushSection(v)}
 
       <section class="diff-panel">
         <div class="diff-panel-head">
@@ -956,6 +933,12 @@ export function renderTemplate(v: ReportView): string {
       </section>
     </div>
   </div>
+
+  <footer class="footer">
+    <span>ai-review · AI 代码评审工作流</span>
+    <span>规则集：${esc(rules)}</span>
+  </footer>
+
 </main>
 <script type="application/json" id="issueStore">${buildIssueStore(v)}</script>
 <script>
@@ -985,49 +968,27 @@ export function renderTemplate(v: ReportView): string {
       if(btn) btn.setAttribute('aria-expanded', summary.classList.contains('collapsed') ? 'false' : 'true');
     });
   }
-  /* 提交栏展开/收起 */
-  var submitToggle = document.getElementById('submitToggle');
-  var submitBarWrap = document.getElementById('submitBarWrap');
-  if(submitToggle && submitBarWrap){
-    submitToggle.addEventListener('click', function(){
-      submitBarWrap.classList.toggle('open');
-    });
-  }
-  /* 评审结果板块收纳 */
-  var resultSection = document.getElementById('resultSection');
-  var resultHead = document.getElementById('resultHead');
-  if(resultSection && resultHead){
-    resultHead.addEventListener('click', function(){
-      resultSection.classList.toggle('collapsed');
-    });
-  }
-  /* 统计卡点击：定位到该 severity 首条问题并展开 diff + 问题菜单 */
+  /* 统计卡点击筛选问题（选择器同步改 .issue-row） */
   var sevCards = document.querySelectorAll('.stat.sev-tog[data-severity]');
   var filterClear = document.getElementById('filterClear');
+  var issueEls = document.querySelectorAll('.issue-row[data-severity]');
   var currentFilter = null;
-  function findFirstIssueBySev(sev){
-    if(!issueStore) return null;
-    var keys = Object.keys(issueStore);
-    for(var i=0;i<keys.length;i++){
-      var items = issueStore[keys[i]];
-      for(var j=0;j<items.length;j++){
-        if(items[j].severity === sev){
-          var parts = keys[i].split('#');
-          return { file: parts[0], ls: items[j].lineStart, le: items[j].lineEnd, sev: sev };
-        }
-      }
-    }
-    return null;
-  }
   function applyFilter(sev){
     currentFilter = sev;
-    sevCards.forEach(function(c){
-      c.classList.toggle('active', c.getAttribute('data-severity') === sev);
+    issueEls.forEach(function(el){
+      if(!sev || el.getAttribute('data-severity') === sev){
+        el.classList.remove('hidden');
+      } else {
+        el.classList.add('hidden');
+      }
     });
-    if(filterClear) filterClear.classList.toggle('show', !!sev);
-    if(!sev) return;
-    var hit = findFirstIssueBySev(sev);
-    if(hit) showIssueMenu(hit.file, hit.ls, hit.le, hit.sev);
+    sevCards.forEach(function(c){
+      var active = c.getAttribute('data-severity') === sev;
+      c.classList.toggle('active', active);
+    });
+    if(filterClear){
+      filterClear.classList.toggle('show', !!sev);
+    }
   }
   sevCards.forEach(function(c){
     c.addEventListener('click', function(){
@@ -1036,78 +997,17 @@ export function renderTemplate(v: ReportView): string {
     });
   });
   if(filterClear){
-    filterClear.addEventListener('click', function(){ applyFilter(null); });
+    filterClear.addEventListener('click', function(){
+      applyFilter(null);
+    });
   }
-  /* 在 issueStore 中查找指定文件的首条问题 */
-  function findFirstIssueByFile(file){
-    if(!issueStore) return null;
-    var keys = Object.keys(issueStore);
-    for(var i=0;i<keys.length;i++){
-      if(keys[i].indexOf(file + '#') === 0){
-        var items = issueStore[keys[i]];
-        if(items && items.length){
-          return { file: file, ls: items[0].lineStart, le: items[0].lineEnd, sev: items[0].severity };
-        }
-      }
-    }
-    return null;
-  }
-  /* 在 issueStore 中查找指定条例（category）的首条问题 */
-  function findFirstIssueByRule(rule){
-    if(!issueStore) return null;
-    var keys = Object.keys(issueStore);
-    for(var i=0;i<keys.length;i++){
-      var items = issueStore[keys[i]];
-      for(var j=0;j<items.length;j++){
-        if(items[j].category === rule){
-          var parts = keys[i].split('#');
-          return { file: parts[0], ls: items[j].lineStart, le: items[j].lineEnd, sev: items[j].severity };
-        }
-      }
-    }
-    return null;
-  }
-  /* 点击高亮 diff 行 → 弹出该行问题菜单 */
+  /* 点击问题项 → 在 diff 区间末尾行后展开堆叠菜单 + 高亮区间（按 severity 配色） */
   var panel = document.querySelector('.diff-panel');
   var issueStore = null;
   try {
     var storeEl = document.getElementById('issueStore');
     if(storeEl) issueStore = JSON.parse(storeEl.textContent || '{}');
   } catch(e){ issueStore = null; }
-  if(panel){
-    panel.addEventListener('click', function(e){
-      var line = e.target.closest('.diff-line.hl-blocker, .diff-line.hl-warning, .diff-line.hl-info');
-      if(!line) return;
-      var file = line.getAttribute('data-file');
-      var ln = parseInt(line.getAttribute('data-line'),10);
-      if(!file || !ln) return;
-      // 在 issueStore 中找覆盖该行的问题
-      var hit = null;
-      var keys = Object.keys(issueStore || {});
-      for(var i=0;i<keys.length;i++){
-        if(keys[i].indexOf(file + '#') !== 0) continue;
-        var items = issueStore[keys[i]];
-        for(var j=0;j<items.length;j++){
-          if(ln >= items[j].lineStart && ln <= items[j].lineEnd){
-            hit = { file: file, ls: items[j].lineStart, le: items[j].lineEnd, sev: items[j].severity };
-            break;
-          }
-        }
-        if(hit) break;
-      }
-      if(hit) showIssueMenu(hit.file, hit.ls, hit.le, hit.sev);
-    });
-  }
-  /* 违反条例项点击 → 展开该条例首条问题的菜单 */
-  var ruleItems = document.querySelectorAll('.rule-item');
-  ruleItems.forEach(function(item){
-    item.addEventListener('click', function(){
-      var rule = item.getAttribute('data-rule');
-      if(!rule) return;
-      var hit = findFirstIssueByRule(rule);
-      if(hit) showIssueMenu(hit.file, hit.ls, hit.le, hit.sev);
-    });
-  });
   function clearIssueMenus(){
     document.querySelectorAll('.issue-menu').forEach(function(el){ el.remove(); });
   }
@@ -1144,9 +1044,9 @@ export function renderTemplate(v: ReportView): string {
       var sev = it.severity || 'info';
       var sevCls = 'sev-' + (sev === 'blocker' ? 'blocker' : (sev === 'warning' ? 'warning' : 'info'));
       var sug = it.suggestion ? '<div class="menu-sug"><span class="tag">INFO</span><p>' + escS(it.suggestion) + '</p></div>' : '';
-      /* 默认展开：severity + rule + loc + 问题描述 + 建议，一直显示不折叠 */
-      return '<div class="issue-menu-card ' + sevCls + '">' +
-        '<div class="menu-head"><span class="sev ' + sev + '">' + escS(sev) + '</span><code class="rule">' + escS(it.category || '') + '</code><code class="loc">' + escS(it.loc || '') + '</code></div>' +
+      /* 默认折叠：只显示 head（severity + rule + loc），点击 head 展开 body */
+      return '<div class="issue-menu-card collapsed ' + sevCls + '">' +
+        '<div class="menu-head"><span class="menu-caret">▸</span><span class="sev ' + sev + '">' + escS(sev) + '</span><code class="rule">' + escS(it.category || '') + '</code><code class="loc">' + escS(it.loc || '') + '</code></div>' +
         '<div class="menu-body"><p class="menu-msg">' + escS(it.message || '') + '</p>' + sug + '</div></div>';
     }).join('');
   }
@@ -1184,11 +1084,39 @@ export function renderTemplate(v: ReportView): string {
     } else {
       body.appendChild(menu);
     }
+    /* 卡片 head 点击切换折叠态 */
+    menu.querySelectorAll('.issue-menu-card .menu-head').forEach(function(head){
+      head.addEventListener('click', function(e){
+        e.preventDefault();
+        e.stopPropagation();
+        head.parentNode.classList.toggle('collapsed');
+      });
+    });
     menu.scrollIntoView({behavior:'smooth', block:'center'});
+  }
+  if(issueEls.length && panel){
+    issueEls.forEach(function(el){
+      el.addEventListener('click', function(){
+        var file = el.getAttribute('data-file');
+        var ls = parseInt(el.getAttribute('data-line-start'),10) || 0;
+        var le = parseInt(el.getAttribute('data-line-end'),10) || ls;
+        var sev = el.getAttribute('data-severity') || 'info';
+        if(!ls) return;
+        showIssueMenu(file, ls, le, sev);
+      });
+    });
   }
   /* 查找指定路径对应的 diff 文件块（用属性值逐项比较，避免 CSS 选择器转义问题） */
   function findDiffFile(path){
     var all = document.querySelectorAll('.diff-file[data-file]');
+    for(var i=0;i<all.length;i++){
+      if(all[i].getAttribute('data-file') === path) return all[i];
+    }
+    return null;
+  }
+  /* 查找指定路径对应的第一条问题 */
+  function findFirstIssue(path){
+    var all = document.querySelectorAll('.issue-row[data-file]');
     for(var i=0;i<all.length;i++){
       if(all[i].getAttribute('data-file') === path) return all[i];
     }
@@ -1213,27 +1141,45 @@ export function renderTemplate(v: ReportView): string {
       summaryToggleAll.setAttribute('data-expanded', expanded ? 'true' : 'false');
     });
   }
-  /* 左侧变更文件点击：展开对应 diff 文件并弹出首条问题菜单 */
+  /* 左侧文件目录点击：优先滚动到该文件的第一条问题（触发联动高亮 + 展开 diff）；
+     无问题则滚动到对应 diff 文件并展开 */
   var fileEntries = document.querySelectorAll('.file-entry');
   fileEntries.forEach(function(entry){
     entry.addEventListener('click', function(e){
       e.preventDefault();
       var path = entry.getAttribute('data-file');
       if(!path) return;
-      document.querySelectorAll('.file-entry').forEach(function(f){ f.classList.remove('active'); });
       entry.classList.add('active');
+      var firstIssue = findFirstIssue(path);
+      if(firstIssue){
+        firstIssue.scrollIntoView({behavior:'smooth', block:'center'});
+        firstIssue.click();
+        return;
+      }
       var df = findDiffFile(path);
       if(df){
         df.setAttribute('data-collapsed', 'false');
-        var hit = findFirstIssueByFile(path);
-        if(hit){
-          showIssueMenu(hit.file, hit.ls, hit.le, hit.sev);
-        } else {
-          df.scrollIntoView({behavior:'smooth', block:'start'});
-        }
+        df.scrollIntoView({behavior:'smooth', block:'start'});
       }
     });
   });
+  /* 仓库面板折叠/展开为窄条（保留按钮可重新展开） */
+  function bindPanelToggle(panelId, toggleId){
+    var panel = document.getElementById(panelId);
+    var toggle = document.getElementById(toggleId);
+    if(!panel || !toggle) return;
+    toggle.addEventListener('click', function(e){
+      e.preventDefault();
+      panel.classList.toggle('collapsed');
+    });
+    toggle.addEventListener('mousedown', function(e){
+      if(panel.classList.contains('collapsed')){
+        e.preventDefault();
+      }
+    });
+  }
+  bindPanelToggle('repoPanel', 'repoPanelToggle');
+  bindPanelToggle('issuePanel', 'issuePanelToggle');
   var btn = document.getElementById('pushBtn');
   var commitInput = document.getElementById('commitMsg');
   // 提交按钮只在用户输入非空 commit 信息后启用

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>账号管理 · AI-FLOWS 平台</title>
+  <link rel="stylesheet" href="./ai-pipeline.css">
+  <style>
+    /* 账号管理页专用样式 */
+    .page-shell{max-width:720px;margin:0 auto;padding:32px 24px 80px;}
+    .page-title{font:300 28px/36px var(--font-sans);color:var(--ink-soft);margin:0 0 4px;}
+    .page-title em{font-style:normal;color:var(--led);font-weight:500;}
+    .page-sub{font:400 13px/20px var(--font-sans);color:var(--muted);margin:0 0 28px;}
+    .card{background:var(--glass-fill);border:1px solid var(--glass-line);border-radius:var(--radius-card);
+      backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:24px 28px;margin-bottom:20px;
+      box-shadow:0 1px 2px rgba(0,0,0,.03);}
+    .card h2{margin:0 0 16px;font:600 15px/22px var(--font-sans);color:var(--ink-soft);
+      display:flex;align-items:center;gap:8px;}
+    .card h2 .dot{width:6px;height:6px;border-radius:50%;background:var(--led);box-shadow:0 0 6px var(--led-glow);}
+    .profile-row{display:flex;align-items:center;gap:20px;}
+    .profile-avatar{width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+      color:#fff;font:600 28px/1 var(--font-sans);box-shadow:0 4px 12px rgba(20,20,20,.15);flex:none;}
+    .profile-info{flex:1;min-width:0;}
+    .profile-name{font:700 20px/28px var(--font-sans);color:var(--ink-soft);}
+    .profile-email{font:400 13px/20px var(--font-sans);color:var(--muted);margin-top:2px;}
+    .profile-meta{display:flex;gap:16px;margin-top:10px;flex-wrap:wrap;}
+    .meta-item{font:400 12px/18px var(--font-sans);color:var(--copy);}
+    .meta-item b{font-weight:600;color:var(--ink-soft);margin-right:4px;}
+    .badge{display:inline-block;padding:2px 8px;border-radius:999px;font:500 11px/16px var(--font-sans);}
+    .badge.supervisor{background:var(--led-soft);color:var(--led);}
+    .badge.staff{background:var(--teal-soft);color:var(--teal);}
+    .gh-section{display:flex;flex-direction:column;gap:12px;}
+    .gh-row{display:flex;align-items:center;gap:12px;}
+    .gh-icon{width:28px;height:28px;border-radius:50%;background:#24292f;display:flex;align-items:center;justify-content:center;
+      color:#fff;font:700 14px/1 var(--font-sans);flex:none;}
+    .gh-info{flex:1;min-width:0;}
+    .gh-label{font:600 13px/20px var(--font-sans);color:var(--ink-soft);}
+    .gh-value{font:400 12px/18px var(--font-sans);color:var(--muted);}
+    .gh-pending{background:var(--amber-soft);color:var(--amber);border:1px solid var(--amber-line);
+      border-radius:8px;padding:8px 12px;font:400 12px/18px var(--font-sans);}
+    .gh-input-row{display:flex;gap:8px;}
+    .gh-input-row input{flex:1;padding:8px 12px;border:1px solid var(--glass-line);border-radius:8px;
+      background:rgba(255,255,255,.7);font:400 13px/20px var(--font-sans);color:var(--ink);font-family:var(--font-mono);}
+    .gh-input-row input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-soft);}
+    .btn{padding:8px 16px;border-radius:8px;font:500 12px/18px var(--font-sans);cursor:pointer;
+      border:1px solid var(--glass-line);background:var(--glass-fill);color:var(--ink-soft);white-space:nowrap;}
+    .btn:hover{background:rgba(255,255,255,.8);}
+    .btn.primary{background:var(--teal);color:#fff;border-color:var(--teal);}
+    .btn.primary:hover{background:#21887f;}
+    .btn.danger{background:var(--led-soft);color:var(--led);border-color:rgba(173,49,77,.2);}
+    .btn.danger:hover{background:rgba(173,49,77,.18);}
+    .btn:disabled{opacity:.5;cursor:not-allowed;}
+    .breadcrumb{display:flex;align-items:center;gap:8px;font:400 12px/18px var(--font-sans);color:var(--muted);margin-bottom:16px;}
+    .breadcrumb a{color:var(--muted);text-decoration:none;}
+    .breadcrumb a:hover{color:var(--led);}
+    .breadcrumb .sep{opacity:.5;}
+    .breadcrumb .current{color:var(--ink-soft);font-weight:500;}
+  </style>
+</head>
+<body>
+  <!-- 顶栏 -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot" aria-hidden="true"></span>
+      <h1 class="brand-title">
+        <span class="tt-pipeline">AI-FLOWS</span>
+        <span class="tt-sep">/</span>
+        <span>账号管理</span>
+      </h1>
+    </div>
+    <div class="top-right">
+      <a href="/pipeline" class="nav-link" style="font:500 12px/18px var(--font-sans);color:var(--ink-soft);text-decoration:none;padding:4px 10px;border-radius:999px;">管线</a>
+      <a href="/account" class="nav-link active" style="font:500 12px/18px var(--font-sans);color:var(--led);text-decoration:none;padding:4px 10px;border-radius:999px;background:var(--led-soft);">账号管理</a>
+      <a href="/team" id="teamLink" class="nav-link" style="font:500 12px/18px var(--font-sans);color:var(--ink-soft);text-decoration:none;padding:4px 10px;border-radius:999px;display:none;">团队管理</a>
+      <button class="logout" id="logoutBtn">退出</button>
+    </div>
+  </header>
+
+  <div class="page-shell">
+    <div class="breadcrumb">
+      <a href="/pipeline">管线</a>
+      <span class="sep">›</span>
+      <span class="current">账号管理</span>
+    </div>
+
+    <h1 class="page-title"><em>我的账号</em></h1>
+    <p class="page-sub">管理你的个人资料与 GitHub 绑定</p>
+
+    <!-- 个人资料 -->
+    <div class="card">
+      <h2><span class="dot"></span>个人资料</h2>
+      <div class="profile-row">
+        <div class="profile-avatar" id="avatar"></div>
+        <div class="profile-info">
+          <div class="profile-name" id="nameEl"></div>
+          <div class="profile-email" id="emailEl"></div>
+          <div class="profile-meta">
+            <span class="meta-item"><b>部门</b><span id="deptEl"></span></span>
+            <span class="meta-item"><b>职位</b><span id="titleEl"></span></span>
+            <span class="meta-item"><span class="badge" id="roleBadge"></span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GitHub 绑定 -->
+    <div class="card">
+      <h2><span class="dot" style="background:#24292f;box-shadow:0 0 6px rgba(36,41,47,.3);"></span>GitHub 绑定</h2>
+      <div class="gh-section" id="ghSection">
+        <!-- 由 JS 渲染 -->
+      </div>
+    </div>
+  </div>
+</body>
+</html>
