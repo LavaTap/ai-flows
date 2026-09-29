@@ -9,6 +9,16 @@ ai-review.config.json
 .ai-review-reports/
 review-report.md
 
+# 运行时数据：SQLite 三库（含 WAL/SHM 日志）与上传二进制，均不入版本库
+# 注意：db/*.json 是 SQLite 首次导入的种子数据，仍需跟踪，勿忽略
+db/*.sqlite
+db/*.sqlite-wal
+db/*.sqlite-shm
+db/*.sqlite-journal
+db/chat-uploads/
+db/ticket-uploads/
+db/avatars/
+
 # 其他借用的非原创agents
 .agents/skills/writing-claude-md/
 .agents/skills/skill-creator/
