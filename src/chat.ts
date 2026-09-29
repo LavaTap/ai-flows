@@ -11,19 +11,50 @@ export const PROVIDER_DEFAULT_ENDPOINTS: Record<string, string> = {
   baidu: "https://qianfan.baidubce.com/v2",
 };
 
+/** 多模态内容分段：文本段 / 图片段（OpenAI 兼容 content 数组） */
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+/** 工具定义（OpenAI tools 参数格式） */
+export interface ToolDef {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
+/** 模型请求的工具调用（流式按 index 累积后的完整结构） */
+export interface ToolCall {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+}
+
 /** 聊天消息（拼装进 LLM prompt 的最小结构） */
 export interface ChatPromptMessage {
-  role: "system" | "user" | "assistant";
-  content: string;
+  role: "system" | "user" | "assistant" | "tool";
+  /** 纯文本，或多模态分段数组；tool 结果消息也可为纯文本 */
+  content: string | ContentPart[] | null;
+  /** assistant 消息请求调用的工具 */
+  tool_calls?: ToolCall[];
+  /** tool 消息对应的工具调用 id */
+  tool_call_id?: string;
+  /** tool 消息的函数名（部分 provider 需要） */
+  name?: string;
 }
 
 /** 流式调用产出的 chunk */
 export interface StreamChunk {
-  type: "delta" | "usage" | "done";
+  type: "delta" | "usage" | "done" | "tool_call";
   /** 增量文本（type=delta 时有值） */
   delta?: string;
   /** token 用量（type=usage 时有值） */
   usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+  /** 累积完成的工具调用（type=tool_call，流结束时若有则给一次） */
+  toolCalls?: ToolCall[];
 }
 
 /**
@@ -34,7 +65,7 @@ export interface StreamChunk {
 export async function* callModelStream(
   model: ModelConfig,
   messages: ChatPromptMessage[],
-  opts: { maxTokens?: number; temperature?: number; signal?: AbortSignal } = {}
+  opts: { maxTokens?: number; temperature?: number; signal?: AbortSignal; tools?: ToolDef[] } = {}
 ): AsyncGenerator<StreamChunk> {
   const apiKey = resolveApiKey(model);
   if (!apiKey) {
@@ -57,6 +88,7 @@ export async function* callModelStream(
       temperature: opts.temperature ?? 0.7,
       stream: true,
       stream_options: { include_usage: true },
+      ...(opts.tools && opts.tools.length ? { tools: opts.tools } : {}),
     }),
   });
 
@@ -72,6 +104,8 @@ export async function* callModelStream(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let pending = "";
+  // 工具调用增量按 index 累积（arguments 跨多个 chunk 拼接）
+  const toolAcc = new Map<number, ToolCall>();
 
   // 按行扫描 SSE：data: {...}\n\n 为一个事件块
   try {
@@ -89,17 +123,37 @@ export async function* callModelStream(
           if (!trimmed.startsWith("data:")) continue;
           const payload = trimmed.slice(5).trim();
           if (payload === "[DONE]") {
+            yield* flushToolCalls(toolAcc);
             yield { type: "done" };
             return;
           }
           try {
             const data = JSON.parse(payload) as {
-              choices?: { delta?: { content?: string | null } }[];
+              choices?: {
+                delta?: {
+                  content?: string | null;
+                  tool_calls?: {
+                    index?: number;
+                    id?: string;
+                    function?: { name?: string; arguments?: string };
+                  }[];
+                };
+              }[];
               usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
             };
-            const delta = data.choices?.[0]?.delta?.content;
-            if (delta) {
-              yield { type: "delta", delta };
+            const delta = data.choices?.[0]?.delta;
+            if (delta?.content) {
+              yield { type: "delta", delta: delta.content };
+            }
+            for (const part of delta?.tool_calls ?? []) {
+              const i = part.index ?? 0;
+              const cur =
+                toolAcc.get(i) ??
+                { id: "", type: "function" as const, function: { name: "", arguments: "" } };
+              if (part.id) cur.id = part.id;
+              if (part.function?.name) cur.function.name = part.function.name;
+              if (part.function?.arguments) cur.function.arguments += part.function.arguments;
+              toolAcc.set(i, cur);
             }
             if (data.usage) {
               yield {
@@ -121,7 +175,18 @@ export async function* callModelStream(
     reader.releaseLock();
   }
 
+  yield* flushToolCalls(toolAcc);
   yield { type: "done" };
+}
+
+/** 把累积的工具调用按 index 顺序吐一个 tool_call chunk（无则跳过） */
+function* flushToolCalls(acc: Map<number, ToolCall>): Generator<StreamChunk> {
+  if (!acc.size) return;
+  const toolCalls = [...acc.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, v]) => v)
+    .filter((c) => c.function.name);
+  if (toolCalls.length) yield { type: "tool_call", toolCalls };
 }
 
 /**
@@ -195,16 +260,41 @@ export function buildSummaryMessages(previousSummary: string, historyText: strin
 }
 
 /**
+ * 组装用户消息内容：无图片时返回纯文本；有图片时返回多模态 content 数组
+ * （文本段在前、图片段在后，符合 OpenAI 兼容接口的常见排版）。
+ */
+export function buildUserContent(
+  text: string,
+  imageUrls: string[],
+  fileSections: string[]
+): string | ContentPart[] {
+  const chunks: string[] = [];
+  if (fileSections.length) chunks.push(fileSections.join("\n\n"));
+  if (text.trim()) chunks.push(text.trim());
+  const combined = chunks.join("\n\n");
+  if (!imageUrls.length) return combined;
+  const parts: ContentPart[] = [];
+  if (combined) parts.push({ type: "text", text: combined });
+  for (const url of imageUrls) parts.push({ type: "image_url", image_url: { url } });
+  return parts;
+}
+
+/** 拼装单条历史消息的 prompt 内容：无渲染回调时退化为纯文本 */
+export type HistoryRenderer = (m: ChatMessage) => string | ContentPart[];
+
+/**
  * 拼装 prompt 消息：[system, (memory), ...history.slice(-maxHistory), user]。
  * 纯函数，过滤空 content。复刻 ai-chat characterChat.ts 的 50 条历史截断逻辑；
  * memory 为历史记忆摘要，命中时插在 system 之后作为补充上下文。
+ * renderHistory 可把带附件的历史消息还原成多模态内容；缺省只用文本。
  */
 export function buildChatMessages(
   system: string,
   history: ChatMessage[],
-  userContent: string,
+  userContent: string | ContentPart[],
   maxHistory = 50,
-  memory?: string
+  memory?: string,
+  renderHistory?: HistoryRenderer
 ): ChatPromptMessage[] {
   const messages: ChatPromptMessage[] = [];
   if (system.trim()) messages.push({ role: "system", content: system });
@@ -214,9 +304,14 @@ export function buildChatMessages(
   const recent = history.slice(-maxHistory);
   for (const m of recent) {
     if (!m.content || !m.content.trim()) continue;
-    messages.push({ role: m.role === "user" ? "user" : "assistant", content: m.content });
+    const content = renderHistory ? renderHistory(m) : m.content;
+    messages.push({ role: m.role === "user" ? "user" : "assistant", content });
   }
-  if (userContent.trim()) messages.push({ role: "user", content: userContent });
+  if (typeof userContent === "string") {
+    if (userContent.trim()) messages.push({ role: "user", content: userContent });
+  } else if (userContent.length) {
+    messages.push({ role: "user", content: userContent });
+  }
   return messages;
 }
 

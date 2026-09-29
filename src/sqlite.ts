@@ -99,7 +99,10 @@ CREATE TABLE IF NOT EXISTS chat_reviews.chat_messages (
   content    TEXT NOT NULL,
   at         TEXT NOT NULL,
   model_id   TEXT,
-  tokens     INTEGER
+  tokens     INTEGER,
+  attachments TEXT,
+  refs        TEXT,
+  skill_calls TEXT
 );
 
 CREATE TABLE IF NOT EXISTS chat_reviews.chat_models (
@@ -251,6 +254,11 @@ export function getDb(): Database.Database {
   // 老库补列（工单关联管线节点 / 指派给员工）
   ensureColumn(c, TICKETS_SCHEMA, "tickets", "node_id", "node_id TEXT");
   ensureColumn(c, TICKETS_SCHEMA, "tickets", "assignee_email", "assignee_email TEXT");
+  // 老库补列（对话消息的附件元数据 / 引用会话）
+  ensureColumn(c, CHAT_REVIEWS_SCHEMA, "chat_messages", "attachments", "attachments TEXT");
+  ensureColumn(c, CHAT_REVIEWS_SCHEMA, "chat_messages", "refs", "refs TEXT");
+  // 老库补列（消息内 AI 调用 skill 的记录：灰字提示与产出文件）
+  ensureColumn(c, CHAT_REVIEWS_SCHEMA, "chat_messages", "skill_calls", "skill_calls TEXT");
   // 单库升级为多库：把主库里遗留的子库表搬到 ATTACH 的子库
   migrateLegacyTables(c);
   conn = c;

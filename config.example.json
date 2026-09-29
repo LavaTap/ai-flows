@@ -29,10 +29,14 @@
   },
   "crawler": {
     "root": "D:/code/private/Research-Crawler",
+    "skillRoots": {
+      "research-crawler-skill": "D:/code/private/Research-Crawler"
+    },
     "command": "claude",
     "args": ["-p", "--permission-mode", "bypassPermissions"],
     "outputDir": "output",
-    "timeoutMs": 600000
+    "timeoutMs": 600000,
+    "zipCommand": ""
   },
   "chat": {
     "systemPrompt": "你是 ai-flows 平台的 AI 助手，擅长代码评审、产品规划与技术方案。回答简洁专业，必要时给出代码示例。",
