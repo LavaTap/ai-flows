@@ -74,6 +74,14 @@ export interface NodeArtifact {
   at: string;
 }
 
+/** 显式挂到节点的执行角色：邮箱 + 加入前的原部门（删除时回滚部门用） */
+export interface NodeExecutor {
+  /** 员工邮箱 */
+  email: string;
+  /** 加入节点部门之前的部门（主管删除该执行角色时回滚；缺省不回滚） */
+  from?: string;
+}
+
 /** 管线节点（db 表 nodes，执行/批准会写回） */
 export interface NodeState {
   /** 节点编号 01-04 */
@@ -106,6 +114,10 @@ export interface NodeState {
   reportUrl?: string;
   /** 最近一次执行选用的输出目录（相对目标仓库根） */
   outputDir?: string;
+  /** 显式挂到本节点的执行角色（主管「+」添加 / 工单负责人自动挂载） */
+  executors?: NodeExecutor[];
+  /** 显式从本节点执行角色中排除的邮箱（删除部门派生成员时记入） */
+  removedExecutors?: string[];
 }
 
 /** 节点历史评审记录：一次 AI 评审 = 一条。平台可追溯「谁在何时评了什么」 */
@@ -196,6 +208,31 @@ export interface TicketRecord {
   nodeId?: string;
   /** 指派给的员工邮箱（把员工加入节点执行人时自动生成的工单才有） */
   assigneeEmail?: string;
+}
+
+/** 站内消息类型：工单指派 / 工单评论 / 节点提醒 / 知识库 / 系统 */
+export type MessageType = "ticket_assign" | "ticket_comment" | "node" | "kb" | "system";
+
+/** 站内消息（表 messages，主库）。按收件人邮箱私有可见，顶栏铃铛只读本人未读数 */
+export interface PlatformMessage {
+  /** 消息 id（m- 前缀 + 时间戳 + 随机串） */
+  id: string;
+  /** 收件人邮箱（私有可见性判据） */
+  email: string;
+  /** 消息类型 */
+  type: MessageType;
+  /** 标题（列表主文案） */
+  title: string;
+  /** 正文补充说明（可空） */
+  body?: string;
+  /** 关联对象类型：ticket=工单；kb=知识库文章；node=管线节点 */
+  refType?: string;
+  /** 关联对象 id（点击消息跳转用） */
+  refId?: string;
+  /** 已读时间（ISO；未读为空） */
+  readAt?: string;
+  /** ISO 创建时间 */
+  at: string;
 }
 
 /** 聊天消息角色 */
@@ -471,6 +508,8 @@ interface NodeRow {
   last_result: string | null;
   report_url: string | null;
   output_dir: string | null;
+  executors: string | null;
+  removed_executors: string | null;
 }
 
 function rowToNode(r: NodeRow): NodeState {
@@ -493,6 +532,10 @@ function rowToNode(r: NodeRow): NodeState {
   if (r.last_result != null) n.lastResult = r.last_result;
   if (r.report_url != null) n.reportUrl = r.report_url;
   if (r.output_dir != null) n.outputDir = r.output_dir;
+  const executors = parseJsonArray<NodeExecutor>(r.executors);
+  if (executors) n.executors = executors;
+  const removedExecutors = parseJsonArray<string>(r.removed_executors);
+  if (removedExecutors) n.removedExecutors = removedExecutors;
   return n;
 }
 
@@ -553,6 +596,33 @@ interface CommentRow {
   department: string;
   content: string;
   at: string;
+}
+
+interface SysMessageRow {
+  id: string;
+  email: string;
+  type: string;
+  title: string;
+  body: string | null;
+  ref_type: string | null;
+  ref_id: string | null;
+  read_at: string | null;
+  at: string;
+}
+
+function rowToSysMessage(r: SysMessageRow): PlatformMessage {
+  const m: PlatformMessage = {
+    id: r.id,
+    email: r.email,
+    type: r.type as MessageType,
+    title: r.title,
+    at: r.at,
+  };
+  if (r.body != null) m.body = r.body;
+  if (r.ref_type != null) m.refType = r.ref_type;
+  if (r.ref_id != null) m.refId = r.ref_id;
+  if (r.read_at != null) m.readAt = r.read_at;
+  return m;
 }
 
 function rowToComment(r: CommentRow): TicketComment {
@@ -682,6 +752,8 @@ function nodeParams(n: NodeState, ord: number): Record<string, unknown> {
     lastResult: n.lastResult ?? null,
     reportUrl: n.reportUrl ?? null,
     outputDir: n.outputDir ?? null,
+    executors: n.executors ? JSON.stringify(n.executors) : null,
+    removedExecutors: n.removedExecutors ? JSON.stringify(n.removedExecutors) : null,
   };
 }
 
@@ -1006,7 +1078,7 @@ export function saveNodes(nodes: NodeState[]): void {
   const c = db();
   const del = c.prepare("DELETE FROM nodes");
   const ins = c.prepare(
-    "INSERT INTO nodes (ord,id,department,step,ready,status,runner,requirement_text,uploads,artifacts,progress,progress_label,rejection,last_result,report_url,output_dir) VALUES (@ord,@id,@department,@step,@ready,@status,@runner,@requirementText,@uploads,@artifacts,@progress,@progressLabel,@rejection,@lastResult,@reportUrl,@outputDir)"
+    "INSERT INTO nodes (ord,id,department,step,ready,status,runner,requirement_text,uploads,artifacts,progress,progress_label,rejection,last_result,report_url,output_dir,executors,removed_executors) VALUES (@ord,@id,@department,@step,@ready,@status,@runner,@requirementText,@uploads,@artifacts,@progress,@progressLabel,@rejection,@lastResult,@reportUrl,@outputDir,@executors,@removedExecutors)"
   );
   c.transaction(() => {
     del.run();
@@ -1098,6 +1170,53 @@ export function updateTicket(
   mutate(ticket);
   saveTickets(tickets);
   return ticket;
+}
+
+// ============ 站内消息 ============
+
+/** 读取全部站内消息（按原顺序；调用方按 email 过滤本人视角） */
+export function loadPlatformMessages(): PlatformMessage[] {
+  const c = db();
+  return (c.prepare("SELECT * FROM messages ORDER BY ord").all() as SysMessageRow[]).map(
+    rowToSysMessage
+  );
+}
+
+/** 追加一条站内消息 */
+export function appendPlatformMessage(msg: PlatformMessage): void {
+  const c = db();
+  c.prepare(
+    "INSERT OR REPLACE INTO messages (ord,id,email,type,title,body,ref_type,ref_id,read_at,at) VALUES (@ord,@id,@email,@type,@title,@body,@refType,@refId,@readAt,@at)"
+  ).run({
+    ord: nextOrd(c, "messages"),
+    id: msg.id,
+    email: msg.email,
+    type: msg.type,
+    title: msg.title,
+    body: msg.body ?? null,
+    refType: msg.refType ?? null,
+    refId: msg.refId ?? null,
+    readAt: msg.readAt ?? null,
+    at: msg.at,
+  });
+}
+
+/** 标记一条消息已读（仅收件人本人可标记）；返回是否命中 */
+export function markMessageRead(id: string, email: string): boolean {
+  const c = db();
+  const info = c
+    .prepare("UPDATE messages SET read_at = ? WHERE id = ? AND email = ? AND read_at IS NULL")
+    .run(new Date().toISOString(), id, email);
+  return info.changes > 0;
+}
+
+/** 把本人全部未读消息标记已读；返回标记条数 */
+export function markAllMessagesRead(email: string): number {
+  const c = db();
+  const info = c
+    .prepare("UPDATE messages SET read_at = ? WHERE email = ? AND read_at IS NULL")
+    .run(new Date().toISOString(), email);
+  return info.changes;
 }
 
 // ============ AI 对话：会话 + 消息 ============

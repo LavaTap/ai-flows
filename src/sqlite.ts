@@ -56,7 +56,9 @@ CREATE TABLE IF NOT EXISTS nodes (
   rejection        TEXT,
   last_result      TEXT,
   report_url       TEXT,
-  output_dir       TEXT
+  output_dir       TEXT,
+  executors        TEXT,
+  removed_executors TEXT
 );
 
 /* 账号投影表：以 users.email 为唯一来源同步（email 主键 + FK 级联），
@@ -73,6 +75,24 @@ CREATE TABLE IF NOT EXISTS review_accounts (
   name       TEXT NOT NULL,
   department TEXT NOT NULL
 );
+
+/* 站内消息（顶栏消息铃铛 + 消息页）。按收件人邮箱私有可见；
+   故意不加外键：users 行整体替换（saveUsers 先 DELETE 再插）会级联清空消息，
+   收件人与账号的关联靠 email 逻辑匹配。 */
+CREATE TABLE IF NOT EXISTS messages (
+  ord      INTEGER NOT NULL,
+  id       TEXT PRIMARY KEY,
+  email    TEXT NOT NULL,
+  type     TEXT NOT NULL,
+  title    TEXT NOT NULL,
+  body     TEXT,
+  ref_type TEXT,
+  ref_id   TEXT,
+  read_at  TEXT,
+  at       TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_email ON messages(email);
 `;
 
 /** AI 对话与评审库 DDL：会话 / 消息 / 模型配置 / 评审记录。
@@ -254,6 +274,9 @@ export function getDb(): Database.Database {
   // 老库补列（工单关联管线节点 / 指派给员工）
   ensureColumn(c, TICKETS_SCHEMA, "tickets", "node_id", "node_id TEXT");
   ensureColumn(c, TICKETS_SCHEMA, "tickets", "assignee_email", "assignee_email TEXT");
+  // 老库补列（节点执行角色：显式添加名单 / 显式排除名单）
+  ensureColumn(c, "main", "nodes", "executors", "executors TEXT");
+  ensureColumn(c, "main", "nodes", "removed_executors", "removed_executors TEXT");
   // 老库补列（对话消息的附件元数据 / 引用会话）
   ensureColumn(c, CHAT_REVIEWS_SCHEMA, "chat_messages", "attachments", "attachments TEXT");
   ensureColumn(c, CHAT_REVIEWS_SCHEMA, "chat_messages", "refs", "refs TEXT");

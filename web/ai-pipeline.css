@@ -265,6 +265,47 @@ body { padding-top: 56px; }
   display: inline-flex;
 }
 
+/* 消息铃铛：头像左侧，未读时右上角小红点 */
+.msg-bell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--glass-line);
+  border-radius: var(--radius-pill);
+  background: var(--glass-fill);
+  color: var(--copy);
+  text-decoration: none;
+  transition: color .15s ease, border-color .15s ease;
+}
+
+.msg-bell:hover {
+  color: var(--led);
+  border-color: var(--led);
+}
+
+.msg-bell svg {
+  width: 15px;
+  height: 15px;
+}
+
+.msg-bell .msg-dot {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e5484d;
+  box-shadow: 0 0 0 2px var(--paper);
+}
+
+.msg-bell .msg-dot[hidden] {
+  display: none;
+}
+
 .user-menu .user-chip {
   cursor: pointer;
 }

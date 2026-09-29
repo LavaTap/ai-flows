@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>消息 · AI-FLOWS 平台</title>
+  <link rel="stylesheet" href="./ai-pipeline.css">
+  <script src="/user-menu.js" defer></script>
+  <style>
+    /* 消息页专用样式：左筛选 + 右列表 */
+    body { background: var(--paper); }
+    [hidden] { display: none !important; }
+
+    .page-shell { padding: 0; }
+
+    .btn { padding: 8px 16px; border-radius: 8px; font: 500 12px/18px var(--font-sans); cursor: pointer;
+      border: 1px solid var(--glass-line); background: var(--glass-fill); color: var(--ink-soft); white-space: nowrap; }
+    .btn:hover { background: var(--paper-2); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    .msg-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr);
+      height: calc(100vh - 56px); }
+    @media (max-width: 900px) { .msg-layout { grid-template-columns: minmax(0, 1fr); } }
+
+    .side { padding: 16px 12px; height: 100%; overflow-y: auto;
+      border-right: 1px solid var(--glass-line); background: var(--paper-2); }
+    .side-title { font: 600 11px/16px var(--font-sans); color: var(--muted-2); letter-spacing: .08em;
+      text-transform: uppercase; padding: 0 8px 8px; }
+    .side-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 0;
+      border-radius: 8px; background: transparent; cursor: pointer; text-align: left;
+      font: 500 12px/18px var(--font-sans); color: var(--ink-soft); }
+    .side-item:hover { background: var(--paper); }
+    .side-item.on { background: var(--led-soft); color: var(--led); }
+    .side-item .led { width: 6px; height: 6px; border-radius: 50%; background: var(--led); flex: none; }
+    .side-item .n { margin-left: auto; font: 500 11px/16px var(--font-mono, var(--font-sans)); color: var(--muted); }
+
+    .main { padding: 20px 24px 40px; overflow-y: auto; height: 100%; }
+    .main-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .main-title { font: 600 16px/24px var(--font-sans); color: var(--ink); }
+    .main-sub { font: 400 12px/18px var(--font-sans); color: var(--muted); margin-top: 2px; }
+
+    .msg-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+    .msg-item { display: flex; gap: 12px; padding: 12px 14px; border: 1px solid var(--glass-line);
+      border-radius: 12px; background: var(--glass-fill); cursor: pointer; }
+    .msg-item:hover { border-color: var(--led); }
+    .msg-item.unread { background: #fff; border-color: rgba(79,70,229,.35); }
+    .msg-ico { width: 30px; height: 30px; border-radius: 9px; flex: none; display: inline-flex;
+      align-items: center; justify-content: center; background: var(--led-soft); color: var(--led); }
+    .msg-ico svg { width: 15px; height: 15px; }
+    .msg-body { flex: 1; min-width: 0; }
+    .msg-title { font: 600 13px/20px var(--font-sans); color: var(--ink-soft); display: flex;
+      align-items: center; gap: 6px; }
+    .msg-title .dot { width: 6px; height: 6px; border-radius: 50%; background: #e5484d; flex: none; }
+    .msg-text { font: 400 12px/19px var(--font-sans); color: var(--muted); margin-top: 4px;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .msg-meta { font: 400 11px/16px var(--font-sans); color: var(--muted-2); margin-top: 6px; }
+    .msg-empty { padding: 48px 0; text-align: center; font: 400 13px/22px var(--font-sans); color: var(--muted-2); }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot" aria-hidden="true"></span>
+      <h1 class="brand-title">
+        <span class="tt-pipeline">AI-FLOWS</span>
+        <span class="tt-sep">/</span>
+        <span>消息</span>
+      </h1>
+    </div>
+    <div class="top-right">
+      <a class="nav-link" href="/home">首页</a>
+      <a class="nav-link" href="/pipeline" target="_blank" rel="noopener">AI 管线</a>
+      <a class="nav-link" href="/tickets" target="_blank" rel="noopener">工单</a>
+      <a class="nav-link" href="/github-audit">GitHub</a>
+      <a class="nav-link" href="/team" id="teamLink" style="display:none;">团队管理</a>
+      <a class="nav-link" href="/chat" target="_blank" rel="noopener">AI 对话</a>
+      <div class="user-menu">
+        <span class="user-chip" id="userChip" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"><span class="avatar" aria-hidden="true"></span><span id="userName">未登录</span></span>
+        <div class="user-panel" id="userPanel" hidden>
+          <div class="user-panel-head">
+            <span class="avatar" aria-hidden="true"></span>
+            <div class="user-panel-meta">
+              <strong id="userPanelName">未登录</strong>
+              <span class="user-panel-email" id="userPanelEmail"></span>
+            </div>
+          </div>
+          <div class="user-panel-sep"></div>
+          <a class="user-panel-item" href="/account"><span class="user-panel-ico" aria-hidden="true">⚙</span>设置</a>
+          <div class="user-panel-sep"></div>
+          <button class="user-panel-item user-panel-logout" type="button"><span class="user-panel-ico" aria-hidden="true">⏻</span>退出登录</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="page-shell">
+    <div class="msg-layout">
+      <aside class="side">
+        <div class="side-title">消息筛选</div>
+        <button class="side-item on" type="button" data-filter="all"><span class="led"></span>全部消息<span class="n" id="nAll">0</span></button>
+        <button class="side-item" type="button" data-filter="unread"><span class="led"></span>未读<span class="n" id="nUnread">0</span></button>
+      </aside>
+      <main class="main">
+        <div class="main-top">
+          <div>
+            <div class="main-title">消息中心</div>
+            <div class="main-sub" id="msgSub">加载中…</div>
+          </div>
+          <button class="btn" type="button" id="readAllBtn">全部标记已读</button>
+        </div>
+        <ul class="msg-list" id="msgList"></ul>
+        <div class="msg-empty" id="msgEmpty" hidden>暂无消息</div>
+      </main>
+    </div>
+  </div>
+
+</body>
+</html>

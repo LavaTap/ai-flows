@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname, basename, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, loadTickets, appendTicket, updateTicket, TICKET_IMAGES_DIR, AVATARS_DIR, CHAT_UPLOADS_DIR, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel, type ChatAttachment, type ChatRef, type ChatSkillCall } from "./db.js";
+import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, loadTickets, appendTicket, updateTicket, loadPlatformMessages, appendPlatformMessage, markMessageRead, markAllMessagesRead, TICKET_IMAGES_DIR, AVATARS_DIR, CHAT_UPLOADS_DIR, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel, type ChatAttachment, type ChatRef, type ChatSkillCall, type PlatformMessage, type MessageType } from "./db.js";
 import {
   callModelStream,
   callModelOnce,
@@ -245,6 +245,8 @@ interface NodeView extends NodeState {
   canEdit: boolean;
   /** 挂在该节点上的需求工单 id（每节点一张，未挂单不允许执行/审核） */
   ticketId?: string;
+  /** 执行角色列表（部门成员 ∪ 显式添加 − 显式排除），前端直接渲染角色卡片 */
+  executorList: UserView[];
 }
 
 /** 剥离密码，输出视图层用户 */
@@ -307,10 +309,70 @@ function toNodeView(user: UserAccount, node: NodeState, tickets?: TicketRecord[]
   return {
     ...node,
     ticketId: req?.id,
+    executorList: nodeExecutors(node, loadUsers()),
     canExecute: canExecute(user, node),
     canApprove: canApprove(user),
     canEdit: canEditRequirement(user, node),
   };
+}
+
+/** 节点执行角色集合 = 部门成员 ∪ 显式添加名单 − 显式排除名单（按部门/邮箱去重） */
+function nodeExecutors(node: NodeState, users: UserAccount[]): UserAccount[] {
+  const removed = new Set(node.removedExecutors ?? []);
+  const map = new Map<string, UserAccount>();
+  for (const u of users) {
+    if (u.department === node.department && !removed.has(u.email)) map.set(u.email, u);
+  }
+  for (const e of node.executors ?? []) {
+    const u = users.find((x) => x.email === e.email);
+    if (u && !removed.has(u.email)) map.set(u.email, u);
+  }
+  return Array.from(map.values());
+}
+
+/** 把员工挂到节点执行角色（幂等）。from 记录加入前部门，删除时可回滚 */
+function addNodeExecutor(node: NodeState, email: string): NodeState | null {
+  const target = loadUsers().find((u) => u.email === email);
+  if (!target) return null;
+  const nodes = loadNodes();
+  const cur = nodes.find((n) => n.id === node.id);
+  if (!cur) return null;
+  const executors = cur.executors ?? [];
+  const removed = (cur.removedExecutors ?? []).filter((e) => e !== email);
+  const known = executors.some((e) => e.email === email);
+  const next: NodeState = {
+    ...cur,
+    executors: known ? executors : [...executors, { email, from: target.department }],
+    removedExecutors: removed.length ? removed : undefined,
+  };
+  saveNodes(nodes.map((n) => (n.id === cur.id ? next : n)));
+  // 对齐部门，保证该员工对本节点有执行权限（canExecute 按部门判定）
+  if (target.department !== cur.department) {
+    setUserProfile(target.email, { department: cur.department });
+  }
+  return next;
+}
+
+/** 从节点执行角色移除员工（显式添加的回滚部门；部门派生的记入排除名单） */
+function removeNodeExecutor(node: NodeState, email: string): NodeState | null {
+  const nodes = loadNodes();
+  const cur = nodes.find((n) => n.id === node.id);
+  if (!cur) return null;
+  const entry = (cur.executors ?? []).find((e) => e.email === email);
+  const executors = (cur.executors ?? []).filter((e) => e.email !== email);
+  const removed = new Set(cur.removedExecutors ?? []);
+  if (!entry) removed.add(email);
+  const next: NodeState = {
+    ...cur,
+    executors: executors.length ? executors : undefined,
+    removedExecutors: removed.size ? Array.from(removed) : undefined,
+  };
+  saveNodes(nodes.map((n) => (n.id === cur.id ? next : n)));
+  // 显式加入的成员：回滚到加入前的部门（若原部门为空则不动）
+  if (entry && entry.from && entry.from !== cur.department) {
+    setUserProfile(email, { department: entry.from });
+  }
+  return next;
 }
 
 /** 工单列表项视图（不含正文，列表页只渲染摘要，避免大正文拖慢接口） */
@@ -330,8 +392,23 @@ export interface TicketListItem {
   imageCount: number;
   /** 关联的管线节点 id（节点自动生成的工单才有） */
   nodeId?: string;
-  /** 指派给的员工邮箱（把员工加入节点执行人时自动生成的工单才有） */
+  /** 指派给的员工邮箱（负责人） */
   assigneeEmail?: string;
+  /** 负责人展示名（邮箱查找姓名；查不到回退邮箱前缀） */
+  assigneeName?: string;
+}
+
+/** 邮箱 → 展示名（查不到回退邮箱前缀） */
+function nameOfEmail(email: string): string {
+  const u = loadUsers().find((x) => x.email === email);
+  return u ? u.name?.trim() || u.email.split("@")[0] : email;
+}
+
+/** 邮箱 → 展示名映射（列表场景一次构表，避免逐条查库） */
+function userNameMap(): Map<string, string> {
+  const m = new Map<string, string>();
+  for (const u of loadUsers()) m.set(u.email, u.name?.trim() || u.email.split("@")[0]);
+  return m;
 }
 
 /** 工单完整视图（详情 / 新建后返回；正文已净化，可直接 innerHTML 渲染） */
@@ -342,8 +419,9 @@ export interface TicketView extends TicketListItem {
   mine: boolean;
 }
 
-/** 工单 → 列表项视图 */
-function toTicketListItem(t: TicketRecord): TicketListItem {
+/** 工单 → 列表项视图（nameOf 传入可复用姓名映射，避免逐条查库） */
+function toTicketListItem(t: TicketRecord, nameOf?: (email: string) => string): TicketListItem {
+  const name = t.assigneeEmail ? (nameOf ?? nameOfEmail)(t.assigneeEmail) : undefined;
   return {
     id: t.id,
     kind: t.kind,
@@ -358,6 +436,7 @@ function toTicketListItem(t: TicketRecord): TicketListItem {
     imageCount: t.images?.length ?? 0,
     nodeId: t.nodeId,
     assigneeEmail: t.assigneeEmail,
+    assigneeName: name,
   };
 }
 
@@ -369,6 +448,80 @@ function toTicketView(t: TicketRecord, user: UserAccount): TicketView {
     commentList: t.comments ?? [],
     mine: t.authorEmail === user.email,
   };
+}
+
+/** 站内消息视图（收件人视角；refType/refId 供前端跳转关联对象） */
+interface MessageView {
+  id: string;
+  type: MessageType;
+  title: string;
+  body?: string;
+  refType?: string;
+  refId?: string;
+  read: boolean;
+  at: string;
+}
+
+function toMessageView(m: PlatformMessage): MessageView {
+  return {
+    id: m.id,
+    type: m.type,
+    title: m.title,
+    body: m.body,
+    refType: m.refType,
+    refId: m.refId,
+    read: !!m.readAt,
+    at: m.at,
+  };
+}
+
+/** 本人视角的消息列表（按时间倒序） */
+function myMessages(email: string): MessageView[] {
+  return loadPlatformMessages()
+    .filter((m) => m.email === email)
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .map(toMessageView);
+}
+
+/** 本人未读消息数（顶栏铃铛红点） */
+function unreadMessageCount(email: string): number {
+  return loadPlatformMessages().filter((m) => m.email === email && !m.readAt).length;
+}
+
+/** 投递一条站内消息（自己给自己不投递，避免自触发噪音） */
+function notify(
+  email: string,
+  type: MessageType,
+  title: string,
+  opts?: { body?: string; refType?: string; refId?: string }
+): void {
+  const to = (email ?? "").trim();
+  if (!to) return;
+  const msg: PlatformMessage = {
+    id: `m-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`,
+    email: to,
+    type,
+    title,
+    at: new Date().toISOString(),
+  };
+  if (opts?.body) msg.body = opts.body;
+  if (opts?.refType) msg.refType = opts.refType;
+  if (opts?.refId) msg.refId = opts.refId;
+  appendPlatformMessage(msg);
+}
+
+/** 渲染消息页：读静态 messages.html，注入登录用户 + 本人消息 bootstrap */
+function messagesHtml(user: UserAccount): string {
+  const raw = readFileSync(join(WEB_DIR, "messages.html"), "utf8");
+  const list = myMessages(user.email);
+  const boot = {
+    user: toUserView(user),
+    isSupervisor: user.role === "supervisor",
+    messages: list,
+    unread: list.filter((m) => !m.read).length,
+  };
+  const inject = `<script>window.__MESSAGES__ = ${jsonForScript(boot)};</script>\n<script src="/messages.js" defer></script>`;
+  return raw.replace("</body>", `${inject}\n</body>`);
 }
 
 /** JSON 序列化为可安全内嵌 <script> 的字符串（转义 < 防提前闭合标签） */
@@ -417,6 +570,7 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   "/chat.js": { file: "chat.js", type: "text/javascript; charset=utf-8" },
   "/home.js": { file: "home.js", type: "text/javascript; charset=utf-8" },
   "/profile.js": { file: "profile.js", type: "text/javascript; charset=utf-8" },
+  "/messages.js": { file: "messages.js", type: "text/javascript; charset=utf-8" },
 };
 
 /** 读 web/ 下静态文件并响应，不存在返回 false */
@@ -492,12 +646,14 @@ function githubAuditHtml(user: UserAccount): string {
   return raw.replace("</body>", `${inject}\n</body>`);
 }
 
-/** 渲染工单页：读静态 tickets.html，注入登录用户 + 部门列表 + 主管标记 bootstrap */
+/** 渲染工单页：读静态 tickets.html，注入登录用户 + 部门列表 + 成员 + 主管标记 bootstrap */
 function ticketsHtml(user: UserAccount): string {
   const raw = readFileSync(join(WEB_DIR, "tickets.html"), "utf8");
+  const allUsers = loadUsers();
   const boot = {
     user: toUserView(user),
-    departments: Array.from(new Set(loadUsers().map((u) => u.department).filter(Boolean))),
+    departments: Array.from(new Set(allUsers.map((u) => u.department).filter(Boolean))),
+    members: allUsers.map(toUserView),
     isSupervisor: user.role === "supervisor",
   };
   const inject = `<script>window.__TICKETS__ = ${jsonForScript(boot)};</script>\n<script src="/tickets.js" defer></script>`;
@@ -1943,10 +2099,8 @@ export async function startPlatformServer(
         sendJson(res, 404, { error: "员工不存在" });
         return;
       }
-      // 加入节点部门（执行角色按部门派生）
-      if (target.department !== node.department) {
-        setUserProfile(target.email, { department: node.department });
-      }
+      // 挂到节点执行角色（部门对齐 + 记录原部门，删除可回滚）
+      addNodeExecutor(node, target.email);
       const reqTicket = ensureNodeRequirementTicket(node);
       // 同一员工同一节点只建一张指派工单（幂等）
       const existing = loadTickets().find(
@@ -1955,8 +2109,9 @@ export async function startPlatformServer(
       if (!existing) {
         const now = new Date().toISOString();
         const assignee = target.name?.trim() || target.email.split("@")[0];
+        const ticketId = newTicketId();
         appendTicket({
-          id: newTicketId(),
+          id: ticketId,
           kind: "requirement",
           title: `[执行] ${node.step}`,
           content:
@@ -1973,8 +2128,57 @@ export async function startPlatformServer(
           nodeId: node.id,
           assigneeEmail: target.email,
         });
+        notify(target.email, "ticket_assign", `你被指派为「${node.step}」节点的执行人`, {
+          body: "对应工单已创建，请到工单页查看需求与附件。",
+          refType: "ticket",
+          refId: ticketId,
+        });
       }
-      sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
+      const fresh = loadNodes().find((n) => n.id === node.id) ?? node;
+      sendJson(res, 200, { ok: true, node: toNodeView(user, fresh) });
+      return;
+    }
+
+    // 移除节点执行角色（仅主管）：显式加入的回滚原部门，部门派生的记入排除名单
+    const exd = path.match(/^\/api\/nodes\/([^/\\]+)\/executors\/([^/\\]+)$/);
+    if (exd && req.method === "DELETE") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      if (!canApprove(user)) {
+        sendJson(res, 403, { error: "仅部门主管可移除执行角色" });
+        return;
+      }
+      const node = loadNodes().find((n) => n.id === exd[1]);
+      if (!node) {
+        sendJson(res, 404, { error: "节点不存在" });
+        return;
+      }
+      const email = decodePathSegment(exd[2]);
+      if (!email) {
+        sendJson(res, 404, { error: "员工不存在" });
+        return;
+      }
+      const target = loadUsers().find((u) => u.email === email);
+      if (!target) {
+        sendJson(res, 404, { error: "员工不存在" });
+        return;
+      }
+      const next = removeNodeExecutor(node, email);
+      if (!next) {
+        sendJson(res, 404, { error: "节点不存在" });
+        return;
+      }
+      const name = target.name?.trim() || target.email.split("@")[0];
+      notify(email, "node", `你已被移出「${node.step}」节点的执行角色`, {
+        body: `操作人：${user.name?.trim() || user.email}`,
+        refType: "node",
+        refId: node.id,
+      });
+      const fresh = loadNodes().find((n) => n.id === node.id) ?? next;
+      sendJson(res, 200, { ok: true, removed: name, node: toNodeView(user, fresh) });
       return;
     }
 
@@ -2098,6 +2302,68 @@ export async function startPlatformServer(
       return;
     }
 
+    // 消息页（未登录重定向到登录页）
+    if (path === "/messages" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        res.statusCode = 302;
+        res.setHeader("Location", "/login");
+        res.end();
+        return;
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(messagesHtml(user));
+      return;
+    }
+
+    // 未读数（顶栏铃铛红点轮询；只读本人）
+    if (path === "/api/messages/unread" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      sendJson(res, 200, { unread: unreadMessageCount(user.email) });
+      return;
+    }
+
+    // 消息列表（本人视角，时间倒序）
+    if (path === "/api/messages" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const list = myMessages(user.email);
+      sendJson(res, 200, { messages: list, unread: list.filter((m) => !m.read).length });
+      return;
+    }
+
+    // 全部标记已读（只影响本人）
+    if (path === "/api/messages/read-all" && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const n = markAllMessagesRead(user.email);
+      sendJson(res, 200, { ok: true, marked: n });
+      return;
+    }
+
+    // 标记单条已读（仅收件人本人）
+    const mrm = path.match(/^\/api\/messages\/([^/\\]+)\/read$/);
+    if (mrm && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const ok = markMessageRead(mrm[1], user.email);
+      sendJson(res, 200, { ok, unread: unreadMessageCount(user.email) });
+      return;
+    }
+
     // 工单列表：按视角过滤（主管全量 / 员工本部门），按更新时间倒序
     if (path === "/api/tickets" && req.method === "GET") {
       const user = currentUser(req);
@@ -2105,9 +2371,11 @@ export async function startPlatformServer(
         sendJson(res, 401, { error: "未登录" });
         return;
       }
+      const names = userNameMap();
+      const nameOf = (e: string) => names.get(e) ?? e;
       const list = filterTicketsByUser(loadTickets(), user)
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-        .map(toTicketListItem);
+        .map((t) => toTicketListItem(t, nameOf));
       sendJson(res, 200, { tickets: list, user: toUserView(user) });
       return;
     }
@@ -2261,6 +2529,64 @@ export async function startPlatformServer(
         t.updatedAt = new Date().toISOString();
       });
       sendJson(res, 200, { ticket: toTicketView(updated as TicketRecord, user) });
+      return;
+    }
+
+    // 指派工单负责人（仅主管；被指派者收到消息，绑定节点的工单同时把人挂进节点执行角色）
+    const tas = path.match(/^\/api\/tickets\/([^/\\]+)\/assignee$/);
+    if (tas && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const ticket = loadTickets().find((t) => t.id === tas[1]);
+      if (!ticket) {
+        sendJson(res, 404, { error: "工单不存在" });
+        return;
+      }
+      if (!canAccessTicket(user, ticket)) {
+        sendJson(res, 403, { error: "仅本部门员工或部门主管可查看该工单" });
+        return;
+      }
+      if (!canApprove(user)) {
+        sendJson(res, 403, { error: "仅部门主管可指派负责人" });
+        return;
+      }
+      let email = "";
+      try {
+        const body = JSON.parse(await readBody(req)) as { email?: unknown };
+        if (typeof body.email === "string") email = body.email.trim();
+      } catch {
+        sendJson(res, 400, { error: "请求体不是合法 JSON" });
+        return;
+      }
+      if (email && !loadUsers().some((u) => u.email === email)) {
+        sendJson(res, 404, { error: "员工不存在" });
+        return;
+      }
+      const now = new Date().toISOString();
+      const updated = updateTicket(ticket.id, (t) => {
+        t.assigneeEmail = email || undefined;
+        t.updatedAt = now;
+      });
+      if (!updated) {
+        sendJson(res, 404, { error: "工单不存在" });
+        return;
+      }
+      if (email && email !== user.email) {
+        notify(email, "ticket_assign", `你被指派为工单「${ticket.title}」的负责人`, {
+          body: `指派：${user.name?.trim() || user.email}（${ticket.department}）`,
+          refType: "ticket",
+          refId: ticket.id,
+        });
+      }
+      // 工单挂在管线上：负责人自动挂进该节点的执行角色
+      if (email && ticket.nodeId) {
+        const node = loadNodes().find((n) => n.id === ticket.nodeId);
+        if (node) addNodeExecutor(node, email);
+      }
+      sendJson(res, 200, { ticket: toTicketView(updated, user) });
       return;
     }
 
