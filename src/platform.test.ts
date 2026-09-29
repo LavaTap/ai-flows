@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { filterReviewsByUser, canEditRequirement, safeRepoPath, canAccessTicket, filterTicketsByUser, isTicketStatus, collectTicketImages } from "./platform.js";
+import { filterReviewsByUser, canEditRequirement, safeRepoPath, canAccessTicket, filterTicketsByUser, isTicketStatus, collectTicketImages, decodePathSegment } from "./platform.js";
 import type { ReviewRecord, UserAccount, NodeState, TicketRecord } from "./db.js";
 
 function user(role: "staff" | "supervisor", department: string): UserAccount {
@@ -122,4 +122,14 @@ test("should collect platform image names referenced by sanitized html", () => {
   const html = '<p><img src="/api/tickets/images/a1b2c3d4e5f6.png"><img src="/api/tickets/images/a1b2c3d4e5f6.png"><img src="https://x/y.png"></p>';
   assert.deepStrictEqual(collectTicketImages(html), ["a1b2c3d4e5f6.png"]);
   assert.deepStrictEqual(collectTicketImages("<p>无图</p>"), []);
+});
+
+test("should decode url-encoded email path segment and reject malformed or unsafe ones", () => {
+  assert.strictEqual(decodePathSegment("wangxinyi%40ai-flows.com"), "wangxinyi@ai-flows.com");
+  assert.strictEqual(decodePathSegment("wangxinyi@ai-flows.com"), "wangxinyi@ai-flows.com");
+  assert.strictEqual(decodePathSegment("%E6%9D%8E%E4%BA%91"), "李云");
+  assert.strictEqual(decodePathSegment("a%2Fb"), null);
+  assert.strictEqual(decodePathSegment("a%5Cb"), null);
+  assert.strictEqual(decodePathSegment("%"), null);
+  assert.strictEqual(decodePathSegment(""), null);
 });

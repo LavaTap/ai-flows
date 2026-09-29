@@ -57,6 +57,9 @@ const TICKET_IMAGE_TYPES: Record<string, string> = {
 /** 工单图片文件名形态（上传时由服务端生成，严格校验防路径穿越） */
 const TICKET_IMAGE_NAME_RE = /^[a-f0-9]{12}\.(png|jpg|jpeg|gif|webp)$/;
 
+/** 头像上传请求体上限：base64 data URL（2MB 图约 2.8MB），留余量 */
+const AVATAR_BODY_MAX = 4 * 1024 * 1024;
+
 /** 员工只能执行本部门节点；部门主管不限部门（权限最高） */
 export function canExecute(user: UserAccount, node: NodeState): boolean {
   return user.role === "supervisor" || user.department === node.department;
@@ -112,6 +115,19 @@ export function collectTicketImages(html: string): string[] {
   let m: RegExpExecArray | null;
   while ((m = re.exec(html))) out.add(m[1]);
   return [...out];
+}
+
+/** 解码 URL 路径段（前端对 email 的 @ 会编码成 %40，不还原就查不到账号）。
+ *  非法编码或解码后含路径分隔符时返回 null，交调用方按「账号不存在」处理。 */
+export function decodePathSegment(seg: string): string | null {
+  let out: string;
+  try {
+    out = decodeURIComponent(seg);
+  } catch {
+    return null;
+  }
+  if (!out || out.includes("/") || out.includes("\\")) return null;
+  return out;
 }
 
 /** 净化 + 长度校验富文本字段；非法时返回 null */
@@ -835,10 +851,12 @@ export async function startPlatformServer(
         sendJson(res, 403, { error: "仅部门主管可审核 GitHub 绑定" });
         return;
       }
-      const updated =
-        gam[2] === "approve"
-          ? approveUserGithub(gam[1])
-          : clearUserGithubPending(gam[1]);
+      const target = decodePathSegment(gam[1]);
+      const updated = target
+        ? gam[2] === "approve"
+          ? approveUserGithub(target)
+          : clearUserGithubPending(target)
+        : null;
       if (!updated) {
         sendJson(res, 404, { error: "账号不存在或没有待审核的绑定" });
         return;
@@ -886,7 +904,8 @@ export async function startPlatformServer(
         sendJson(res, 400, { error: "头像文件名不合法" });
         return;
       }
-      const updated = setUserProfile(pm[1], patch);
+      const target = decodePathSegment(pm[1]);
+      const updated = target ? setUserProfile(target, patch) : null;
       if (!updated) {
         sendJson(res, 404, { error: "账号不存在" });
         return;
@@ -1042,10 +1061,10 @@ export async function startPlatformServer(
       }
       let dataUrl = "";
       try {
-        const body = JSON.parse(await readBody(req)) as { avatar?: unknown };
+        const body = JSON.parse(await readBody(req, AVATAR_BODY_MAX)) as { avatar?: unknown };
         if (typeof body.avatar === "string") dataUrl = body.avatar;
       } catch {
-        sendJson(res, 400, { error: "请求体不是合法 JSON" });
+        sendJson(res, 400, { error: "头像数据读取失败（请求体过大或不是合法 JSON）" });
         return;
       }
       const match = dataUrl.match(/^data:image\/(png|jpg|jpeg|gif|webp);base64,(.+)$/);

@@ -126,6 +126,20 @@ CREATE TABLE IF NOT EXISTS chat_models (
   category    TEXT
 );
 
+/* 账号投影表：以 users.email 为唯一来源同步（email 主键 + FK 级联），
+   chat_accounts 供 AI 对话侧取姓名，review_accounts 额外带部门供评审侧取归属。
+   users 行被整体替换（DELETE FROM users）时这两张表随外键级联清空，再由 db.ts 重新同步。 */
+CREATE TABLE IF NOT EXISTS chat_accounts (
+  email TEXT PRIMARY KEY REFERENCES users(email) ON DELETE CASCADE,
+  name  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS review_accounts (
+  email      TEXT PRIMARY KEY REFERENCES users(email) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  department TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_reviews_department ON reviews(department);
 CREATE INDEX IF NOT EXISTS idx_ticket_comments_ticket ON ticket_comments(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id);

@@ -135,7 +135,7 @@ const REPORT_CSS = `
   --info:#3b82f6; --info-soft:rgba(59,130,246,.10);
   --radius:10px; --radius-card:16px; --radius-pill:999px;
   --font-sans:"Inter","PingFang SC",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  --font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --font-mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
 
   /* ===== 评审页旧变量名（别名，指向标准变量） ===== */
   --bg:var(--paper);
@@ -238,7 +238,6 @@ a:hover { text-decoration:underline; }
 .back-link:hover { color:var(--text); border-color:var(--border-strong); background:var(--surface-2); text-decoration:none; }
 .main { width:100%; padding:0; }
 .verdict { display:flex; align-items:center; gap:20px; padding:20px 0; position:relative; }
-.verdict::before { content:""; position:absolute; left:0; top:20px; bottom:20px; width:3px; background:var(--ok); border-radius:2px; }
 .verdict-icon { width:48px; height:48px; flex:0 0 auto; border-radius:12px; display:grid; place-items:center; background:var(--ok-soft); }
 .verdict-icon svg { width:24px; height:24px; stroke:var(--ok); }
 .verdict-text { flex:1; min-width:0; }
@@ -246,7 +245,6 @@ a:hover { text-decoration:underline; }
 .verdict-meta { margin:0; font-size:13px; color:var(--muted); font-family:var(--mono); }
 .verdict-pill { flex:0 0 auto; align-self:flex-start; padding:5px 14px; border-radius:var(--radius-pill); font-size:11px; font-weight:700; letter-spacing:1px; color:var(--ok); background:var(--ok-soft); border:1px solid var(--teal-line); }
 /* 未通过态 */
-.verdict.block::before { background:var(--block); }
 .verdict.block .verdict-icon { background:var(--block-soft); }
 .verdict.block .verdict-icon svg { stroke:var(--block); }
 .verdict-pill.block { color:var(--block); background:var(--block-soft); border-color:var(--block-line); }

@@ -427,9 +427,6 @@
       }
     }
     if (isSuper) byId("teamLink").style.display = "inline-block";
-    byId("logoutBtn").addEventListener("click", function () {
-      post("/api/logout").then(function () { location.href = "/login"; });
-    });
   }
 
   function initFilters() {

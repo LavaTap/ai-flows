@@ -36,6 +36,26 @@ export interface UserAccount {
   avatar?: string;
 }
 
+/** AI 对话账号投影（表 chat_accounts，email 主键并外键指向 users.email）。
+ *  users 是唯一主表，本表只同步 email + name，供对话侧取展示名，不自持密码等敏感字段。 */
+export interface ChatAccount {
+  /** 账号邮箱（与 users.email 一致，也是与 chat_sessions.owner_email 的联通键） */
+  email: string;
+  /** 展示姓名（users.name，缺省回退邮箱前缀） */
+  name: string;
+}
+
+/** 评审账号投影（表 review_accounts，email 主键并外键指向 users.email）。
+ *  users 是唯一主表，本表同步 email + name + department，供评审侧按部门归属取信息。 */
+export interface ReviewAccount {
+  /** 账号邮箱（与 users.email 一致） */
+  email: string;
+  /** 展示姓名（users.name，缺省回退邮箱前缀） */
+  name: string;
+  /** 归属部门（users.department，缺省空串） */
+  department: string;
+}
+
 /** 节点运行时状态：待执行 / 执行中 / 待验收 / 已执行 */
 export type NodeStatus = "todo" | "running" | "in_review" | "done";
 
@@ -265,6 +285,8 @@ function db(): Database.Database {
   if (!ready) {
     ready = true;
     importLegacyJson(c);
+    // 每次进程启动同步一次账号投影表：覆盖「旧库已迁移过、新表还是空」的升级场景
+    syncUserAccounts();
   }
   return c;
 }
@@ -739,6 +761,50 @@ export function saveUsers(users: UserAccount[]): void {
     del.run();
     users.forEach((u, i) => ins.run(userParams(u, i)));
   })();
+  // users 变更后立刻把账号信息同步到两张投影表，保证「其他表统一同步 users」
+  syncUserAccounts();
+}
+
+/** 账号展示名：优先 users.name，缺省回退邮箱前缀（与角色卡片一致） */
+function accountName(u: UserAccount): string {
+  const name = (u.name ?? "").trim();
+  return name || u.email.split("@")[0];
+}
+
+/** 从 users 主表重建两张账号投影表（chat_accounts / review_accounts）。
+ *  整体清空后重写，保证与 users 完全一致；users 行被删时已由外键级联清理。 */
+export function syncUserAccounts(): void {
+  const c = db();
+  const users = loadUsers();
+  const delChat = c.prepare("DELETE FROM chat_accounts");
+  const delReview = c.prepare("DELETE FROM review_accounts");
+  const insChat = c.prepare("INSERT INTO chat_accounts (email,name) VALUES (@email,@name)");
+  const insReview = c.prepare(
+    "INSERT INTO review_accounts (email,name,department) VALUES (@email,@name,@department)"
+  );
+  c.transaction(() => {
+    delChat.run();
+    delReview.run();
+    for (const u of users) {
+      const name = accountName(u);
+      insChat.run({ email: u.email, name });
+      insReview.run({ email: u.email, name, department: u.department ?? "" });
+    }
+  })();
+}
+
+/** 读取 AI 对话账号投影表（按姓名排序） */
+export function loadChatAccounts(): ChatAccount[] {
+  const rows = db().prepare("SELECT email,name FROM chat_accounts ORDER BY name").all() as ChatAccount[];
+  return rows;
+}
+
+/** 读取评审账号投影表（按邮箱排序） */
+export function loadReviewAccounts(): ReviewAccount[] {
+  const rows = db()
+    .prepare("SELECT email,name,department FROM review_accounts ORDER BY email")
+    .all() as ReviewAccount[];
+  return rows;
 }
 
 /** GitHub 用户名归一化：去空白与 @ 前缀；空串表示解绑；
@@ -818,6 +884,8 @@ export function setUserProfile(
   if (sets.length) {
     args.push(email);
     c.prepare(`UPDATE users SET ${sets.join(", ")} WHERE email = ?`).run(...args);
+    // 姓名 / 部门变更后同步投影表（saveUsers 之外的第二条 users 写入路径）
+    syncUserAccounts();
   }
   return loadUsers().find((u) => u.email === email) ?? null;
 }

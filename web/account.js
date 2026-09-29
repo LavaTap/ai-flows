@@ -45,12 +45,6 @@
       var teamSide = document.getElementById("teamSide");
       if (teamSide) teamSide.style.display = "flex";
     }
-    var logoutBtn = document.getElementById("logoutBtn");
-    if (logoutBtn) {
-      logoutBtn.addEventListener("click", function () {
-        post("/api/logout").then(function () { location.href = "/login"; });
-      });
-    }
     renderUserChip();
   }
 

@@ -54,10 +54,6 @@
       var teamLink = document.getElementById("teamLink");
       if (teamLink) teamLink.style.display = "inline-block";
     }
-    var logoutBtn = document.getElementById("logoutBtn");
-    if (logoutBtn) logoutBtn.addEventListener("click", function () {
-      api("/api/logout", { method: "POST" }).then(function () { location.href = "/login"; });
-    });
     var chip = document.querySelector(".user-chip");
     if (chip) {
       var av = chip.querySelector(".avatar");

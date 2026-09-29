@@ -49,8 +49,8 @@
 | `richtext.ts` | 富文本白名单净化 `sanitizeRichHtml()` / `isEmptyRichHtml()`：工单正文与评论来自 contenteditable，属不可信输入，落库与回显前必须过白名单（去 `<script>`/事件处理器/`javascript:`/外链图片），零依赖手写标签扫描器 |
 | `skill.ts` | skill 执行器：SKILL.md（剥 frontmatter）作系统提示 + 需求/附件组装 prompt → `callModel` 生成 Markdown 产物写入输出目录，进度经回调回写 db；不感知节点/权限 |
 | `crawler.ts` | 节点 01 调研 agent 执行器：需求文本经 stdin 作 agent（`crawler.root` 项目内，命令 `crawler.command`）prompt → 跑完把 agent `output/` 目录打包 zip（零依赖 CRC32 + `zlib.deflateRawSync`，含 `collectFiles`）；不感知节点/权限 |
-| `db.ts` | **数据访问唯一入口**（SQLite 实现，导出 API 与旧 JSON 版逐字兼容，调用方零改动）：`loadUsers` / `saveUsers`、`authenticate` 邮箱+密码校验、GitHub 绑定/待审核/资料修改（`setUserGithub` / `setUserGithubPending` / `clearUserGithubPending` / `approveUserGithub` / `setUserProfile`，`UserAccount` 含 `avatar` 字段）、管线（`loadPipelineName` / `savePipelineName` / `loadNodes` / `saveNodes`）、评审历史（`loadReviews` / `appendReview` / `appendReviews`）、工单（`loadTickets` / `saveTickets` / `appendTicket` / `updateTicket`）、AI 对话（`loadChats` / `saveChats` / `appendChat` / `updateChat` / `deleteChat`；`loadChatModels` / `saveChatModels` / `appendChatModel` / `updateChatModel` / `deleteChatModel` / `setActiveModel`）；图片目录 `TICKET_IMAGES_DIR`、头像目录 `AVATARS_DIR`（二进制仍落盘，不入库）；首次取连接时把旧 `db/*.json` 一次性导入（`settings.migrated_from_json` 置位后不再执行） |
-| `sqlite.ts` | SQLite 连接与建表：`getDb()` 单例（建目录 → 开库 → `journal_mode=WAL` → `foreign_keys=ON` → 幂等 DDL）、`closeDb()`；导出 `DB_DIR` / `DB_FILE`（`db/ai-flows.sqlite`，已 gitignore）。**唯一**开库入口，其余模块不得自行 `new Database()` |
+| `db.ts` | **数据访问唯一入口**（SQLite 实现，导出 API 与旧 JSON 版逐字兼容，调用方零改动）：`loadUsers` / `saveUsers`、`authenticate` 邮箱+密码校验、GitHub 绑定/待审核/资料修改（`setUserGithub` / `setUserGithubPending` / `clearUserGithubPending` / `approveUserGithub` / `setUserProfile`，`UserAccount` 含 `avatar` 字段）、管线（`loadPipelineName` / `savePipelineName` / `loadNodes` / `saveNodes`）、评审历史（`loadReviews` / `appendReview` / `appendReviews`）、工单（`loadTickets` / `saveTickets` / `appendTicket` / `updateTicket`）、AI 对话（`loadChats` / `saveChats` / `appendChat` / `updateChat` / `deleteChat`；`loadChatModels` / `saveChatModels` / `appendChatModel` / `updateChatModel` / `deleteChatModel` / `setActiveModel`）、账号投影表（`syncUserAccounts` / `loadChatAccounts` / `loadReviewAccounts`）；图片目录 `TICKET_IMAGES_DIR`、头像目录 `AVATARS_DIR`（二进制仍落盘，不入库）；首次取连接时把旧 `db/*.json` 一次性导入（`settings.migrated_from_json` 置位后不再执行） |
+| `sqlite.ts` | SQLite 连接与建表：`getDb()` 单例（建目录 → 开库 → `journal_mode=WAL` → `foreign_keys=ON` → 幂等 DDL）、`closeDb()`；导出 `DB_DIR` / `DB_FILE`（`db/ai-flows.sqlite`，已 gitignore）。**唯一**开库入口，其余模块不得自行 `new Database()`。账号投影表 `chat_accounts`（email+name）/ `review_accounts`（email+name+department）以 `email` 外键级联 `users`，由 `db.ts` 的 `syncUserAccounts()` 从 users 主表统一同步 |
 | `auth.ts` | 内存会话 + cookie 签发/解析（`HttpOnly` `SameSite=Lax`，24h，重启即失效） |
 | `redact.ts` | `maskSecrets()`：评审产出前对 `summary` / `message` / `suggestion` 打码（密钥只留首尾各 4 位） |
 
@@ -62,6 +62,7 @@
 | 运行时依赖仅 `better-sqlite3` | 唯一允许的运行时依赖是 `better-sqlite3`（原生 SQLite 绑定，要求 Node ≥22）；除它之外禁止新增 `dependencies`，能力用 `node:*` 与全局 `fetch` 自实现，不要引入 commander / zod / express / axios |
 | 数据库唯一入口 | 开库建表只走 `src/sqlite.ts` 的 `getDb()`，数据读写只走 `src/db.ts` 的导出函数；禁止在其他模块 `new Database()` 或裸写 SQL。表结构变更须同步 `sqlite.ts` 的 DDL 与本文档 |
 | 数据落库只走 db.ts | `platform.ts` 等调用方**不得**直接读 `db/*.json`；旧 JSON 只在 `db.ts` 首次导入时被读取一次，之后为只读种子 |
+| users 是账号唯一主表 | 账号信息只在 `users` 表维护；`chat_accounts` / `review_accounts` 是它的投影表（`email` 主键 + 外键级联 `users.email`），由 `syncUserAccounts()` 统一同步。凡改动 `users` 的写入路径（`saveUsers` / `setUserProfile`）必须在写完后调用 `syncUserAccounts()`，不得只改一处导致投影表与主表漂移；投影表不得自持密码等敏感字段 |
 | 退出码契约 | `0` 通过 / `1` 存在 blocker（拦截）/ `2` 推送失败。pre-push hook 依赖它拦截，改动会静默废掉门禁 |
 | 用 `process.exitCode` | 不调用 `process.exit()`，以便 stdout 正常 flush |
 | git 调用收敛 | 所有 git 命令走 `src/git.ts` 的 `git()`，禁止在别处 `spawn` git |
@@ -85,7 +86,8 @@
 | 账号与密码 | 账号唯一来源 SQLite `users` 表（种子仍由 `db/users.json` 首次导入），**不开放注册**；演示期密码明文 123456，上线前必须换 `node:crypto` scrypt 加盐哈希 |
 | 部门与账号数据 | 平台账号分三大部门：`用户研究部门` / `程序中台` / `运营部门`；节点 01/02 属用户研究、03 属程序中台、04 属运营，账号 `department` 与节点 `department` 需对齐（`canExecute`/角色卡片按它过滤） |
 | GitHub 自助绑定 + 主管审核 | 主管绑定即刻写入 `github`；员工绑定写 `githubPending`，主管经 `/api/account/<email>/github/{approve,reject}` 批准后转 `github` 才生效；员工可自行取消待审或解绑已生效绑定 |
-| 资料主管可改 | 设置任意账号的姓名 / 部门 / 职位只走 `POST /api/account/<email>/profile`，仅主管（`canApprove`）可调；员工只能绑自己的 GitHub，不能改任何账号资料 |
+| 资料主管可改 | 设置任意账号的姓名 / 部门 / 职位只走 `POST /api/account/<email>/profile`，仅主管（`canApprove`）可调；员工只能绑自己的 GitHub，不能改任何账号资料。路径里的 email 必须经 `decodePathSegment()` 还原（前端会编码成 `%40`），解码后含 `/` `\` 一律按不存在处理 |
+| 头像上传体积 | `POST /api/account/avatar` 收 base64 data URL，请求体上限 `AVATAR_BODY_MAX`（4MB，覆盖 2MB 图的 base64 膨胀）；用默认 16KB 上限会拒掉真实图片 |
 | 角色卡片排版 | 节点详情「执行角色」卡片统一长方形：左头像 + 右侧加粗姓名 + 下方「部门/职位」（如 用户研究部门 / 用户研究实习生）；账号管理弹窗在顶栏「账号管理」按钮打开 |
 | 会话与 cookie | 内存 `Map` 会话 + `HttpOnly` `SameSite=Lax` cookie；服务重启全部失效（演示可接受，会话不写库、不引 Redis） |
 | 对话记忆压缩 | AI 对话按账号隔离（`ChatSession.ownerEmail`）；未纳入摘要的历史原文累计字数超 `chat.compressChars`（默认 400）时，用 `callModelOnce` + `buildSummaryMessages` 把旧摘要与新原文合并压缩为 `session.summary` 落库（`summaryUpto` 记已覆盖条数）；此后 prompt 只送【摘要 + 未压缩近期原文】。压缩失败不阻断对话 |
@@ -174,7 +176,7 @@ export default function main() {}
 | `reviewer.ts` | `extractJson` | 带围栏、带前后缀文字、非法 JSON 抛错 |
 | `publisher.ts` | `injectToken` | https 注入、已有凭据剥离、ssh 地址不动 |
 | `serve.ts` | `/reports/<id>` 路由 | `../` 等路径穿越必须 404 |
-| `platform.ts` | `canExecute` / `canApprove` / `canEditRequirement` / `filterReviewsByUser` / `canAccessTicket` / `filterTicketsByUser` / `isTicketStatus` / `collectTicketImages` / `safeRepoPath` | 员工限本部门、主管全节点可执行；员工不可批准；需求编辑同执行权限；评审记录主管全量、员工本部门；工单主管全量、员工本部门；状态取值白名单；正文图片引用去重提取；目录穿越拦截 |
+| `platform.ts` | `canExecute` / `canApprove` / `canEditRequirement` / `filterReviewsByUser` / `canAccessTicket` / `filterTicketsByUser` / `isTicketStatus` / `collectTicketImages` / `safeRepoPath` / `decodePathSegment` | 员工限本部门、主管全节点可执行；员工不可批准；需求编辑同执行权限；评审记录主管全量、员工本部门；工单主管全量、员工本部门；状态取值白名单；正文图片引用去重提取；目录穿越拦截；路径段 URL 解码并拒绝含分隔符、非法编码 |
 | `richtext.ts` | `sanitizeRichHtml` / `isEmptyRichHtml` | 保留编辑器产出的白名单标签与属性；去 `<script>`/事件处理器/`javascript:`/外链图片；未知标签丢标签留文本；裸 `<` `&` 转义；纯标签空正文判空 |
 | `skill.ts` | `sanitizeFilename` / `buildSkillPrompt` / `resolveSkillDoc` | 文件名净化；含/不含附件的 prompt 组装；未知 skill 抛错 |
 | `crawler.ts` | `crc32` / `buildZip` / `collectFiles` | CRC32 标准校验值；zip 经 `inflateRawSync` 往返一致、空条目归档合法；目录递归条目名为 posix 相对路径 |

@@ -1,8 +1,8 @@
 /* user-menu.js · 顶栏用户菜单（点开显示放大资料 + 设置入口）
    共享逻辑：各页只放同名 DOM（#userChip / #userPanel），本脚本负责开合与资料填充。
-   资料源：从各页注入的 boot 全局里取 user（__ACCOUNT__ / __PIPELINE__ / __TICKETS__ / __GHAUDIT__ / __CHAT__）。 */
+   资料源：从各页注入的 boot 全局里取 user（__ACCOUNT__ / __PIPELINE__ / __TICKETS__ / __GHAUDIT__ / __CHAT__ / __TEAM__）。 */
 (function () {
-  var BOOT_KEYS = ["__ACCOUNT__", "__PIPELINE__", "__TICKETS__", "__GHAUDIT__", "__CHAT__"];
+  var BOOT_KEYS = ["__ACCOUNT__", "__PIPELINE__", "__TICKETS__", "__GHAUDIT__", "__CHAT__", "__TEAM__"];
 
   function bootUser() {
     for (var i = 0; i < BOOT_KEYS.length; i++) {
@@ -84,6 +84,16 @@
     });
 
     fillPanel(bootUser());
+
+    /* 退出登录 */
+    var logoutItem = panel.querySelector(".user-panel-logout");
+    if (logoutItem) {
+      logoutItem.addEventListener("click", function () {
+        fetch("/api/logout", { method: "POST" }).finally(function () {
+          location.href = "/login";
+        });
+      });
+    }
   }
 
   if (document.readyState === "loading") {

@@ -46,12 +46,6 @@
   /* ────────────── 顶栏 ────────────── */
 
   function initTopbar() {
-    var logoutBtn = document.getElementById("logoutBtn");
-    if (logoutBtn) {
-      logoutBtn.addEventListener("click", function () {
-        post("/api/logout").then(function () { location.href = "/login"; });
-      });
-    }
     renderUserChip();
   }
 
@@ -282,6 +276,19 @@
         saveProfile(m.email, { name: newName });
       });
       actWrap.appendChild(editBtn);
+
+      var removeBtn = document.createElement("button");
+      removeBtn.className = "btn danger";
+      removeBtn.textContent = "移除";
+      removeBtn.title = "将该成员移出团队（不删除账号）";
+      removeBtn.addEventListener("click", function () {
+        if (!confirm("确定将 " + displayName(m) + " 移出「" + m.department + "」？\n移出后该账号仍保留，但不再属于任何团队。")) return;
+        removeBtn.disabled = true;
+        saveProfile(m.email, { department: "" }).then(function () {
+          removeBtn.disabled = false;
+        });
+      });
+      actWrap.appendChild(removeBtn);
 
       tdAct.appendChild(actWrap);
       tr.appendChild(tdAct);

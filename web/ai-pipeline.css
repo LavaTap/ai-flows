@@ -227,24 +227,6 @@ body {
   background: var(--led-soft);
 }
 
-/* 顶栏退出按钮：与导航链接同款药丸形 */
-.logout {
-  font: 500 12px/18px var(--font-sans);
-  color: var(--copy);
-  background: var(--glass-fill);
-  border: 1px solid var(--glass-line);
-  border-radius: 999px;
-  padding: 4px 12px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: color 150ms ease, border-color 150ms ease;
-}
-
-.logout:hover {
-  color: var(--led);
-  border-color: rgba(173, 49, 77, 0.3);
-}
-
 .user-chip {
   display: flex;
   align-items: center;
@@ -353,11 +335,21 @@ body {
   font: 500 12.5px/18px var(--font-sans);
   color: var(--copy);
   text-decoration: none;
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
 }
 
 .user-panel-item:hover {
   background: var(--paper-2);
   color: var(--led);
+}
+
+.user-panel-logout:hover {
+  background: rgba(173, 49, 77, 0.08);
+  color: var(--block);
 }
 
 .user-panel-ico {
@@ -676,25 +668,13 @@ body {
 }
 
 /* ============ 色块分区（节点详情内各功能区） ============ */
-/* 需求分析/调研需求 —— 暖琥珀 */
-.d-req {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  border-left: 3px solid var(--amber);
-  padding: 4px 0 4px 12px;
-  margin-top: 6px;
-}
-
 /* 提交文件/附件 —— 青绿 */
 .d-files {
   width: 100%;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  border-left: 3px solid var(--teal);
-  padding: 4px 0 4px 12px;
+  padding: 4px 0;
   margin-top: 6px;
 }
 
@@ -705,19 +685,7 @@ body {
   gap: 10px;
   position: relative;
   margin-top: 4px;
-  border-left: 3px solid var(--led);
-  padding: 4px 0 4px 12px;
-}
-
-/* 评审记录触发区 —— 紫 */
-.d-reviews-trigger {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-  border-left: 3px solid var(--purple);
-  padding: 4px 0 4px 12px;
+  padding: 4px 0;
 }
 
 /* ============ 管线 ============ */
@@ -898,202 +866,6 @@ body {
   padding-right: 4px;
 }
 
-/* ============ 评审记录宽面板（独立模态，≥60vw） ============ */
-.review-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.4);
-  z-index: 950;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--s-24);
-  animation: reviewFadeIn 160ms ease;
-}
-
-@keyframes reviewFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-.review-panel {
-  width: min(1100px, 90vw);
-  min-width: 60vw;
-  max-height: 84vh;
-  display: flex;
-  flex-direction: column;
-  background: #ffffff;
-  border: 1px solid var(--glass-line);
-  border-radius: 18px;
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.2);
-  overflow: hidden;
-  border-top: 4px solid var(--purple);
-  animation: reviewSlideUp 200ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-@keyframes reviewSlideUp {
-  from { transform: translateY(16px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
-
-.review-panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s-16);
-  padding: var(--s-20) var(--s-24);
-  border-bottom: 1px solid var(--glass-line);
-  flex: none;
-}
-
-.review-panel-head h3 {
-  margin: 0;
-  font: 700 18px/26px var(--font-sans);
-  color: var(--ink-soft);
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.review-panel-head .rp-count {
-  font: 400 13px/20px var(--font-sans);
-  color: var(--purple);
-}
-
-.review-panel-close {
-  border: 1px solid var(--glass-line);
-  border-radius: var(--radius-pill);
-  background: var(--glass-fill);
-  color: var(--copy);
-  font: 500 13px/18px var(--font-sans);
-  padding: 5px 14px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: color 150ms ease, border-color 150ms ease;
-}
-
-.review-panel-close:hover {
-  color: var(--led);
-  border-color: rgba(79, 70, 229, 0.3);
-}
-
-.review-panel-body {
-  flex: 1;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: var(--s-16) var(--s-24);
-}
-
-.review-panel-empty {
-  font: 400 14px/22px var(--font-sans);
-  color: var(--muted);
-  text-align: center;
-  padding: var(--s-32) 0;
-}
-
-.review-panel-loading {
-  font: 400 14px/22px var(--font-sans);
-  color: var(--muted);
-  text-align: center;
-  padding: var(--s-32) 0;
-}
-
-/* 评审记录条目 */
-.review-record {
-  display: flex;
-  align-items: center;
-  gap: var(--s-16);
-  padding: var(--s-16);
-  border: 1px solid var(--glass-line);
-  border-radius: var(--radius-card);
-  background: var(--glass-fill);
-  margin-bottom: var(--s-12);
-  transition: border-color 150ms ease, box-shadow 150ms ease;
-}
-
-.review-record:hover {
-  border-color: var(--purple-line);
-  box-shadow: 0 4px 12px var(--purple-soft);
-}
-
-.review-record .rr-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.review-record .rr-who {
-  font: 500 14px/22px var(--font-sans);
-  color: var(--ink-soft);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.review-record .rr-time {
-  font: 400 12px/18px var(--font-sans);
-  color: var(--muted);
-  margin-top: 2px;
-}
-
-.review-record .rr-repo {
-  display: inline-block;
-  font: 600 10.5px/16px var(--font-sans);
-  color: var(--led);
-  background: var(--led-soft);
-  padding: 1px 8px;
-  border-radius: var(--radius-pill);
-  margin-top: 4px;
-  white-space: nowrap;
-  width: fit-content;
-}
-
-.review-record .rr-badge {
-  font: 600 12px/18px var(--font-sans);
-  padding: 4px 12px;
-  border-radius: var(--radius-pill);
-  white-space: nowrap;
-  flex: none;
-}
-
-.review-record .rr-badge.pass {
-  color: var(--teal);
-  background: var(--teal-soft);
-}
-
-.review-record .rr-badge.block {
-  color: var(--led);
-  background: var(--led-soft);
-}
-
-.review-record .rr-num {
-  font: 600 13px/20px var(--font-sans);
-  color: var(--muted);
-  white-space: nowrap;
-  flex: none;
-}
-
-.review-record .rr-actions {
-  flex: none;
-  min-width: 56px;
-  text-align: right;
-}
-
-.review-record .rr-actions a {
-  font: 500 12px/18px var(--font-sans);
-  color: var(--purple);
-  text-decoration: none;
-  border: 1px solid var(--purple-line);
-  border-radius: var(--radius-pill);
-  padding: 4px 12px;
-  display: inline-block;
-  transition: background 150ms ease, color 150ms ease;
-}
-
-.review-record .rr-actions a:hover {
-  background: var(--purple);
-  color: #fff;
-}
-
 /* ============ 响应式 ============ */
 @media (max-width: 960px) {
   .pipeline-sidebar {
@@ -1161,28 +933,14 @@ body {
     width: 100%;
     text-align: center;
   }
-
-  .review-panel {
-    width: 96vw;
-    min-width: 0;
-    max-height: 80vh;
-  }
-
-  .review-record {
-    flex-wrap: wrap;
-    gap: var(--s-8);
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .node,
   .tab,
   .nav-link,
-  .logout,
   .user-chip,
-  .pipeline-item,
-  .review-panel,
-  .review-overlay {
+  .pipeline-item {
     transition: none;
     animation: none;
   }
