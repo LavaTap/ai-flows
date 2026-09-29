@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI 对话 · AI-FLOWS 平台</title>
   <link rel="stylesheet" href="./ai-pipeline.css">
+  <script src="/user-menu.js" defer></script>
   <style>
     /* AI 对话页专属样式（沿用 ai-pipeline.css 变量体系） */
     .chat-layout {
@@ -227,11 +228,23 @@
     <div class="top-right">
       <a class="nav-link" href="/pipeline">AI 管线</a>
       <a class="nav-link" href="/tickets">工单</a>
-      <a class="nav-link" href="/account">账号管理</a>
       <a class="nav-link" href="/github-audit">GitHub</a>
       <a class="nav-link" href="/team" id="teamLink" style="display:none;">团队管理</a>
       <a class="nav-link active" href="/chat">AI 对话</a>
-      <span class="user-chip"><span class="avatar" aria-hidden="true"></span><span id="userName">未登录</span></span>
+      <div class="user-menu">
+        <span class="user-chip" id="userChip" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"><span class="avatar" aria-hidden="true"></span><span id="userName">未登录</span></span>
+        <div class="user-panel" id="userPanel" hidden>
+          <div class="user-panel-head">
+            <span class="avatar" aria-hidden="true"></span>
+            <div class="user-panel-meta">
+              <strong id="userPanelName">未登录</strong>
+              <span class="user-panel-email" id="userPanelEmail"></span>
+            </div>
+          </div>
+          <div class="user-panel-sep"></div>
+          <a class="user-panel-item" href="/account"><span class="user-panel-ico" aria-hidden="true">⚙</span>设置</a>
+        </div>
+      </div>
       <button class="logout" id="logoutBtn" type="button">退出</button>
     </div>
   </header>

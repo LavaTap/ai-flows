@@ -1,0 +1,155 @@
+import Database from "better-sqlite3";
+import { mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/** 平台数据目录 db/（src 与 dist 均位于仓库根下一级，向上取根） */
+export const DB_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "db");
+
+/** SQLite 单库文件 db/ai-flows.sqlite（运行时生成，已 gitignore） */
+export const DB_FILE = join(DB_DIR, "ai-flows.sqlite");
+
+/** 建表 DDL：幂等（IF NOT EXISTS），每次进程启动执行一次。
+ *  ord 列保留数组原始顺序（JSON 时代靠数组下标，SQL 无序需显式列）。
+ *  子表用 ON DELETE CASCADE，父行整体替换时子行随之清理。 */
+const SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  ord            INTEGER NOT NULL,
+  email          TEXT PRIMARY KEY,
+  password       TEXT NOT NULL,
+  role           TEXT NOT NULL,
+  name           TEXT,
+  title          TEXT,
+  department     TEXT,
+  github         TEXT,
+  github_pending TEXT,
+  avatar         TEXT
+);
+
+CREATE TABLE IF NOT EXISTS nodes (
+  ord              INTEGER NOT NULL,
+  id               TEXT PRIMARY KEY,
+  department       TEXT NOT NULL,
+  step             TEXT NOT NULL,
+  ready            INTEGER NOT NULL DEFAULT 0,
+  status           TEXT NOT NULL,
+  runner           TEXT,
+  requirement_text TEXT,
+  uploads          TEXT,
+  artifacts        TEXT,
+  progress         INTEGER,
+  progress_label   TEXT,
+  rejection        TEXT,
+  last_result      TEXT,
+  report_url       TEXT,
+  output_dir       TEXT
+);
+
+CREATE TABLE IF NOT EXISTS reviews (
+  ord          INTEGER NOT NULL,
+  id           TEXT PRIMARY KEY,
+  source       TEXT NOT NULL,
+  actor        TEXT NOT NULL,
+  email        TEXT NOT NULL,
+  department   TEXT NOT NULL,
+  role         TEXT NOT NULL,
+  generated_at TEXT NOT NULL,
+  passed       INTEGER NOT NULL DEFAULT 0,
+  blockers     INTEGER NOT NULL DEFAULT 0,
+  issues       INTEGER NOT NULL DEFAULT 0,
+  report_url   TEXT NOT NULL DEFAULT '',
+  repo         TEXT
+);
+
+CREATE TABLE IF NOT EXISTS tickets (
+  ord          INTEGER NOT NULL,
+  id           TEXT PRIMARY KEY,
+  kind         TEXT NOT NULL,
+  title        TEXT NOT NULL,
+  content      TEXT NOT NULL,
+  status       TEXT NOT NULL,
+  department   TEXT NOT NULL,
+  author_name  TEXT NOT NULL,
+  author_email TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL,
+  images       TEXT
+);
+
+CREATE TABLE IF NOT EXISTS ticket_comments (
+  ord        INTEGER NOT NULL,
+  id         TEXT PRIMARY KEY,
+  ticket_id  TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+  author     TEXT NOT NULL,
+  email      TEXT NOT NULL,
+  department TEXT NOT NULL,
+  content    TEXT NOT NULL,
+  at         TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS chat_sessions (
+  ord         INTEGER NOT NULL,
+  id          TEXT PRIMARY KEY,
+  owner_email TEXT NOT NULL,
+  title       TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL,
+  summary     TEXT,
+  summary_upto INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+  ord        INTEGER NOT NULL,
+  id         TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+  role       TEXT NOT NULL,
+  content    TEXT NOT NULL,
+  at         TEXT NOT NULL,
+  model_id   TEXT,
+  tokens     INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS chat_models (
+  ord         INTEGER NOT NULL,
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  provider    TEXT NOT NULL,
+  model       TEXT NOT NULL,
+  base_url    TEXT NOT NULL,
+  api_key_env TEXT NOT NULL,
+  is_active   INTEGER,
+  category    TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_reviews_department ON reviews(department);
+CREATE INDEX IF NOT EXISTS idx_ticket_comments_ticket ON ticket_comments(ticket_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id);
+`;
+
+let conn: Database.Database | null = null;
+
+/** 取全局唯一 SQLite 连接（首次调用建目录、开库、开 WAL、建表） */
+export function getDb(): Database.Database {
+  if (conn) return conn;
+  mkdirSync(DB_DIR, { recursive: true });
+  const c = new Database(DB_FILE);
+  // WAL：读写并发更友好；外键：让子表级联删除生效
+  c.pragma("journal_mode = WAL");
+  c.pragma("foreign_keys = ON");
+  c.exec(SCHEMA_SQL);
+  conn = c;
+  return conn;
+}
+
+/** 关闭连接（进程收尾 / 测试用） */
+export function closeDb(): void {
+  if (conn) {
+    conn.close();
+    conn = null;
+  }
+}

@@ -1,6 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { buildChatMessages, truncateTitle, esc, PROVIDER_DEFAULT_ENDPOINTS } from "./chat.js";
+import {
+  buildChatMessages,
+  buildSummaryMessages,
+  historyToText,
+  countChars,
+  MEMORY_SUMMARY_SYSTEM,
+  truncateTitle,
+  esc,
+  PROVIDER_DEFAULT_ENDPOINTS,
+} from "./chat.js";
 import type { ChatMessage } from "./db.js";
 
 test("should inject system prompt and append user message", () => {
@@ -76,6 +85,59 @@ test("should escape html special characters", () => {
   assert.strictEqual(esc(null), "");
   assert.strictEqual(esc(undefined), "");
   assert.strictEqual(esc(123), "123");
+});
+
+test("should inject memory summary after system prompt when provided", () => {
+  const history: ChatMessage[] = [
+    { id: "1", role: "user", content: "hi", at: "2026-01-01T00:00:00Z" },
+  ];
+  const msgs = buildChatMessages("sys", history, "next", 50, "用户在做网关性能优化");
+  assert.strictEqual(msgs.length, 4);
+  assert.strictEqual(msgs[0].content, "sys");
+  assert.strictEqual(msgs[1].role, "system");
+  assert.ok(msgs[1].content.includes("用户在做网关性能优化"));
+  assert.strictEqual(msgs[2].content, "hi");
+  assert.strictEqual(msgs[3].content, "next");
+});
+
+test("should skip blank memory summary", () => {
+  const msgs = buildChatMessages("sys", [], "hi", 50, "   ");
+  assert.strictEqual(msgs.length, 2);
+  assert.strictEqual(msgs[0].role, "system");
+});
+
+test("should count chars of history and ignore empty content", () => {
+  const history: ChatMessage[] = [
+    { id: "1", role: "user", content: "abc", at: "2026-01-01T00:00:00Z" },
+    { id: "2", role: "assistant", content: "", at: "2026-01-01T00:00:00Z" },
+    { id: "3", role: "user", content: "de", at: "2026-01-01T00:00:00Z" },
+  ];
+  assert.strictEqual(countChars(history), 5);
+  assert.strictEqual(countChars([]), 0);
+});
+
+test("should render history as labeled plain text", () => {
+  const history: ChatMessage[] = [
+    { id: "1", role: "user", content: "你好", at: "2026-01-01T00:00:00Z" },
+    { id: "2", role: "assistant", content: "  你好呀  ", at: "2026-01-01T00:00:00Z" },
+    { id: "3", role: "assistant", content: "", at: "2026-01-01T00:00:00Z" },
+  ];
+  assert.strictEqual(historyToText(history), "用户：你好\nAI：你好呀");
+});
+
+test("should build summary prompt merging previous summary with new history", () => {
+  const msgs = buildSummaryMessages("旧摘要", "用户：新问题");
+  assert.strictEqual(msgs.length, 2);
+  assert.strictEqual(msgs[0].role, "system");
+  assert.strictEqual(msgs[0].content, MEMORY_SUMMARY_SYSTEM);
+  assert.ok(msgs[1].content.includes("旧摘要"));
+  assert.ok(msgs[1].content.includes("用户：新问题"));
+});
+
+test("should omit previous summary section when blank", () => {
+  const msgs = buildSummaryMessages("  ", "用户：新问题");
+  assert.ok(!msgs[1].content.includes("已有记忆摘要"));
+  assert.ok(msgs[1].content.includes("新增对话记录"));
 });
 
 test("should include deepseek default endpoint", () => {

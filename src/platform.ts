@@ -4,7 +4,17 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSy
 import { join, dirname, basename, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, loadTickets, appendTicket, updateTicket, TICKET_IMAGES_DIR, AVATARS_DIR, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel } from "./db.js";
-import { callModelStream, buildChatMessages, truncateTitle, esc, PROVIDER_DEFAULT_ENDPOINTS } from "./chat.js";
+import {
+  callModelStream,
+  callModelOnce,
+  buildChatMessages,
+  buildSummaryMessages,
+  historyToText,
+  countChars,
+  truncateTitle,
+  esc,
+  PROVIDER_DEFAULT_ENDPOINTS,
+} from "./chat.js";
 import { createSession, destroySession, currentUser, sessionCookie, clearCookie, SESSION_COOKIE, parseCookies } from "./auth.js";
 import { loadConfig, type CrawlerConfig, type ReviewConfig } from "./config.js";
 import { collectDiff } from "./collector.js";
@@ -282,6 +292,7 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   "/login.css": { file: "login.css", type: "text/css; charset=utf-8" },
   "/ai-pipeline.css": { file: "ai-pipeline.css", type: "text/css; charset=utf-8" },
   "/ai-pipeline-app.js": { file: "ai-pipeline-app.js", type: "text/javascript; charset=utf-8" },
+  "/user-menu.js": { file: "user-menu.js", type: "text/javascript; charset=utf-8" },
   "/ai-review-report.css": { file: "ai-review-report.css", type: "text/css; charset=utf-8" },
   "/ai-review-report.js": { file: "ai-review-report.js", type: "text/javascript; charset=utf-8" },
   "/account.js": { file: "account.js", type: "text/javascript; charset=utf-8" },
@@ -400,7 +411,13 @@ function chatHtml(user: UserAccount): string {
 }
 
 /** 加载 chat 配置（缺省回退平台启动目录配置） */
-function loadChatConfig(): { systemPrompt: string; maxHistory: number; maxTokens: number; temperature: number } {
+function loadChatConfig(): {
+  systemPrompt: string;
+  maxHistory: number;
+  maxTokens: number;
+  temperature: number;
+  compressChars: number;
+} {
   try {
     const cfg = loadConfig(undefined);
     const c = cfg.chat ?? {};
@@ -409,9 +426,16 @@ function loadChatConfig(): { systemPrompt: string; maxHistory: number; maxTokens
       maxHistory: c.maxHistory ?? 50,
       maxTokens: c.maxTokens ?? 2000,
       temperature: c.temperature ?? 0.7,
+      compressChars: c.compressChars ?? 400,
     };
   } catch {
-    return { systemPrompt: "你是 ai-flows 平台的 AI 助手。", maxHistory: 50, maxTokens: 2000, temperature: 0.7 };
+    return {
+      systemPrompt: "你是 ai-flows 平台的 AI 助手。",
+      maxHistory: 50,
+      maxTokens: 2000,
+      temperature: 0.7,
+      compressChars: 400,
+    };
   }
 }
 
@@ -1931,10 +1955,8 @@ export async function startPlatformServer(
       }
 
       const chatCfg = loadChatConfig();
-      // user 消息已写入 history，把除最后一条外的历史 + 当前 user 内容拼成 prompt
-      const promptMessages = buildChatMessages(chatCfg.systemPrompt, updated.messages.slice(0, -1), content, chatCfg.maxHistory);
 
-      // 设置 SSE 响应头
+      // 设置 SSE 响应头（先回，记忆压缩可能耗时，前端能立即看到 thinking）
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
@@ -1945,6 +1967,43 @@ export async function startPlatformServer(
 
       const ac = new AbortController();
       req.on("close", () => ac.abort());
+
+      // 历史记忆压缩：未纳入摘要的原文累计字数超 compressChars 时，
+      // 合并旧摘要 + 新增原文调模型压缩为一段新摘要落库（滚动更新，失败不阻断对话）
+      const prior = updated.messages.slice(0, -1);
+      let memoryUpto = updated.summaryUpto ?? 0;
+      let memory = updated.summary ?? "";
+      if (countChars(prior.slice(memoryUpto)) > chatCfg.compressChars) {
+        try {
+          res.write(
+            `event: thinking\ndata: ${JSON.stringify({ status: "thinking", message: "正在压缩历史记忆…" })}\n\n`
+          );
+          const summaryText = await callModelOnce(
+            chatModelToModelConfig(chatModel),
+            buildSummaryMessages(memory, historyToText(prior.slice(memoryUpto))),
+            { maxTokens: 600, signal: ac.signal }
+          );
+          if (summaryText.trim()) {
+            memory = summaryText.trim();
+            memoryUpto = prior.length;
+            updateChat(session.id, (s) => {
+              s.summary = memory;
+              s.summaryUpto = memoryUpto;
+            });
+          }
+        } catch {
+          // 压缩失败时沿用现有记忆，继续正常对话
+        }
+      }
+
+      // 摘要已覆盖的历史不再送原文，只送【摘要 + 未压缩的近期原文】+ 当前 user 内容
+      const promptMessages = buildChatMessages(
+        chatCfg.systemPrompt,
+        prior.slice(memoryUpto),
+        content,
+        chatCfg.maxHistory,
+        memory
+      );
 
       let fullContent = "";
       let totalTokens = 0;

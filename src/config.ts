@@ -57,6 +57,8 @@ export interface ChatConfig {
   maxTokens?: number;
   /** 采样温度，缺省 0.7 */
   temperature?: number;
+  /** 未压缩历史原文累计字数超过该值时触发记忆压缩（调模型生成摘要落库），缺省 400 */
+  compressChars?: number;
 }
 
 /** 节点 01「产品调研」调用的外部调研 agent（Research-Crawler）配置 */
@@ -131,5 +133,6 @@ export function loadConfig(configPath?: string): ReviewConfig {
   cfg.chat.maxHistory = cfg.chat.maxHistory ?? 50;
   cfg.chat.maxTokens = cfg.chat.maxTokens ?? 2000;
   cfg.chat.temperature = cfg.chat.temperature ?? 0.7;
+  cfg.chat.compressChars = cfg.chat.compressChars ?? 400;
   return cfg;
 }

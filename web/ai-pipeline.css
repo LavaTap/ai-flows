@@ -271,6 +271,100 @@ body {
   justify-content: center;
 }
 
+/* ============ 顶栏用户菜单：点开显示放大资料 + 设置入口 ============ */
+.user-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.user-menu .user-chip {
+  cursor: pointer;
+}
+
+.user-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 60;
+  min-width: 236px;
+  padding: 12px;
+  border: 1px solid var(--glass-line);
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(15, 23, 42, 0.08);
+}
+
+.user-panel[hidden] {
+  display: none;
+}
+
+.user-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-panel-head .avatar {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border-radius: 50%;
+  font-size: 18px;
+  background: var(--paper-2);
+  border: 1px solid var(--glass-line);
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.user-panel-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.user-panel-meta strong {
+  font: 600 14px/20px var(--font-sans);
+  color: var(--ink);
+}
+
+.user-panel-email {
+  font: 400 11.5px/16px var(--font-mono);
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-panel-sep {
+  height: 1px;
+  margin: 10px -12px;
+  background: var(--glass-line);
+}
+
+.user-panel-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font: 500 12.5px/18px var(--font-sans);
+  color: var(--copy);
+  text-decoration: none;
+}
+
+.user-panel-item:hover {
+  background: var(--paper-2);
+  color: var(--led);
+}
+
+.user-panel-ico {
+  font-size: 14px;
+  line-height: 1;
+}
+
 /* ============ 主体布局：侧栏 + 管线区 ============ */
 .layout {
   position: relative;

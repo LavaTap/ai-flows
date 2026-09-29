@@ -125,17 +125,92 @@ export async function* callModelStream(
 }
 
 /**
- * 拼装 prompt 消息：[system, ...history.slice(-maxHistory), user]。
- * 纯函数，过滤空 content。复刻 ai-chat characterChat.ts 的 50 条历史截断逻辑。
+ * 非流式调用 chat/completions，一次性返回完整回复文本。
+ * 用于记忆压缩（摘要生成）这类内部调用，需要完整文本而非增量流。
+ */
+export async function callModelOnce(
+  model: ModelConfig,
+  messages: ChatPromptMessage[],
+  opts: { maxTokens?: number; temperature?: number; signal?: AbortSignal } = {}
+): Promise<string> {
+  const apiKey = resolveApiKey(model);
+  if (!apiKey) {
+    const hint = model.apiKeyEnv ? `请设置环境变量 ${model.apiKeyEnv}` : "请配置 model.apiKey 或 model.apiKeyEnv";
+    throw new Error(`缺少模型 API Key。${hint}`);
+  }
+
+  const baseUrl = (model.baseUrl || "").replace(/\/+$/, "");
+  const res = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    signal: opts.signal,
+    body: JSON.stringify({
+      model: model.model,
+      messages,
+      max_tokens: opts.maxTokens ?? 800,
+      temperature: opts.temperature ?? 0.3,
+      stream: false,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`模型接口 ${res.status} ${res.statusText}：${body.slice(0, 500)}`);
+  }
+
+  const data = (await res.json()) as { choices?: { message?: { content?: string | null } }[] };
+  return data.choices?.[0]?.message?.content ?? "";
+}
+
+/** 记忆压缩的系统提示词（把历史对话蒸馏成要点，供后续 prompt 顶部的记忆区使用） */
+export const MEMORY_SUMMARY_SYSTEM =
+  "你是对话记忆压缩器。把给定的历史对话压缩成简洁的中文要点摘要，保留关键事实、用户偏好、已确认结论与未完成事项，不要臆造。直接输出摘要正文，不要加标题或解释。";
+
+/** 历史消息拼成纯文本（压缩输入）：user/AI 逐条标注 */
+export function historyToText(messages: ChatMessage[]): string {
+  return messages
+    .filter((m) => m.content && m.content.trim())
+    .map((m) => `${m.role === "user" ? "用户" : "AI"}：${m.content.trim()}`)
+    .join("\n");
+}
+
+/** 未压缩历史原文的累计字符数（判断是否触发压缩） */
+export function countChars(messages: ChatMessage[]): number {
+  return messages.reduce((n, m) => n + (m.content?.length ?? 0), 0);
+}
+
+/** 组装记忆压缩 prompt：已有摘要 + 新增对话 → 合并压缩为一段新摘要 */
+export function buildSummaryMessages(previousSummary: string, historyText: string): ChatPromptMessage[] {
+  const parts: string[] = [];
+  if (previousSummary.trim()) parts.push(`【已有记忆摘要】\n${previousSummary.trim()}`);
+  parts.push(`【新增对话记录】\n${historyText.trim()}`);
+  parts.push("请把上述内容合并压缩为一段不超过 300 字的记忆摘要。");
+  return [
+    { role: "system", content: MEMORY_SUMMARY_SYSTEM },
+    { role: "user", content: parts.join("\n\n") },
+  ];
+}
+
+/**
+ * 拼装 prompt 消息：[system, (memory), ...history.slice(-maxHistory), user]。
+ * 纯函数，过滤空 content。复刻 ai-chat characterChat.ts 的 50 条历史截断逻辑；
+ * memory 为历史记忆摘要，命中时插在 system 之后作为补充上下文。
  */
 export function buildChatMessages(
   system: string,
   history: ChatMessage[],
   userContent: string,
-  maxHistory = 50
+  maxHistory = 50,
+  memory?: string
 ): ChatPromptMessage[] {
   const messages: ChatPromptMessage[] = [];
   if (system.trim()) messages.push({ role: "system", content: system });
+  if (memory && memory.trim()) {
+    messages.push({ role: "system", content: `【历史记忆摘要】\n${memory.trim()}` });
+  }
   const recent = history.slice(-maxHistory);
   for (const m of recent) {
     if (!m.content || !m.content.trim()) continue;

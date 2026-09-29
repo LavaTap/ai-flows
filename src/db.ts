@@ -1,9 +1,9 @@
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import Database from "better-sqlite3";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { DB_DIR, getDb } from "./sqlite.js";
 
-/** 平台数据目录 db/（src 与 dist 均位于仓库根下一级，向上取根） */
-export const DB_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "db");
+export { DB_DIR };
 
 /** 工单图片上传目录 db/ticket-uploads/（已 gitignore，二进制不入库） */
 export const TICKET_IMAGES_DIR = join(DB_DIR, "ticket-uploads");
@@ -18,7 +18,7 @@ export type Role = "staff" | "supervisor";
 export interface UserAccount {
   /** 登录邮箱：名字拼音 + @ai-flows.com（虚拟后缀） */
   email: string;
-  /** 演示环境统一 123456，明文存 JSON（上线前改加盐哈希） */
+  /** 演示环境统一 123456，明文存库（上线前改加盐哈希） */
   password: string;
   /** 身份：员工 / 部门主管 */
   role: Role;
@@ -51,7 +51,7 @@ export interface NodeArtifact {
   at: string;
 }
 
-/** 管线节点（db/pipeline.json，执行/批准会写回） */
+/** 管线节点（db 表 nodes，执行/批准会写回） */
 export interface NodeState {
   /** 节点编号 01-04 */
   id: string;
@@ -85,144 +85,6 @@ export interface NodeState {
   outputDir?: string;
 }
 
-/** 读取全部账号 */
-export function loadUsers(): UserAccount[] {
-  const f = join(DB_DIR, "users.json");
-  const data = JSON.parse(readFileSync(f, "utf8")) as { users?: UserAccount[] };
-  return data.users ?? [];
-}
-
-/** 保存全部账号（账号管理自助变更 GitHub 绑定后写回） */
-export function saveUsers(users: UserAccount[]): void {
-  mkdirSync(DB_DIR, { recursive: true });
-  writeFileSync(join(DB_DIR, "users.json"), JSON.stringify({ users }, null, 2), "utf8");
-}
-
-/** GitHub 用户名归一化：去空白与 @ 前缀；空串表示解绑；
- *  非法（长度超 39 / 含非字母数字连字符 / 首尾连字符 / 连续连字符）返回 null */
-export function normalizeGithub(raw: string): string | null {
-  const v = raw.trim().replace(/^@/, "");
-  if (!v) return "";
-  if (!/^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/.test(v)) return null;
-  return v;
-}
-
-/** 绑定/解绑指定账号的已生效 GitHub 用户名（空串解绑）；账号不存在返回 null */
-export function setUserGithub(email: string, github: string): UserAccount | null {
-  const users = loadUsers();
-  const user = users.find((u) => u.email === email);
-  if (!user) return null;
-  if (github) user.github = github;
-  else delete user.github;
-  saveUsers(users);
-  return user;
-}
-
-/** 员工提交 GitHub 绑定：写入待审核字段（覆盖旧的待审核值）；账号不存在返回 null */
-export function setUserGithubPending(email: string, github: string): UserAccount | null {
-  const users = loadUsers();
-  const user = users.find((u) => u.email === email);
-  if (!user) return null;
-  user.githubPending = github;
-  saveUsers(users);
-  return user;
-}
-
-/** 清空某账号的待审核 GitHub 绑定（员工取消 / 主管驳回）；账号不存在返回 null */
-export function clearUserGithubPending(email: string): UserAccount | null {
-  const users = loadUsers();
-  const user = users.find((u) => u.email === email);
-  if (!user) return null;
-  delete user.githubPending;
-  saveUsers(users);
-  return user;
-}
-
-/** 主管批准：把待审核的 GitHub 转为已生效（无待审核绑定视为无效）；账号不存在返回 null */
-export function approveUserGithub(email: string): UserAccount | null {
-  const users = loadUsers();
-  const user = users.find((u) => u.email === email);
-  if (!user || !user.githubPending) return null;
-  user.github = user.githubPending;
-  delete user.githubPending;
-  saveUsers(users);
-  return user;
-}
-
-/** 修改账号的姓名/部门/职位/头像（主管管理他人时调用）；只写传入的字段；账号不存在返回 null */
-export function setUserProfile(
-  email: string,
-  patch: { name?: string; department?: string; title?: string; avatar?: string }
-): UserAccount | null {
-  const users = loadUsers();
-  const user = users.find((u) => u.email === email);
-  if (!user) return null;
-  if (patch.name !== undefined) user.name = patch.name;
-  if (patch.department !== undefined) user.department = patch.department;
-  if (patch.title !== undefined) user.title = patch.title;
-  if (patch.avatar !== undefined) {
-    if (patch.avatar) user.avatar = patch.avatar;
-    else delete user.avatar;
-  }
-  saveUsers(users);
-  return user;
-}
-
-/** 邮箱 + 密码校验，命中返回账号，否则 null */
-export function authenticate(email: string, password: string): UserAccount | null {
-  const target = email.trim().toLowerCase();
-  const user = loadUsers().find((u) => u.email === target);
-  if (!user || user.password !== password) return null;
-  return user;
-}
-
-/** 管线数据（db/pipeline.json） */
-export interface PipelineData {
-  /** 管线名称 */
-  name?: string;
-  /** 管线节点列表 */
-  nodes: NodeState[];
-}
-
-/** 读取管线名称（缺省 "text-flow"） */
-export function loadPipelineName(): string {
-  const f = join(DB_DIR, "pipeline.json");
-  try {
-    const data = JSON.parse(readFileSync(f, "utf8")) as PipelineData;
-    return data.name ?? "text-flow";
-  } catch {
-    return "text-flow";
-  }
-}
-
-/** 写回管线名称 */
-export function savePipelineName(name: string): void {
-  const nodes = loadNodes();
-  mkdirSync(DB_DIR, { recursive: true });
-  writeFileSync(join(DB_DIR, "pipeline.json"), JSON.stringify({ name, nodes }, null, 2), "utf8");
-}
-
-/** 读取全部管线节点（旧状态 approved 自动迁移为 done 并回写） */
-export function loadNodes(): NodeState[] {
-  const f = join(DB_DIR, "pipeline.json");
-  const data = JSON.parse(readFileSync(f, "utf8")) as PipelineData;
-  const nodes = data.nodes ?? [];
-  if (nodes.some((n) => (n as { status?: string }).status === "approved")) {
-    for (const n of nodes) {
-      if ((n as { status?: string }).status === "approved") n.status = "done";
-    }
-    saveNodes(nodes);
-  }
-  return nodes;
-}
-
-/** 写回管线节点（执行/批准后持久化状态） */
-export function saveNodes(nodes: NodeState[]): void {
-  const name = loadPipelineName();
-  mkdirSync(DB_DIR, { recursive: true });
-  writeFileSync(join(DB_DIR, "pipeline.json"), JSON.stringify({ name, nodes }, null, 2), "utf8");
-}
-
 /** 节点历史评审记录：一次 AI 评审 = 一条。平台可追溯「谁在何时评了什么」 */
 export interface ReviewRecord {
   /** 评审产出目录 .ai-review-reports/<id>.json 的 id，报表无法确定时为空串 */
@@ -251,33 +113,12 @@ export interface ReviewRecord {
   repo?: string;
 }
 
-/** 读取平台执行历史 */
-export function loadReviews(): ReviewRecord[] {
-  try {
-    const f = join(DB_DIR, "reviews.json");
-    const data = JSON.parse(readFileSync(f, "utf8")) as { reviews?: ReviewRecord[] };
-    return data.reviews ?? [];
-  } catch {
-    // 历史文件尚未创建时按空处理，不视为错误
-    return [];
-  }
-}
-
-/** 写回平台执行历史（追加一条并持久化） */
-export function appendReview(record: ReviewRecord): void {
-  const reviews = loadReviews();
-  reviews.push(record);
-  mkdirSync(DB_DIR, { recursive: true });
-  writeFileSync(join(DB_DIR, "reviews.json"), JSON.stringify({ reviews }, null, 2), "utf8");
-}
-
-/** 批量追加评审历史（只读写一次文件） */
-export function appendReviews(newRecords: ReviewRecord[]): void {
-  if (!newRecords.length) return;
-  const reviews = loadReviews();
-  reviews.push(...newRecords);
-  mkdirSync(DB_DIR, { recursive: true });
-  writeFileSync(join(DB_DIR, "reviews.json"), JSON.stringify({ reviews }, null, 2), "utf8");
+/** 管线数据（表 settings.pipeline_name + 表 nodes） */
+export interface PipelineData {
+  /** 管线名称 */
+  name?: string;
+  /** 管线节点列表 */
+  nodes: NodeState[];
 }
 
 /** 工单状态：待处理 / 处理中 / 已解决（三态可互相流转） */
@@ -302,7 +143,7 @@ export interface TicketComment {
   at: string;
 }
 
-/** 工单（db/tickets.json）。department 决定可见范围：本部门员工 + 主管 */
+/** 工单（表 tickets + 子表 ticket_comments）。department 决定可见范围：本部门员工 + 主管 */
 export interface TicketRecord {
   /** 工单 id（t- 前缀 + 时间戳 + 随机串） */
   id: string;
@@ -329,46 +170,6 @@ export interface TicketRecord {
   /** 评论列表（按时间正序） */
   comments: TicketComment[];
 }
-
-/** 读取全部工单（文件不存在时按空处理） */
-export function loadTickets(): TicketRecord[] {
-  try {
-    const f = join(DB_DIR, "tickets.json");
-    const data = JSON.parse(readFileSync(f, "utf8")) as { tickets?: TicketRecord[] };
-    return data.tickets ?? [];
-  } catch {
-    // 工单库尚未创建时按空处理，不视为错误
-    return [];
-  }
-}
-
-/** 写回全部工单 */
-export function saveTickets(tickets: TicketRecord[]): void {
-  mkdirSync(DB_DIR, { recursive: true });
-  writeFileSync(join(DB_DIR, "tickets.json"), JSON.stringify({ tickets }, null, 2), "utf8");
-}
-
-/** 追加一条工单 */
-export function appendTicket(record: TicketRecord): void {
-  const tickets = loadTickets();
-  tickets.push(record);
-  saveTickets(tickets);
-}
-
-/** 按 id 更新工单（mutate 回调内修改字段）；工单不存在返回 null */
-export function updateTicket(
-  id: string,
-  mutate: (t: TicketRecord) => void
-): TicketRecord | null {
-  const tickets = loadTickets();
-  const ticket = tickets.find((t) => t.id === id);
-  if (!ticket) return null;
-  mutate(ticket);
-  saveTickets(tickets);
-  return ticket;
-}
-
-// ============ AI 对话：会话 + 消息（db/chats.json） ============
 
 /** 聊天消息角色 */
 export type ChatRole = "user" | "assistant";
@@ -401,63 +202,18 @@ export interface ChatSession {
   createdAt: string;
   /** ISO 最近更新时间（发消息后刷新） */
   updatedAt: string;
+  /** 历史记忆摘要：早期对话累计文本超阈值时由模型压缩生成，拼进后续 prompt 顶部 */
+  summary?: string;
+  /** 摘要已覆盖的历史消息条数（前 summaryUpto 条已被压缩，后续只送原文） */
+  summaryUpto?: number;
   /** 消息列表（按时间正序） */
   messages: ChatMessage[];
 }
 
-/** 聊天库（db/chats.json） */
+/** 聊天库（表 chat_sessions + 子表 chat_messages） */
 export interface ChatStore {
   sessions: ChatSession[];
 }
-
-/** 读取全部聊天会话（文件不存在时按空处理） */
-export function loadChats(): ChatStore {
-  try {
-    const f = join(DB_DIR, "chats.json");
-    const data = JSON.parse(readFileSync(f, "utf8")) as ChatStore;
-    return { sessions: data.sessions ?? [] };
-  } catch {
-    return { sessions: [] };
-  }
-}
-
-/** 写回全部聊天会话 */
-export function saveChats(store: ChatStore): void {
-  mkdirSync(DB_DIR, { recursive: true });
-  writeFileSync(join(DB_DIR, "chats.json"), JSON.stringify(store, null, 2), "utf8");
-}
-
-/** 追加一条会话 */
-export function appendChat(session: ChatSession): void {
-  const store = loadChats();
-  store.sessions.push(session);
-  saveChats(store);
-}
-
-/** 按 id 更新会话（mutate 回调内修改字段）；会话不存在返回 null */
-export function updateChat(
-  id: string,
-  mutate: (s: ChatSession) => void
-): ChatSession | null {
-  const store = loadChats();
-  const session = store.sessions.find((s) => s.id === id);
-  if (!session) return null;
-  mutate(session);
-  saveChats(store);
-  return session;
-}
-
-/** 按 id 删除会话；不存在返回 false */
-export function deleteChat(id: string): boolean {
-  const store = loadChats();
-  const idx = store.sessions.findIndex((s) => s.id === id);
-  if (idx === -1) return false;
-  store.sessions.splice(idx, 1);
-  saveChats(store);
-  return true;
-}
-
-// ============ AI 对话：模型配置（db/models.json） ============
 
 /** 聊天模型配置。红线：apiKeyEnv 只存环境变量名，不存明文 key */
 export interface ChatModel {
@@ -479,7 +235,7 @@ export interface ChatModel {
   category?: string;
 }
 
-/** 模型配置库（db/models.json） */
+/** 模型配置库（表 chat_models + settings.active_model_id） */
 export interface ChatModelStore {
   /** 当前激活模型 id */
   activeId: string;
@@ -487,7 +243,7 @@ export interface ChatModelStore {
   models: ChatModel[];
 }
 
-/** 种子模型：DeepSeek 默认配置（文件不存在时首次落盘） */
+/** 种子模型：DeepSeek 默认配置（库中无模型时首次落盘） */
 export const CHAT_MODEL_SEED: ChatModel = {
   id: "ds-default",
   name: "DeepSeek Chat",
@@ -499,37 +255,799 @@ export const CHAT_MODEL_SEED: ChatModel = {
   category: "text",
 };
 
-/** 读取全部模型配置（文件不存在时返回种子 DeepSeek 配置并落盘一次） */
-export function loadChatModels(): ChatModelStore {
-  try {
-    const f = join(DB_DIR, "models.json");
-    const data = JSON.parse(readFileSync(f, "utf8")) as ChatModelStore;
-    const models = data.models ?? [];
-    if (models.length === 0) {
-      // 空库：落盘种子并返回
-      const store: ChatModelStore = { activeId: CHAT_MODEL_SEED.id, models: [CHAT_MODEL_SEED] };
-      saveChatModels(store);
-      return store;
+// ============ 连接与迁移 ============
+
+let ready = false;
+
+/** 取连接；首次调用顺带跑一次旧 JSON 导入 */
+function db(): Database.Database {
+  const c = getDb();
+  if (!ready) {
+    ready = true;
+    importLegacyJson(c);
+  }
+  return c;
+}
+
+/** 旧 JSON 库一次性导入：仅当 settings.migrated_from_json 未置位时执行。
+ *  把 db/*.json 的存量数据搬进 SQLite，此后 JSON 文件不再被读写。 */
+function importLegacyJson(c: Database.Database): void {
+  const done = c
+    .prepare("SELECT value FROM settings WHERE key = 'migrated_from_json'")
+    .get() as { value?: string } | undefined;
+  if (done) return;
+
+  const readJson = <T>(file: string): T | null => {
+    try {
+      return JSON.parse(readFileSync(join(DB_DIR, file), "utf8")) as T;
+    } catch {
+      // 旧库文件不存在 / 非法时按无数据处理，不阻断启动
+      return null;
     }
-    return { activeId: data.activeId ?? models.find((m) => m.isActive)?.id ?? models[0].id, models };
+  };
+
+  const users = readJson<{ users?: UserAccount[] }>("users.json")?.users ?? [];
+  const pipeline = readJson<{ name?: string; nodes?: NodeState[] }>("pipeline.json");
+  const reviews = readJson<{ reviews?: ReviewRecord[] }>("reviews.json")?.reviews ?? [];
+  const tickets = readJson<{ tickets?: TicketRecord[] }>("tickets.json")?.tickets ?? [];
+  const chats = readJson<{ sessions?: ChatSession[] }>("chats.json")?.sessions ?? [];
+  const models = readJson<ChatModelStore>("models.json");
+
+  c.transaction(() => {
+    if (users.length) {
+      const ins = c.prepare(
+        "INSERT OR REPLACE INTO users (ord,email,password,role,name,title,department,github,github_pending,avatar) VALUES (@ord,@email,@password,@role,@name,@title,@department,@github,@githubPending,@avatar)"
+      );
+      users.forEach((u, i) => ins.run(userParams(u, i)));
+    }
+    if (pipeline) {
+      if (pipeline.name) {
+        c.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('pipeline_name', ?)").run(
+          pipeline.name
+        );
+      }
+      const nodes = pipeline.nodes ?? [];
+      if (nodes.length) {
+        const ins = c.prepare(
+          "INSERT OR REPLACE INTO nodes (ord,id,department,step,ready,status,runner,requirement_text,uploads,artifacts,progress,progress_label,rejection,last_result,report_url,output_dir) VALUES (@ord,@id,@department,@step,@ready,@status,@runner,@requirementText,@uploads,@artifacts,@progress,@progressLabel,@rejection,@lastResult,@reportUrl,@outputDir)"
+        );
+        nodes.forEach((n, i) => ins.run(nodeParams(n, i)));
+      }
+    }
+    if (reviews.length) insertReviews(c, reviews, 0);
+    if (tickets.length) insertTickets(c, tickets, 0);
+    if (chats.length) insertChats(c, chats, 0);
+    if (models && models.models.length) {
+      insertModels(c, models.models, 0);
+      setSettingWith(c, "active_model_id", models.activeId);
+    }
+    setSettingWith(c, "migrated_from_json", "1");
+  })();
+}
+
+// ============ 内部工具 ============
+
+function getSettingWith(c: Database.Database, key: string): string | undefined {
+  const row = c.prepare("SELECT value FROM settings WHERE key = ?").get(key) as
+    | { value?: string }
+    | undefined;
+  return row?.value;
+}
+
+function setSettingWith(c: Database.Database, key: string, value: string): void {
+  c.prepare(
+    "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+  ).run(key, value);
+}
+
+/** 取某表下一个 ord（追加用） */
+function nextOrd(c: Database.Database, table: string): number {
+  const row = c.prepare(`SELECT COALESCE(MAX(ord), -1) + 1 AS n FROM ${table}`).get() as { n: number };
+  return row.n;
+}
+
+/** 安全解析 JSON 数组列（空 / 非法一律按缺省处理） */
+function parseJsonArray<T>(raw: string | null): T[] | undefined {
+  if (raw == null) return undefined;
+  try {
+    const v = JSON.parse(raw) as T[];
+    return Array.isArray(v) ? v : undefined;
   } catch {
+    return undefined;
+  }
+}
+
+// ---- 行 → 对象映射（NULL 还原为「字段缺省」，与 JSON 时代语义一致） ----
+
+interface UserRow {
+  email: string;
+  password: string;
+  role: string;
+  name: string | null;
+  title: string | null;
+  department: string | null;
+  github: string | null;
+  github_pending: string | null;
+  avatar: string | null;
+}
+
+function rowToUser(r: UserRow): UserAccount {
+  const u: UserAccount = {
+    email: r.email,
+    password: r.password,
+    role: r.role as Role,
+    title: r.title ?? "",
+    department: r.department ?? "",
+  };
+  if (r.name != null) u.name = r.name;
+  if (r.github != null) u.github = r.github;
+  if (r.github_pending != null) u.githubPending = r.github_pending;
+  if (r.avatar != null) u.avatar = r.avatar;
+  return u;
+}
+
+interface NodeRow {
+  id: string;
+  department: string;
+  step: string;
+  ready: number;
+  status: string;
+  runner: string | null;
+  requirement_text: string | null;
+  uploads: string | null;
+  artifacts: string | null;
+  progress: number | null;
+  progress_label: string | null;
+  rejection: string | null;
+  last_result: string | null;
+  report_url: string | null;
+  output_dir: string | null;
+}
+
+function rowToNode(r: NodeRow): NodeState {
+  const n: NodeState = {
+    id: r.id,
+    department: r.department,
+    step: r.step,
+    ready: r.ready === 1,
+    status: r.status as NodeStatus,
+  };
+  if (r.runner != null) n.runner = r.runner;
+  if (r.requirement_text != null) n.requirementText = r.requirement_text;
+  const uploads = parseJsonArray<string>(r.uploads);
+  if (uploads) n.uploads = uploads;
+  const artifacts = parseJsonArray<NodeArtifact>(r.artifacts);
+  if (artifacts) n.artifacts = artifacts;
+  if (r.progress != null) n.progress = r.progress;
+  if (r.progress_label != null) n.progressLabel = r.progress_label;
+  if (r.rejection != null) n.rejection = r.rejection;
+  if (r.last_result != null) n.lastResult = r.last_result;
+  if (r.report_url != null) n.reportUrl = r.report_url;
+  if (r.output_dir != null) n.outputDir = r.output_dir;
+  return n;
+}
+
+interface ReviewRow {
+  id: string;
+  source: string;
+  actor: string;
+  email: string;
+  department: string;
+  role: string;
+  generated_at: string;
+  passed: number;
+  blockers: number;
+  issues: number;
+  report_url: string;
+  repo: string | null;
+}
+
+function rowToReview(r: ReviewRow): ReviewRecord {
+  const rec: ReviewRecord = {
+    id: r.id,
+    source: r.source as ReviewRecord["source"],
+    actor: r.actor,
+    email: r.email,
+    department: r.department,
+    role: r.role as Role,
+    generatedAt: r.generated_at,
+    passed: r.passed === 1,
+    blockers: r.blockers,
+    issues: r.issues,
+    reportUrl: r.report_url,
+  };
+  if (r.repo != null) rec.repo = r.repo;
+  return rec;
+}
+
+interface TicketRow {
+  id: string;
+  kind: string;
+  title: string;
+  content: string;
+  status: string;
+  department: string;
+  author_name: string;
+  author_email: string;
+  created_at: string;
+  updated_at: string;
+  images: string | null;
+}
+
+interface CommentRow {
+  id: string;
+  ticket_id: string;
+  author: string;
+  email: string;
+  department: string;
+  content: string;
+  at: string;
+}
+
+function rowToComment(r: CommentRow): TicketComment {
+  return {
+    id: r.id,
+    author: r.author,
+    email: r.email,
+    department: r.department,
+    content: r.content,
+    at: r.at,
+  };
+}
+
+interface SessionRow {
+  id: string;
+  owner_email: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  summary: string | null;
+  summary_upto: number | null;
+}
+
+interface MessageRow {
+  id: string;
+  session_id: string;
+  role: string;
+  content: string;
+  at: string;
+  model_id: string | null;
+  tokens: number | null;
+}
+
+function rowToMessage(r: MessageRow): ChatMessage {
+  const m: ChatMessage = {
+    id: r.id,
+    role: r.role as ChatRole,
+    content: r.content,
+    at: r.at,
+  };
+  if (r.model_id != null) m.modelId = r.model_id;
+  if (r.tokens != null) m.tokens = r.tokens;
+  return m;
+}
+
+interface ModelRow {
+  id: string;
+  name: string;
+  provider: string;
+  model: string;
+  base_url: string;
+  api_key_env: string;
+  is_active: number | null;
+  category: string | null;
+}
+
+function rowToModel(r: ModelRow): ChatModel {
+  const m: ChatModel = {
+    id: r.id,
+    name: r.name,
+    provider: r.provider,
+    model: r.model,
+    baseUrl: r.base_url,
+    apiKeyEnv: r.api_key_env,
+  };
+  if (r.is_active != null) m.isActive = r.is_active === 1;
+  if (r.category != null) m.category = r.category;
+  return m;
+}
+
+// ---- 参数构造（undefined → null；boolean → 0/1，better-sqlite3 不接受 boolean） ----
+
+function userParams(u: UserAccount, ord: number): Record<string, unknown> {
+  return {
+    ord,
+    email: u.email,
+    password: u.password,
+    role: u.role,
+    name: u.name ?? null,
+    title: u.title,
+    department: u.department,
+    github: u.github ?? null,
+    githubPending: u.githubPending ?? null,
+    avatar: u.avatar ?? null,
+  };
+}
+
+function nodeParams(n: NodeState, ord: number): Record<string, unknown> {
+  return {
+    ord,
+    id: n.id,
+    department: n.department,
+    step: n.step,
+    ready: n.ready ? 1 : 0,
+    status: n.status,
+    runner: n.runner ?? null,
+    requirementText: n.requirementText ?? null,
+    uploads: n.uploads ? JSON.stringify(n.uploads) : null,
+    artifacts: n.artifacts ? JSON.stringify(n.artifacts) : null,
+    progress: n.progress ?? null,
+    progressLabel: n.progressLabel ?? null,
+    rejection: n.rejection ?? null,
+    lastResult: n.lastResult ?? null,
+    reportUrl: n.reportUrl ?? null,
+    outputDir: n.outputDir ?? null,
+  };
+}
+
+function reviewParams(r: ReviewRecord, ord: number): Record<string, unknown> {
+  return {
+    ord,
+    id: r.id,
+    source: r.source,
+    actor: r.actor,
+    email: r.email,
+    department: r.department,
+    role: r.role,
+    generatedAt: r.generatedAt,
+    passed: r.passed ? 1 : 0,
+    blockers: r.blockers,
+    issues: r.issues,
+    reportUrl: r.reportUrl,
+    repo: r.repo ?? null,
+  };
+}
+
+function ticketParams(t: TicketRecord, ord: number): Record<string, unknown> {
+  return {
+    ord,
+    id: t.id,
+    kind: t.kind,
+    title: t.title,
+    content: t.content,
+    status: t.status,
+    department: t.department,
+    authorName: t.authorName,
+    authorEmail: t.authorEmail,
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
+    images: JSON.stringify(t.images ?? []),
+  };
+}
+
+function commentParams(c: TicketComment, ticketId: string, ord: number): Record<string, unknown> {
+  return {
+    ord,
+    id: c.id,
+    ticketId,
+    author: c.author,
+    email: c.email,
+    department: c.department,
+    content: c.content,
+    at: c.at,
+  };
+}
+
+function sessionParams(s: ChatSession, ord: number): Record<string, unknown> {
+  return {
+    ord,
+    id: s.id,
+    ownerEmail: s.ownerEmail,
+    title: s.title,
+    createdAt: s.createdAt,
+    updatedAt: s.updatedAt,
+    summary: s.summary ?? null,
+    summaryUpto: s.summaryUpto ?? 0,
+  };
+}
+
+function messageParams(m: ChatMessage, sessionId: string, ord: number): Record<string, unknown> {
+  return {
+    ord,
+    id: m.id,
+    sessionId,
+    role: m.role,
+    content: m.content,
+    at: m.at,
+    modelId: m.modelId ?? null,
+    tokens: m.tokens ?? null,
+  };
+}
+
+function modelParams(m: ChatModel, ord: number): Record<string, unknown> {
+  return {
+    ord,
+    id: m.id,
+    name: m.name,
+    provider: m.provider,
+    model: m.model,
+    baseUrl: m.baseUrl,
+    apiKeyEnv: m.apiKeyEnv,
+    isActive: m.isActive === undefined ? null : m.isActive ? 1 : 0,
+    category: m.category ?? null,
+  };
+}
+
+// ---- 批量写入（父行整体替换，子行随级联清理后重建） ----
+
+function insertReviews(c: Database.Database, records: ReviewRecord[], startOrd: number): void {
+  const ins = c.prepare(
+    "INSERT OR REPLACE INTO reviews (ord,id,source,actor,email,department,role,generated_at,passed,blockers,issues,report_url,repo) VALUES (@ord,@id,@source,@actor,@email,@department,@role,@generatedAt,@passed,@blockers,@issues,@reportUrl,@repo)"
+  );
+  records.forEach((r, i) => ins.run(reviewParams(r, startOrd + i)));
+}
+
+function insertTickets(c: Database.Database, tickets: TicketRecord[], startOrd: number): void {
+  const insT = c.prepare(
+    "INSERT OR REPLACE INTO tickets (ord,id,kind,title,content,status,department,author_name,author_email,created_at,updated_at,images) VALUES (@ord,@id,@kind,@title,@content,@status,@department,@authorName,@authorEmail,@createdAt,@updatedAt,@images)"
+  );
+  const insC = c.prepare(
+    "INSERT OR REPLACE INTO ticket_comments (ord,id,ticket_id,author,email,department,content,at) VALUES (@ord,@id,@ticketId,@author,@email,@department,@content,@at)"
+  );
+  tickets.forEach((t, i) => {
+    insT.run(ticketParams(t, startOrd + i));
+    (t.comments ?? []).forEach((cm, j) => insC.run(commentParams(cm, t.id, j)));
+  });
+}
+
+function insertChats(c: Database.Database, sessions: ChatSession[], startOrd: number): void {
+  const insS = c.prepare(
+    "INSERT OR REPLACE INTO chat_sessions (ord,id,owner_email,title,created_at,updated_at,summary,summary_upto) VALUES (@ord,@id,@ownerEmail,@title,@createdAt,@updatedAt,@summary,@summaryUpto)"
+  );
+  const insM = c.prepare(
+    "INSERT OR REPLACE INTO chat_messages (ord,id,session_id,role,content,at,model_id,tokens) VALUES (@ord,@id,@sessionId,@role,@content,@at,@modelId,@tokens)"
+  );
+  sessions.forEach((s, i) => {
+    insS.run(sessionParams(s, startOrd + i));
+    (s.messages ?? []).forEach((m, j) => insM.run(messageParams(m, s.id, j)));
+  });
+}
+
+function insertModels(c: Database.Database, models: ChatModel[], startOrd: number): void {
+  const ins = c.prepare(
+    "INSERT OR REPLACE INTO chat_models (ord,id,name,provider,model,base_url,api_key_env,is_active,category) VALUES (@ord,@id,@name,@provider,@model,@baseUrl,@apiKeyEnv,@isActive,@category)"
+  );
+  models.forEach((m, i) => ins.run(modelParams(m, startOrd + i)));
+}
+
+// ============ 账号 ============
+
+/** 读取全部账号 */
+export function loadUsers(): UserAccount[] {
+  const rows = db().prepare("SELECT * FROM users ORDER BY ord").all() as UserRow[];
+  return rows.map(rowToUser);
+}
+
+/** 保存全部账号（账号管理自助变更 GitHub 绑定后写回） */
+export function saveUsers(users: UserAccount[]): void {
+  const c = db();
+  const del = c.prepare("DELETE FROM users");
+  const ins = c.prepare(
+    "INSERT INTO users (ord,email,password,role,name,title,department,github,github_pending,avatar) VALUES (@ord,@email,@password,@role,@name,@title,@department,@github,@githubPending,@avatar)"
+  );
+  c.transaction(() => {
+    del.run();
+    users.forEach((u, i) => ins.run(userParams(u, i)));
+  })();
+}
+
+/** GitHub 用户名归一化：去空白与 @ 前缀；空串表示解绑；
+ *  非法（长度超 39 / 含非字母数字连字符 / 首尾连字符 / 连续连字符）返回 null */
+export function normalizeGithub(raw: string): string | null {
+  const v = raw.trim().replace(/^@/, "");
+  if (!v) return "";
+  if (!/^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/.test(v)) return null;
+  return v;
+}
+
+/** 绑定/解绑指定账号的已生效 GitHub 用户名（空串解绑）；账号不存在返回 null */
+export function setUserGithub(email: string, github: string): UserAccount | null {
+  const c = db();
+  const row = c.prepare("SELECT * FROM users WHERE email = ?").get(email) as UserRow | undefined;
+  if (!row) return null;
+  c.prepare("UPDATE users SET github = ? WHERE email = ?").run(github || null, email);
+  return { ...rowToUser(row), github: github || undefined };
+}
+
+/** 员工提交 GitHub 绑定：写入待审核字段（覆盖旧的待审核值）；账号不存在返回 null */
+export function setUserGithubPending(email: string, github: string): UserAccount | null {
+  const c = db();
+  const row = c.prepare("SELECT * FROM users WHERE email = ?").get(email) as UserRow | undefined;
+  if (!row) return null;
+  c.prepare("UPDATE users SET github_pending = ? WHERE email = ?").run(github, email);
+  return { ...rowToUser(row), githubPending: github };
+}
+
+/** 清空某账号的待审核 GitHub 绑定（员工取消 / 主管驳回）；账号不存在返回 null */
+export function clearUserGithubPending(email: string): UserAccount | null {
+  const c = db();
+  const row = c.prepare("SELECT * FROM users WHERE email = ?").get(email) as UserRow | undefined;
+  if (!row) return null;
+  c.prepare("UPDATE users SET github_pending = NULL WHERE email = ?").run(email);
+  return rowToUser(row);
+}
+
+/** 主管批准：把待审核的 GitHub 转为已生效（无待审核绑定视为无效）；账号不存在返回 null */
+export function approveUserGithub(email: string): UserAccount | null {
+  const c = db();
+  const row = c.prepare("SELECT * FROM users WHERE email = ?").get(email) as UserRow | undefined;
+  if (!row || !row.github_pending) return null;
+  c.prepare("UPDATE users SET github = ?, github_pending = NULL WHERE email = ?").run(
+    row.github_pending,
+    email
+  );
+  return { ...rowToUser(row), github: row.github_pending, githubPending: undefined };
+}
+
+/** 修改账号的姓名/部门/职位/头像（主管管理他人时调用）；只写传入的字段；账号不存在返回 null */
+export function setUserProfile(
+  email: string,
+  patch: { name?: string; department?: string; title?: string; avatar?: string }
+): UserAccount | null {
+  const c = db();
+  const row = c.prepare("SELECT * FROM users WHERE email = ?").get(email) as UserRow | undefined;
+  if (!row) return null;
+  const sets: string[] = [];
+  const args: (string | null)[] = [];
+  if (patch.name !== undefined) {
+    sets.push("name = ?");
+    args.push(patch.name);
+  }
+  if (patch.department !== undefined) {
+    sets.push("department = ?");
+    args.push(patch.department);
+  }
+  if (patch.title !== undefined) {
+    sets.push("title = ?");
+    args.push(patch.title);
+  }
+  if (patch.avatar !== undefined) {
+    sets.push("avatar = ?");
+    args.push(patch.avatar || null);
+  }
+  if (sets.length) {
+    args.push(email);
+    c.prepare(`UPDATE users SET ${sets.join(", ")} WHERE email = ?`).run(...args);
+  }
+  return loadUsers().find((u) => u.email === email) ?? null;
+}
+
+/** 邮箱 + 密码校验，命中返回账号，否则 null */
+export function authenticate(email: string, password: string): UserAccount | null {
+  const target = email.trim().toLowerCase();
+  const user = loadUsers().find((u) => u.email === target);
+  if (!user || user.password !== password) return null;
+  return user;
+}
+
+// ============ 管线 ============
+
+/** 读取管线名称（缺省 "text-flow"） */
+export function loadPipelineName(): string {
+  return getSettingWith(db(), "pipeline_name") ?? "text-flow";
+}
+
+/** 写回管线名称 */
+export function savePipelineName(name: string): void {
+  setSettingWith(db(), "pipeline_name", name);
+}
+
+/** 读取全部管线节点（旧状态 approved 自动迁移为 done 并回写） */
+export function loadNodes(): NodeState[] {
+  const rows = db().prepare("SELECT * FROM nodes ORDER BY ord").all() as NodeRow[];
+  const nodes = rows.map(rowToNode);
+  if (nodes.some((n) => (n as { status?: string }).status === "approved")) {
+    for (const n of nodes) {
+      if ((n as { status?: string }).status === "approved") n.status = "done";
+    }
+    saveNodes(nodes);
+  }
+  return nodes;
+}
+
+/** 写回管线节点（执行/批准后持久化状态） */
+export function saveNodes(nodes: NodeState[]): void {
+  const c = db();
+  const del = c.prepare("DELETE FROM nodes");
+  const ins = c.prepare(
+    "INSERT INTO nodes (ord,id,department,step,ready,status,runner,requirement_text,uploads,artifacts,progress,progress_label,rejection,last_result,report_url,output_dir) VALUES (@ord,@id,@department,@step,@ready,@status,@runner,@requirementText,@uploads,@artifacts,@progress,@progressLabel,@rejection,@lastResult,@reportUrl,@outputDir)"
+  );
+  c.transaction(() => {
+    del.run();
+    nodes.forEach((n, i) => ins.run(nodeParams(n, i)));
+  })();
+}
+
+// ============ 评审记录 ============
+
+/** 读取平台执行历史 */
+export function loadReviews(): ReviewRecord[] {
+  const rows = db().prepare("SELECT * FROM reviews ORDER BY ord").all() as ReviewRow[];
+  return rows.map(rowToReview);
+}
+
+/** 写回平台执行历史（追加一条并持久化） */
+export function appendReview(record: ReviewRecord): void {
+  const c = db();
+  insertReviews(c, [record], nextOrd(c, "reviews"));
+}
+
+/** 批量追加评审历史（单事务写入） */
+export function appendReviews(newRecords: ReviewRecord[]): void {
+  if (!newRecords.length) return;
+  const c = db();
+  const start = nextOrd(c, "reviews");
+  c.transaction(() => insertReviews(c, newRecords, start))();
+}
+
+// ============ 工单 ============
+
+/** 读取全部工单（含评论，按原顺序） */
+export function loadTickets(): TicketRecord[] {
+  const c = db();
+  const rows = c.prepare("SELECT * FROM tickets ORDER BY ord").all() as TicketRow[];
+  const comments = c
+    .prepare("SELECT * FROM ticket_comments ORDER BY ord")
+    .all() as CommentRow[];
+  const byTicket = new Map<string, TicketComment[]>();
+  for (const cm of comments) {
+    const list = byTicket.get(cm.ticket_id) ?? [];
+    list.push(rowToComment(cm));
+    byTicket.set(cm.ticket_id, list);
+  }
+  return rows.map((r) => {
+    const images = parseJsonArray<string>(r.images) ?? [];
+    return {
+      id: r.id,
+      kind: r.kind as TicketKind,
+      title: r.title,
+      content: r.content,
+      status: r.status as TicketStatus,
+      department: r.department,
+      authorName: r.author_name,
+      authorEmail: r.author_email,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      images,
+      comments: byTicket.get(r.id) ?? [],
+    };
+  });
+}
+
+/** 写回全部工单（父行整体替换，评论随级联清理后重建） */
+export function saveTickets(tickets: TicketRecord[]): void {
+  const c = db();
+  c.transaction(() => {
+    c.prepare("DELETE FROM tickets").run();
+    insertTickets(c, tickets, 0);
+  })();
+}
+
+/** 追加一条工单 */
+export function appendTicket(record: TicketRecord): void {
+  const c = db();
+  insertTickets(c, [record], nextOrd(c, "tickets"));
+}
+
+/** 按 id 更新工单（mutate 回调内修改字段）；工单不存在返回 null */
+export function updateTicket(
+  id: string,
+  mutate: (t: TicketRecord) => void
+): TicketRecord | null {
+  const tickets = loadTickets();
+  const ticket = tickets.find((t) => t.id === id);
+  if (!ticket) return null;
+  mutate(ticket);
+  saveTickets(tickets);
+  return ticket;
+}
+
+// ============ AI 对话：会话 + 消息 ============
+
+/** 读取全部聊天会话（含消息，按原顺序） */
+export function loadChats(): ChatStore {
+  const c = db();
+  const rows = c.prepare("SELECT * FROM chat_sessions ORDER BY ord").all() as SessionRow[];
+  const messages = c.prepare("SELECT * FROM chat_messages ORDER BY ord").all() as MessageRow[];
+  const bySession = new Map<string, ChatMessage[]>();
+  for (const m of messages) {
+    const list = bySession.get(m.session_id) ?? [];
+    list.push(rowToMessage(m));
+    bySession.set(m.session_id, list);
+  }
+  return {
+    sessions: rows.map((s) => {
+      const session: ChatSession = {
+        id: s.id,
+        ownerEmail: s.owner_email,
+        title: s.title,
+        createdAt: s.created_at,
+        updatedAt: s.updated_at,
+        messages: bySession.get(s.id) ?? [],
+      };
+      if (s.summary != null) session.summary = s.summary;
+      if (s.summary_upto != null) session.summaryUpto = s.summary_upto;
+      return session;
+    }),
+  };
+}
+
+/** 写回全部聊天会话（父行整体替换，消息随级联清理后重建） */
+export function saveChats(store: ChatStore): void {
+  const c = db();
+  c.transaction(() => {
+    c.prepare("DELETE FROM chat_sessions").run();
+    insertChats(c, store.sessions, 0);
+  })();
+}
+
+/** 追加一条会话 */
+export function appendChat(session: ChatSession): void {
+  const c = db();
+  insertChats(c, [session], nextOrd(c, "chat_sessions"));
+}
+
+/** 按 id 更新会话（mutate 回调内修改字段）；会话不存在返回 null */
+export function updateChat(
+  id: string,
+  mutate: (s: ChatSession) => void
+): ChatSession | null {
+  const store = loadChats();
+  const session = store.sessions.find((s) => s.id === id);
+  if (!session) return null;
+  mutate(session);
+  saveChats(store);
+  return session;
+}
+
+/** 按 id 删除会话；不存在返回 false */
+export function deleteChat(id: string): boolean {
+  const c = db();
+  const info = c.prepare("DELETE FROM chat_sessions WHERE id = ?").run(id);
+  return info.changes > 0;
+}
+
+// ============ AI 对话：模型配置 ============
+
+/** 读取全部模型配置（库中无模型时返回种子 DeepSeek 配置并落库一次） */
+export function loadChatModels(): ChatModelStore {
+  const c = db();
+  const rows = c.prepare("SELECT * FROM chat_models ORDER BY ord").all() as ModelRow[];
+  const models = rows.map(rowToModel);
+  if (models.length === 0) {
     const store: ChatModelStore = { activeId: CHAT_MODEL_SEED.id, models: [CHAT_MODEL_SEED] };
     saveChatModels(store);
     return store;
   }
+  const activeId =
+    getSettingWith(c, "active_model_id") ?? models.find((m) => m.isActive)?.id ?? models[0].id;
+  return { activeId, models };
 }
 
-/** 写回全部模型配置 */
+/** 写回全部模型配置（父行整体替换 + 激活 id 落 settings） */
 export function saveChatModels(store: ChatModelStore): void {
-  mkdirSync(DB_DIR, { recursive: true });
-  writeFileSync(join(DB_DIR, "models.json"), JSON.stringify(store, null, 2), "utf8");
+  const c = db();
+  c.transaction(() => {
+    c.prepare("DELETE FROM chat_models").run();
+    insertModels(c, store.models, 0);
+    setSettingWith(c, "active_model_id", store.activeId);
+  })();
 }
 
 /** 追加一条模型配置 */
 export function appendChatModel(model: ChatModel): void {
-  const store = loadChatModels();
-  store.models.push(model);
-  saveChatModels(store);
+  const c = db();
+  insertModels(c, [model], nextOrd(c, "chat_models"));
 }
 
 /** 按 id 更新模型配置；不存在返回 null */
@@ -547,12 +1065,9 @@ export function updateChatModel(
 
 /** 按 id 删除模型配置；不存在返回 false */
 export function deleteChatModel(id: string): boolean {
-  const store = loadChatModels();
-  const idx = store.models.findIndex((m) => m.id === id);
-  if (idx === -1) return false;
-  store.models.splice(idx, 1);
-  saveChatModels(store);
-  return true;
+  const c = db();
+  const info = c.prepare("DELETE FROM chat_models WHERE id = ?").run(id);
+  return info.changes > 0;
 }
 
 /** 切换激活模型（把指定 id 设为 active，其余清掉）；不存在返回 null */

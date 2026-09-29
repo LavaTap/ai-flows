@@ -1,7 +1,7 @@
 # ai-flows（ai-review CLI + AI 管线平台）
 
 > 平台无关的 AI 代码评审链 CLI + 公司 AI 管线平台。`run` 采集 git diff → 调 LLM（DeepSeek/OpenAI 兼容接口）评审 → 门禁判定 → 生成 Markdown 报告 + 评审数据；推送只走评审页面「确认提交」（或显式 `--push`）。`platform` 子命令提供登录 + 四部门管线页 + 节点执行/批准（节点 03 触发真实 AI 评审）；`install-hook` 让每次 `git push` 先被拦截去评审，再由页面确认提交放行。
-> 技术栈：TypeScript 5.6（strict）+ Node ≥18 ESM，**零运行时依赖**（仅 `node:*` 内置模块 + 全局 `fetch`）；平台数据用 JSON 文件（`db/`）自实现，前端静态页在 `web/`，不引数据库 / 前端框架。
+> 技术栈：TypeScript 5.6（strict）+ Node ≥22 ESM，**唯一运行时依赖 `better-sqlite3`**（原生 SQLite 绑定，其余能力用 `node:*` 内置模块 + 全局 `fetch` 自实现）；平台数据存 SQLite 单库 `db/ai-flows.sqlite`（`src/sqlite.ts` 建库建表，`src/db.ts` 数据访问；旧 `db/*.json` 仅作首次启动的一次性导入源），前端静态页在 `web/`，不引前端框架。
 > 完整链路、报告页面架构、目标仓库接入步骤见 `评审链路与说明.md`；整体数据流图见 `架构与数据流.md`；平台目标、账号清单与权限模型见 `plan.md`，本文件不重复。
 > 本文件是仓库 AI 指令的**唯一来源**（`CLAUDE.md` 已删除，不再维护双镜像）。
 
@@ -9,7 +9,7 @@
 
 | 范围 | 说明 |
 |------|------|
-| 生效 | 本仓库 `src/**` 全部源码、`web/**`（平台静态页）、`db/*.json`（账号 / 节点 / 工单数据），以及 `package.json` / `tsconfig.json` |
+| 生效 | 本仓库 `src/**` 全部源码、`web/**`（平台静态页）、`db/*.json`（账号 / 节点 / 评审 / 工单 / 会话 / 模型数据，**仅作 SQLite 首次导入源**），以及 `package.json` / `tsconfig.json` |
 | 排除 | `dist/**` 是 `tsc` 构建产物，**禁止手工编辑**（下次构建即被覆盖）；`.agents/skills/` 下**借用的第三方 skill**（`writing-claude-md`、`skill-creator`、`ui-ux-pro-max`，均已 gitignore）各有自己的 SKILL.md/CLAUDE.md，不受本文件约束 |
 | 自有 skill | `.agents/skills/ai-flows/` 是本仓库自己的 agent 操作入口（与 `src/index.ts` 同源），用户说「初始化仓库 / 接入评审 / 检查密钥 / 代码评审 / 跑评审」时**先读它的 `SKILL.md` 路由表，只读命中的那一份业务文档**（`references/` 下），其余业务文档禁止打开或 `Grep` |
 | 本地文件 | `ai-review.config.json` 已 gitignore，属本地配置非源码；要维护的模板是 `config.example.json` |
@@ -19,7 +19,7 @@
 
 | 操作 | 命令 |
 |------|------|
-| 安装依赖 | `npm install`（仅 3 个 devDeps：`@types/node` `tsx` `typescript`） |
+| 安装依赖 | `npm install`（3 个 devDeps：`@types/node` `tsx` `typescript`，外加唯一运行时依赖 `better-sqlite3`；后者是原生模块，要求 Node ≥22，包内自带各平台预编译二进制，运行期直接加载 `prebuilds/<platform>-<arch>.node`）<br>⚠️ 无 C++ 工具链的机器（npm 会对含 `binding.gyp` 的包默认执行 `node-gyp rebuild`，报 `gyp ERR! find VS`）：改用 `npm install --ignore-scripts`——跳过编译脚本，运行期仍走包内预编译二进制 |
 | 开发运行 | `npm run dev`（= `tsx src/index.ts`，直接执行 TS 源码） |
 | 构建 | `npm run build`（= `tsc`，产出 `dist/`） |
 | **类型检查（唯一自动化门禁）** | `npx tsc --noEmit` |
@@ -49,7 +49,8 @@
 | `richtext.ts` | 富文本白名单净化 `sanitizeRichHtml()` / `isEmptyRichHtml()`：工单正文与评论来自 contenteditable，属不可信输入，落库与回显前必须过白名单（去 `<script>`/事件处理器/`javascript:`/外链图片），零依赖手写标签扫描器 |
 | `skill.ts` | skill 执行器：SKILL.md（剥 frontmatter）作系统提示 + 需求/附件组装 prompt → `callModel` 生成 Markdown 产物写入输出目录，进度经回调回写 db；不感知节点/权限 |
 | `crawler.ts` | 节点 01 调研 agent 执行器：需求文本经 stdin 作 agent（`crawler.root` 项目内，命令 `crawler.command`）prompt → 跑完把 agent `output/` 目录打包 zip（零依赖 CRC32 + `zlib.deflateRawSync`，含 `collectFiles`）；不感知节点/权限 |
-| `db.ts` | JSON 库读写（`db/users.json` / `db/pipeline.json` / `db/reviews.json` / `db/tickets.json`）、`authenticate` 邮箱+密码校验、`appendReview` 评审历史追加、GitHub 绑定/待审核/资料修改（`setUserGithub` / `setUserGithubPending` / `clearUserGithubPending` / `approveUserGithub` / `setUserProfile`，`UserAccount` 含 `avatar` 字段）、工单读写（`loadTickets` / `appendTicket` / `updateTicket`，图片目录 `TICKET_IMAGES_DIR`，头像目录 `AVATARS_DIR`） |
+| `db.ts` | **数据访问唯一入口**（SQLite 实现，导出 API 与旧 JSON 版逐字兼容，调用方零改动）：`loadUsers` / `saveUsers`、`authenticate` 邮箱+密码校验、GitHub 绑定/待审核/资料修改（`setUserGithub` / `setUserGithubPending` / `clearUserGithubPending` / `approveUserGithub` / `setUserProfile`，`UserAccount` 含 `avatar` 字段）、管线（`loadPipelineName` / `savePipelineName` / `loadNodes` / `saveNodes`）、评审历史（`loadReviews` / `appendReview` / `appendReviews`）、工单（`loadTickets` / `saveTickets` / `appendTicket` / `updateTicket`）、AI 对话（`loadChats` / `saveChats` / `appendChat` / `updateChat` / `deleteChat`；`loadChatModels` / `saveChatModels` / `appendChatModel` / `updateChatModel` / `deleteChatModel` / `setActiveModel`）；图片目录 `TICKET_IMAGES_DIR`、头像目录 `AVATARS_DIR`（二进制仍落盘，不入库）；首次取连接时把旧 `db/*.json` 一次性导入（`settings.migrated_from_json` 置位后不再执行） |
+| `sqlite.ts` | SQLite 连接与建表：`getDb()` 单例（建目录 → 开库 → `journal_mode=WAL` → `foreign_keys=ON` → 幂等 DDL）、`closeDb()`；导出 `DB_DIR` / `DB_FILE`（`db/ai-flows.sqlite`，已 gitignore）。**唯一**开库入口，其余模块不得自行 `new Database()` |
 | `auth.ts` | 内存会话 + cookie 签发/解析（`HttpOnly` `SameSite=Lax`，24h，重启即失效） |
 | `redact.ts` | `maskSecrets()`：评审产出前对 `summary` / `message` / `suggestion` 打码（密钥只留首尾各 4 位） |
 
@@ -58,7 +59,9 @@
 | 规则 | 说明 |
 |------|------|
 | 相对导入必须带 `.js` 后缀 | `module: NodeNext` 的硬要求：源码文件是 `.ts`，导入路径写 `.js` |
-| 零运行时依赖 | 禁止新增 `dependencies`；能力用 `node:*` 与全局 `fetch` 自实现，不要引入 commander / zod / express / axios |
+| 运行时依赖仅 `better-sqlite3` | 唯一允许的运行时依赖是 `better-sqlite3`（原生 SQLite 绑定，要求 Node ≥22）；除它之外禁止新增 `dependencies`，能力用 `node:*` 与全局 `fetch` 自实现，不要引入 commander / zod / express / axios |
+| 数据库唯一入口 | 开库建表只走 `src/sqlite.ts` 的 `getDb()`，数据读写只走 `src/db.ts` 的导出函数；禁止在其他模块 `new Database()` 或裸写 SQL。表结构变更须同步 `sqlite.ts` 的 DDL 与本文档 |
+| 数据落库只走 db.ts | `platform.ts` 等调用方**不得**直接读 `db/*.json`；旧 JSON 只在 `db.ts` 首次导入时被读取一次，之后为只读种子 |
 | 退出码契约 | `0` 通过 / `1` 存在 blocker（拦截）/ `2` 推送失败。pre-push hook 依赖它拦截，改动会静默废掉门禁 |
 | 用 `process.exitCode` | 不调用 `process.exit()`，以便 stdout 正常 flush |
 | git 调用收敛 | 所有 git 命令走 `src/git.ts` 的 `git()`，禁止在别处 `spawn` git |
@@ -74,20 +77,22 @@
 | 平台权限唯一入口 | 节点执行/验收/需求编辑判定只用 `platform.ts` 的 `canExecute` / `canApprove` / `canEditRequirement`（员工限本部门、主管不限）；前端按钮显隐只是展示，服务端校验才算数，路由内不得另写权限逻辑 |
 | 工单可见性唯一入口 | 工单查看 / 流转状态 / 评论判定只用 `platform.ts` 的 `canAccessTicket`（员工限本部门、主管全量），列表过滤用 `filterTicketsByUser`；前端隐藏按钮只是展示，服务端校验才算数 |
 | 富文本必须净化 | 工单正文与评论来自 contenteditable，落库前必须过 `src/richtext.ts` 的 `sanitizeRichHtml()`（去 `<script>` / `on*` 事件 / `javascript:` / 外链图片），只回显净化后 HTML，禁止信任前端提交的 HTML |
-| 工单图片只认本地上传 | 正文图片 `src` 只允许 `/api/tickets/images/<file>`；文件名由服务端生成 `[a-f0-9]{12}.<ext>`，读取按该形态严格校验（天然免疫穿越）；二进制落 `db/ticket-uploads/`（已 gitignore），不入 `db/tickets.json` |
-| 头像只认本地上传 | 头像二进制落 `db/avatars/`（已 gitignore），`users.json` 只存文件名；上传走 `POST /api/account/avatar`（自己改自己，限 png/jpg/jpeg/gif/webp、≤2MB）；读取 `GET /api/avatars/<file>` 文件名严格校验 `[a-f0-9]{12}.(png|jpg|jpeg|gif|webp)`；缺省回退首字配色头像 |
+| 工单图片只认本地上传 | 正文图片 `src` 只允许 `/api/tickets/images/<file>`；文件名由服务端生成 `[a-f0-9]{12}.<ext>`，读取按该形态严格校验（天然免疫穿越）；二进制落 `db/ticket-uploads/`（已 gitignore），**不入库**（工单表只存文件名） |
+| 头像只认本地上传 | 头像二进制落 `db/avatars/`（已 gitignore），users 表只存文件名；上传走 `POST /api/account/avatar`（自己改自己，限 png/jpg/jpeg/gif/webp、≤2MB）；读取 `GET /api/avatars/<file>` 文件名严格校验 `[a-f0-9]{12}.(png|jpg|jpeg|gif|webp)`；缺省回退首字配色头像 |
 | GitHub 绑定独立页 | 员工自助绑定 / 主管审核统一在 `/github-audit`（`web/github-audit.html` + `web/github-audit.js`）；`account.html` 只展示 GitHub 绑定状态只读，操作引导到 `/github-audit`；`team.html` 不再承载 GitHub 审核，只做成员资料管理 |
 | 顶栏导航方形圆角 | 顶栏 `.nav-link` / `.tab` 统一 `border-radius:8px`（方形圆角，非椭圆 999px）；所有页面右上角统一展示 `user-chip`（头像 + 姓名），有自定义头像显示图片，否则首字配色 |
-| 账号与密码 | 账号唯一来源 `db/users.json`，**不开放注册**；演示期密码明文 123456，上线前必须换 `node:crypto` scrypt 加盐哈希 |
+| 顶栏用户菜单 | 顶栏 `user-chip` 为可点开菜单（`web/user-menu.js` 共享脚本 + `ai-pipeline.css` 的 `.user-menu`/`.user-panel`）：面板上部为放大的头像 + 姓名 + 邮箱，分隔线下为「设置」项（→ `/account`）；原顶栏「账号管理」导航项已收纳进该面板，各页脚本只管 `#userName` 与 chip 头像 |
+| 账号与密码 | 账号唯一来源 SQLite `users` 表（种子仍由 `db/users.json` 首次导入），**不开放注册**；演示期密码明文 123456，上线前必须换 `node:crypto` scrypt 加盐哈希 |
 | 部门与账号数据 | 平台账号分三大部门：`用户研究部门` / `程序中台` / `运营部门`；节点 01/02 属用户研究、03 属程序中台、04 属运营，账号 `department` 与节点 `department` 需对齐（`canExecute`/角色卡片按它过滤） |
 | GitHub 自助绑定 + 主管审核 | 主管绑定即刻写入 `github`；员工绑定写 `githubPending`，主管经 `/api/account/<email>/github/{approve,reject}` 批准后转 `github` 才生效；员工可自行取消待审或解绑已生效绑定 |
 | 资料主管可改 | 设置任意账号的姓名 / 部门 / 职位只走 `POST /api/account/<email>/profile`，仅主管（`canApprove`）可调；员工只能绑自己的 GitHub，不能改任何账号资料 |
 | 角色卡片排版 | 节点详情「执行角色」卡片统一长方形：左头像 + 右侧加粗姓名 + 下方「部门/职位」（如 用户研究部门 / 用户研究实习生）；账号管理弹窗在顶栏「账号管理」按钮打开 |
-| 会话与 cookie | 内存 `Map` 会话 + `HttpOnly` `SameSite=Lax` cookie；服务重启全部失效（演示可接受，不引数据库/Redis） |
+| 会话与 cookie | 内存 `Map` 会话 + `HttpOnly` `SameSite=Lax` cookie；服务重启全部失效（演示可接受，会话不写库、不引 Redis） |
+| 对话记忆压缩 | AI 对话按账号隔离（`ChatSession.ownerEmail`）；未纳入摘要的历史原文累计字数超 `chat.compressChars`（默认 400）时，用 `callModelOnce` + `buildSummaryMessages` 把旧摘要与新原文合并压缩为 `session.summary` 落库（`summaryUpto` 记已覆盖条数）；此后 prompt 只送【摘要 + 未压缩近期原文】。压缩失败不阻断对话 |
 | 节点状态机 | `todo → running → in_review → done` 四态；执行完成保持 `running` 等 `submit`，`submit` 进 `in_review`，仅主管可 `approve`（→ `done` 终态）/ `reject`（→ `running` 附意见）；状态不符的动作返回 409；服务启动把残留 `running` 复位为 `todo`、旧 `approved` 迁移为 `done` |
 | 节点异步执行 | `runner=ai-review` / `runner=skill:<name>` 先落 `running` 并立即响应，后台跑完（skill 走 `src/skill.ts`）回写 `lastResult` / `progress` / 产物（回写前重读库，避免覆盖期间其他节点变更）；执行完成保持 `running` 等提交验收 |
 | 注入 bootstrap 必须转义 | `window.__PIPELINE__` 注入用 `jsonForScript()`（转义 `<`）；节点顺序与 `web/ai-pipeline-app.js` 的 `data-idx` 一一对应，改注入结构必须同步该脚本 |
-| 评审记录按视角过滤 | `GET /api/reviews` 只用 `filterReviewsByUser`（主管全量 / 员工限本部门）；外部触发（hook/手动 run）报告无账号归属，统一归到节点 03 部门「程序中台」；平台触发记录写 `db/reviews.json` |
+| 评审记录按视角过滤 | `GET /api/reviews` 只用 `filterReviewsByUser`（主管全量 / 员工限本部门）；外部触发（hook/手动 run）报告无账号归属，统一归到节点 03 部门「程序中台」；平台触发记录写 SQLite `reviews` 表 |
 | 调研 agent 产物为 zip | 节点 01（`runner: research-crawler`）需求文本经 `stdin` 传 agent（不拼命令行）；agent 在 `crawler.root` 项目内跑完，打包其 `output/` 为 zip 落节点 `outputDir`（`safeRepoPath` 校验），不产出 Markdown；需求为空 / 未配 `crawler.root` / 目录不存在一律 400 |
 
 ### ESM 相对导入
@@ -175,6 +180,7 @@ export default function main() {}
 | `crawler.ts` | `crc32` / `buildZip` / `collectFiles` | CRC32 标准校验值；zip 经 `inflateRawSync` 往返一致、空条目归档合法；目录递归条目名为 posix 相对路径 |
 
 不要求覆盖：`index.ts` 的 CLI 编排、HTTP 服务生命周期、真实模型调用（涉及网络与凭据）。
+SQLite 数据层（`sqlite.ts` / `db.ts`）也不写自动化单测——依赖真实库文件；用手工往返验证：删掉 `db/ai-flows.sqlite` → 调 `getDb()` 建库并导入旧 JSON → 增删改查各域 → `closeDb()`，并核对表行数与 `db/*.json` 源数据一致。
 端到端回归用手工三档用例（info / warning / blocker）验证，方法见 `评审链路与说明.md` §3。
 
 ## 配置层级
@@ -187,7 +193,7 @@ CLI --config <path>  >  环境变量 AI_REVIEW_CONFIG  >  默认 ./ai-review.con
 
 模型凭据解析优先级（`resolveApiKey`）：`model.apiKey`（不推荐明文）> `model.apiKeyEnv` 指向的环境变量。
 
-`loadConfig` 兜底默认值：`severityBlocked=["blocker"]`、`targets=[]`、`diff.scope="staged"`、`diff.exclude=[]`、`diff.maxFileLines=500`、`reviews.scanRoots=["."]`、`crawler.command="claude"`、`crawler.args=["-p","--permission-mode","bypassPermissions"]`、`crawler.outputDir="output"`、`crawler.timeoutMs=600000`。新增配置项时**必须同时更新** `config.example.json` 与 `loadConfig` 默认值。
+`loadConfig` 兜底默认值：`severityBlocked=["blocker"]`、`targets=[]`、`diff.scope="staged"`、`diff.exclude=[]`、`diff.maxFileLines=500`、`reviews.scanRoots=["."]`、`crawler.command="claude"`、`crawler.args=["-p","--permission-mode","bypassPermissions"]`、`crawler.outputDir="output"`、`crawler.timeoutMs=600000`、`chat.maxHistory=50`、`chat.maxTokens=2000`、`chat.temperature=0.7`、`chat.compressChars=400`。新增配置项时**必须同时更新** `config.example.json` 与 `loadConfig` 默认值。
 
 节点 01 的调研 agent 配置读**平台自身** `ai-review.config.json` 的 `crawler` 段（`root` 为 agent 项目根，缺省空即拒绝执行）；产物是 agent `output/` 目录打包的 zip，落在节点 `outputDir`（须在目标仓库内，经 `safeRepoPath` 校验），不再产出 Markdown。
 
@@ -195,4 +201,4 @@ CLI --config <path>  >  环境变量 AI_REVIEW_CONFIG  >  默认 ./ai-review.con
 
 ---
 
-**红线：** ESM 相对导入必带 `.js` · 零运行时依赖 · 退出码 0/1/2 契约不可改 · 渲染层只认 `ReportView` · HTML 插值一律走 `esc()` · 凭据只从环境变量读 · 确认提交必须带非空 commit message · `run` 缺省不推送 · 平台权限只走 `canExecute`/`canApprove` · 注入 bootstrap 必须转义 · 演示密码 123456 不得原样上线
+**红线：** ESM 相对导入必带 `.js` · 运行时依赖仅 `better-sqlite3` · 退出码 0/1/2 契约不可改 · 渲染层只认 `ReportView` · HTML 插值一律走 `esc()` · 凭据只从环境变量读 · 确认提交必须带非空 commit message · `run` 缺省不推送 · 平台权限只走 `canExecute`/`canApprove` · 注入 bootstrap 必须转义 · 演示密码 123456 不得原样上线
