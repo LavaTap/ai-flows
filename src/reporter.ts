@@ -165,7 +165,7 @@ const REPORT_CSS = `
 .theme-toggle .icon-sun { display:none; }
 [data-theme="light"] .theme-toggle .icon-sun { display:block; }
 [data-theme="light"] .theme-toggle .icon-moon { display:none; }
-[data-theme="light"] .topbar { background:rgba(255,255,255,.94); }
+[data-theme="light"] .topbar { background:var(--surface); }
 * { box-sizing:border-box; }
 html, body { margin:0; padding:0; background:var(--bg); color:var(--text); font-family:var(--sans); font-size:15px; line-height:1.6; -webkit-font-smoothing:antialiased; }
 body {
@@ -177,14 +177,32 @@ body {
 }
 a { color:var(--info); text-decoration:none; }
 a:hover { text-decoration:underline; }
-.topbar { width:100%; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; gap:16px; border-bottom:1px solid var(--border); background:rgba(15,23,42,.85); backdrop-filter:blur(10px); position:sticky; top:0; z-index:10; }
-.brand { display:inline-flex; align-items:center; gap:10px; font-weight:700; letter-spacing:-.2px; font-size:15px; }
-.brand-mark { width:22px; height:22px; border-radius:6px; background:linear-gradient(145deg,#818cf8 0%,#4f46e5 60%,#4338ca 100%); box-shadow:0 0 12px rgba(79,70,229,.45), inset 0 1px 0 rgba(255,255,255,.3); position:relative; }
-.brand-mark::before, .brand-mark::after { content:""; position:absolute; left:50%; transform:translateX(-50%); border-left:4px solid transparent; border-right:4px solid transparent; }
-.brand-mark::before { top:4px; border-bottom:5px solid #1e1b4b; }
-.brand-mark::after { bottom:4px; border-top:5px solid #1e1b4b; }
-.back-link { font-size:13px; color:var(--muted); padding:6px 12px; border:1px solid var(--border); border-radius:8px; transition:all 150ms ease; }
-.back-link:hover { color:var(--text); border-color:var(--border-strong); background:var(--surface); text-decoration:none; }
+/* 顶栏：与管线页风格一致（纯白底 + 细边框 + LED 圆点 + 三级标题） */
+.topbar { width:100%; padding:12px 24px; display:flex; align-items:center; justify-content:space-between; gap:16px; border-bottom:1px solid var(--border); background:var(--surface); position:sticky; top:0; z-index:10; }
+.brand { display:flex; align-items:center; gap:12px; min-width:0; }
+/* LED 品牌圆点 */
+.brand-dot { width:10px; height:10px; border-radius:50%; background:var(--accent); box-shadow:0 0 6px var(--accent-soft), 0 0 12px var(--accent-soft); flex:none; }
+/* 顶栏标题：管线名 / 仓库名 / report */
+.brand-title { display:flex; align-items:baseline; gap:0; margin:0; font-size:19px; font-weight:300; line-height:1.15; letter-spacing:.01em; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.brand-title .tt-pipeline { color:var(--accent); font-weight:500; }
+.brand-title .tt-sep { color:var(--dim); margin:0 .35em; font-weight:300; }
+.brand-title .tt-repo { color:var(--text); font-weight:400; }
+.brand-title .tt-page { color:var(--muted); font-weight:300; font-family:var(--mono); font-size:16px; }
+.topbar-actions { display:flex; align-items:center; gap:8px; flex:none; }
+.account-info { display:inline-flex; align-items:center; gap:8px; padding:4px 12px; border:1px solid var(--border); border-radius:999px; font-family:var(--mono); font-size:11.5px; color:var(--muted); background:var(--surface); flex-wrap:wrap; max-width:100%; }
+.account-info .ai-badge { display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius:999px; background:var(--accent-soft); color:var(--accent); font-weight:700; letter-spacing:.5px; font-size:10.5px; }
+.account-info .acc-sep { color:var(--dim); }
+.account-info .acc-ref { color:var(--accent); }
+.account-info .acc-time { color:var(--muted); }
+.account-info .acc-author { color:var(--dim); }
+.submit-toggle { appearance:none; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font:500 12px/18px var(--sans); padding:4px 12px; border-radius:999px; cursor:pointer; white-space:nowrap; display:inline-flex; align-items:center; gap:6px; transition:all 150ms ease; }
+.submit-toggle:hover { border-color:var(--border-strong); background:var(--surface); }
+.submit-toggle .dot { width:6px; height:6px; border-radius:50%; background:var(--accent); box-shadow:0 0 4px var(--accent-soft); }
+.theme-toggle { appearance:none; background:var(--surface); border:1px solid var(--border); color:var(--muted); width:30px; height:30px; border-radius:999px; display:inline-grid; place-items:center; cursor:pointer; transition:all 150ms ease; padding:0; }
+.theme-toggle:hover { color:var(--text); border-color:var(--border-strong); }
+.theme-toggle svg { width:14px; height:14px; }
+.back-link { font-size:12px; color:var(--muted); padding:4px 12px; border:1px solid var(--border); border-radius:999px; transition:all 150ms ease; text-decoration:none; white-space:nowrap; }
+.back-link:hover { color:var(--text); border-color:var(--border-strong); background:var(--surface-2); text-decoration:none; }
 .main { width:100%; padding:16px 16px 28px; }
 .verdict { display:flex; align-items:center; gap:22px; padding:26px 28px; background:linear-gradient(180deg, var(--ok-grad-1), var(--ok-grad-2)); border:1px solid var(--ok-line); border-radius:14px; position:relative; overflow:hidden; }
 .verdict::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--ok); box-shadow:0 0 18px var(--ok-glow); }
@@ -425,18 +443,6 @@ code { font-family:var(--mono); font-size:.92em; }
 .file-entry .file-count.zero { background:transparent; color:var(--dim); }
 .file-empty { padding:18px 16px; text-align:center; color:var(--dim); font-size:12px; }
 .empty { padding:18px 16px; text-align:center; color:var(--dim); font-size:12px; }
-/* 顶栏左对齐标题 + 右侧账号信息 */
-.topbar-left { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
-.brand-name { font-weight:700; font-size:14px; }
-.page-title { font-family:var(--mono); font-size:13px; color:var(--muted); display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-.page-title .sep { color:var(--dim); }
-.page-title .here { color:var(--text); font-weight:600; }
-.account-info { display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border:1px solid var(--border); border-radius:8px; font-family:var(--mono); font-size:11.5px; color:var(--muted); background:var(--surface); flex-wrap:wrap; max-width:100%; }
-.account-info .ai-badge { display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius:999px; background:var(--accent-soft); color:var(--accent); font-weight:700; letter-spacing:.5px; font-size:10.5px; }
-.account-info .acc-sep { color:var(--dim); }
-.account-info .acc-ref { color:var(--accent); }
-.account-info .acc-time { color:var(--muted); }
-.account-info .acc-author { color:var(--dim); }
 @media (max-width:1180px){ .workspace { grid-template-columns:1fr; } .left-stack { position:static; height:auto; } .diff-panel { max-height:none; } }
 @media (max-width:980px) { .diff-panel { position:static; max-height:none; } }
 @media (max-width:860px) { .stats { grid-template-columns:repeat(3,1fr); } }
@@ -461,10 +467,16 @@ function titleParts(v: ReportView): { pipeline: string; repo: string } {
   return { pipeline, repo };
 }
 
-/** 顶栏标题 HTML：pipeline / repo / report */
+/** 顶栏标题 HTML：pipeline / repo / report —— 与管线页 .brand-title 结构一致 */
 function titleHtml(v: ReportView): string {
   const { pipeline, repo } = titleParts(v);
-  return `<span>${esc(pipeline)}</span><span class="sep">/</span><span>${esc(repo)}</span><span class="sep">/</span><span class="here">report</span>`;
+  return `<h1 class="brand-title">
+    <span class="tt-pipeline">${esc(pipeline)}</span>
+    <span class="tt-sep">/</span>
+    <span class="tt-repo">${esc(repo)}</span>
+    <span class="tt-sep">/</span>
+    <span class="tt-page">report</span>
+  </h1>`;
 }
 
 /** 右上账号信息：AI Review 徽标 + 分支 + 生成时间 + HEAD 作者（缺省项自动省略） */
@@ -899,12 +911,9 @@ export function renderTemplate(v: ReportView): string {
 <body>
 
 <header class="topbar">
-  <div class="topbar-left">
-    <div class="brand">
-      <span class="brand-mark" aria-hidden="true"></span>
-      <span class="brand-name">ai-review</span>
-    </div>
-    <div class="page-title">${titleHtml(v)}</div>
+  <div class="brand">
+    <span class="brand-dot" aria-hidden="true"></span>
+    ${titleHtml(v)}
   </div>
   <div class="topbar-actions">
     <span class="account-info">${accountHtml(v)}</span>

@@ -6,12 +6,11 @@
       "department": "用户研究部门",
       "step": "产品调研",
       "ready": true,
-      "status": "running",
+      "status": "todo",
       "runner": "research-crawler",
       "requirementText": "爬取哔哩哔哩的“学生管理系统”视频top1 10条评论",
       "outputDir": "ppt",
-      "progress": 10,
-      "progressLabel": "启动调研 agent"
+      "lastResult": "平台重启导致执行中断，请重新执行"
     },
     {
       "id": "02",

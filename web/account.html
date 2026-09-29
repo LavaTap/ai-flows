@@ -6,17 +6,34 @@
   <title>账号管理 · AI-FLOWS 平台</title>
   <link rel="stylesheet" href="./ai-pipeline.css">
   <style>
-    /* 账号管理页专用样式 */
-    .page-shell{max-width:720px;margin:0 auto;padding:32px 24px 80px;}
-    .page-title{font:300 28px/36px var(--font-sans);color:var(--ink-soft);margin:0 0 4px;}
-    .page-title em{font-style:normal;color:var(--led);font-weight:500;}
-    .page-sub{font:400 13px/20px var(--font-sans);color:var(--muted);margin:0 0 28px;}
-    .card{background:var(--glass-fill);border:1px solid var(--glass-line);border-radius:var(--radius-card);
-      padding:24px 28px;margin-bottom:20px;
-      box-shadow:0 1px 2px rgba(15,23,42,.04),0 1px 3px rgba(15,23,42,.06);}
-    .card h2{margin:0 0 16px;font:600 15px/22px var(--font-sans);color:var(--ink-soft);
+    /* 页面壳：左侧栏 + 主内容 */
+    .page-shell{display:grid;grid-template-columns:220px 1fr;min-height:calc(100vh - 56px);}
+    .sidebar{border-right:1px solid var(--glass-line);background:var(--paper-1);padding:20px 12px;}
+    .side-title{font:700 11px/18px var(--font-sans);color:var(--muted);letter-spacing:1px;
+      text-transform:uppercase;padding:0 10px 8px;}
+    .side-nav{display:flex;flex-direction:column;gap:2px;}
+    .side-nav a{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;
+      font:500 13px/20px var(--font-sans);color:var(--copy);text-decoration:none;transition:all 120ms ease;}
+    .side-nav a:hover{background:var(--paper-2);color:var(--ink-soft);}
+    .side-nav a.active{background:var(--led-soft);color:var(--led);}
+    .side-nav a .side-dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.6;flex:none;}
+    .side-nav a.active .side-dot{opacity:1;box-shadow:0 0 4px currentColor;}
+    .main-content{padding:24px 36px 80px;min-width:0;}
+    .breadcrumb{display:flex;align-items:center;gap:8px;font:400 12px/18px var(--font-sans);color:var(--muted);margin-bottom:20px;}
+    .breadcrumb a{color:var(--muted);text-decoration:none;}
+    .breadcrumb a:hover{color:var(--led);}
+    .breadcrumb .sep{opacity:.5;}
+    .breadcrumb .current{color:var(--ink-soft);font-weight:500;}
+
+    /* 去卡片化：分区用分隔线 + 标题，无边框背景 */
+    .section{padding:20px 0;border-bottom:1px solid var(--glass-line);}
+    .section:first-of-type{padding-top:4px;}
+    .section:last-of-type{border-bottom:none;}
+    .section h2{margin:0 0 16px;font:600 14px/22px var(--font-sans);color:var(--ink-soft);
       display:flex;align-items:center;gap:8px;}
-    .card h2 .dot{width:6px;height:6px;border-radius:50%;background:var(--led);box-shadow:0 0 6px var(--led-glow);}
+    .section h2 .dot{width:6px;height:6px;border-radius:50%;background:var(--led);box-shadow:0 0 6px var(--led-glow);}
+
+    /* 个人资料 */
     .profile-row{display:flex;align-items:center;gap:20px;}
     .profile-avatar{width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;
       color:#fff;font:600 28px/1 var(--font-sans);box-shadow:0 4px 12px rgba(20,20,20,.15);flex:none;}
@@ -29,6 +46,8 @@
     .badge{display:inline-block;padding:2px 8px;border-radius:999px;font:500 11px/16px var(--font-sans);}
     .badge.supervisor{background:var(--led-soft);color:var(--led);}
     .badge.staff{background:var(--teal-soft);color:var(--teal);}
+
+    /* GitHub 绑定 */
     .gh-section{display:flex;flex-direction:column;gap:12px;}
     .gh-row{display:flex;align-items:center;gap:12px;}
     .gh-icon{width:28px;height:28px;border-radius:50%;background:#24292f;display:flex;align-items:center;justify-content:center;
@@ -50,11 +69,6 @@
     .btn.danger{background:var(--block-soft);color:var(--block);border-color:rgba(239,68,68,.2);}
     .btn.danger:hover{background:rgba(239,68,68,.18);}
     .btn:disabled{opacity:.5;cursor:not-allowed;}
-    .breadcrumb{display:flex;align-items:center;gap:8px;font:400 12px/18px var(--font-sans);color:var(--muted);margin-bottom:16px;}
-    .breadcrumb a{color:var(--muted);text-decoration:none;}
-    .breadcrumb a:hover{color:var(--led);}
-    .breadcrumb .sep{opacity:.5;}
-    .breadcrumb .current{color:var(--ink-soft);font-weight:500;}
   </style>
 </head>
 <body>
@@ -77,39 +91,54 @@
   </header>
 
   <div class="page-shell">
-    <div class="breadcrumb">
-      <a href="/pipeline">管线</a>
-      <span class="sep">›</span>
-      <span class="current">账号管理</span>
-    </div>
+    <!-- 左侧栏 -->
+    <aside class="sidebar">
+      <div class="side-title">设置</div>
+      <nav class="side-nav">
+        <a href="/account" class="active">
+          <span class="side-dot"></span>
+          <span>账号管理</span>
+        </a>
+        <a href="/team" id="sideTeamLink" style="display:none;">
+          <span class="side-dot"></span>
+          <span>团队管理</span>
+        </a>
+      </nav>
+    </aside>
 
-    <h1 class="page-title"><em>我的账号</em></h1>
-    <p class="page-sub">管理你的个人资料与 GitHub 绑定</p>
+    <!-- 主内容 -->
+    <main class="main-content">
+      <div class="breadcrumb">
+        <a href="/pipeline">管线</a>
+        <span class="sep">›</span>
+        <span class="current">账号管理</span>
+      </div>
 
-    <!-- 个人资料 -->
-    <div class="card">
-      <h2><span class="dot"></span>个人资料</h2>
-      <div class="profile-row">
-        <div class="profile-avatar" id="avatar"></div>
-        <div class="profile-info">
-          <div class="profile-name" id="nameEl"></div>
-          <div class="profile-email" id="emailEl"></div>
-          <div class="profile-meta">
-            <span class="meta-item"><b>部门</b><span id="deptEl"></span></span>
-            <span class="meta-item"><b>职位</b><span id="titleEl"></span></span>
-            <span class="meta-item"><span class="badge" id="roleBadge"></span></span>
+      <!-- 个人资料 -->
+      <section class="section">
+        <h2><span class="dot"></span>个人资料</h2>
+        <div class="profile-row">
+          <div class="profile-avatar" id="avatar"></div>
+          <div class="profile-info">
+            <div class="profile-name" id="nameEl"></div>
+            <div class="profile-email" id="emailEl"></div>
+            <div class="profile-meta">
+              <span class="meta-item"><b>部门</b><span id="deptEl"></span></span>
+              <span class="meta-item"><b>职位</b><span id="titleEl"></span></span>
+              <span class="meta-item"><span class="badge" id="roleBadge"></span></span>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
+      </section>
 
-    <!-- GitHub 绑定 -->
-    <div class="card">
-      <h2><span class="dot" style="background:#24292f;box-shadow:0 0 6px rgba(36,41,47,.3);"></span>GitHub 绑定</h2>
-      <div class="gh-section" id="ghSection">
-        <!-- 由 JS 渲染 -->
-      </div>
-    </div>
+      <!-- GitHub 绑定 -->
+      <section class="section">
+        <h2><span class="dot" style="background:#24292f;box-shadow:0 0 6px rgba(36,41,47,.3);"></span>GitHub 绑定</h2>
+        <div class="gh-section" id="ghSection">
+          <!-- 由 JS 渲染 -->
+        </div>
+      </section>
+    </main>
   </div>
 </body>
 </html>

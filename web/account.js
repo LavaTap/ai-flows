@@ -38,6 +38,8 @@
     if (isSuper) {
       var teamLink = document.getElementById("teamLink");
       if (teamLink) teamLink.style.display = "inline-block";
+      var sideTeamLink = document.getElementById("sideTeamLink");
+      if (sideTeamLink) sideTeamLink.style.display = "flex";
     }
     var logoutBtn = document.getElementById("logoutBtn");
     if (logoutBtn) {
