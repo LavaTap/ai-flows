@@ -47,6 +47,18 @@ export interface ReviewsConfig {
   gitHubTokenEnv?: string;
 }
 
+/** AI 对话页（/chat）的配置 */
+export interface ChatConfig {
+  /** 系统提示词，缺省为平台默认助手设定 */
+  systemPrompt?: string;
+  /** 拼进 prompt 的最近历史消息条数上限，缺省 50 */
+  maxHistory?: number;
+  /** 单次回复最大 token 数，缺省 2000 */
+  maxTokens?: number;
+  /** 采样温度，缺省 0.7 */
+  temperature?: number;
+}
+
 /** 节点 01「产品调研」调用的外部调研 agent（Research-Crawler）配置 */
 export interface CrawlerConfig {
   /** agent 项目根目录（绝对路径，或相对当前工作目录）；agent 在该目录内运行 */
@@ -73,6 +85,8 @@ export interface ReviewConfig {
   reviews?: ReviewsConfig;
   /** 节点 01 产品调研的调研 agent 配置 */
   crawler?: CrawlerConfig;
+  /** AI 对话页（/chat）配置 */
+  chat?: ChatConfig;
 }
 
 const DEFAULT_CONFIG_PATH = "ai-review.config.json";
@@ -110,5 +124,12 @@ export function loadConfig(configPath?: string): ReviewConfig {
   cfg.crawler.args = cfg.crawler.args ?? ["-p", "--permission-mode", "bypassPermissions"];
   cfg.crawler.outputDir = cfg.crawler.outputDir ?? "output";
   cfg.crawler.timeoutMs = cfg.crawler.timeoutMs ?? 600000;
+  cfg.chat = cfg.chat ?? {};
+  cfg.chat.systemPrompt =
+    cfg.chat.systemPrompt ??
+    "你是 ai-flows 平台的 AI 助手，擅长代码评审、产品规划与技术方案。回答简洁专业，必要时给出代码示例。";
+  cfg.chat.maxHistory = cfg.chat.maxHistory ?? 50;
+  cfg.chat.maxTokens = cfg.chat.maxTokens ?? 2000;
+  cfg.chat.temperature = cfg.chat.temperature ?? 0.7;
   return cfg;
 }

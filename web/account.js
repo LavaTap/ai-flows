@@ -24,6 +24,10 @@
     return u.name || u.email;
   }
 
+  function avatarUrl(u) {
+    return u.avatar ? "/api/avatars/" + u.avatar : "";
+  }
+
   function post(url, body) {
     var init = { method: "POST", headers: { "Content-Type": "application/json" } };
     if (body !== undefined) init.body = JSON.stringify(body);
@@ -38,8 +42,8 @@
     if (isSuper) {
       var teamLink = document.getElementById("teamLink");
       if (teamLink) teamLink.style.display = "inline-block";
-      var sideTeamLink = document.getElementById("sideTeamLink");
-      if (sideTeamLink) sideTeamLink.style.display = "flex";
+      var teamSide = document.getElementById("teamSide");
+      if (teamSide) teamSide.style.display = "flex";
     }
     var logoutBtn = document.getElementById("logoutBtn");
     if (logoutBtn) {
@@ -47,14 +51,43 @@
         post("/api/logout").then(function () { location.href = "/login"; });
       });
     }
+    renderUserChip();
+  }
+
+  function renderUserChip() {
+    var chip = document.querySelector(".user-chip");
+    if (!chip) return;
+    var av = chip.querySelector(".avatar");
+    var nameEl = document.getElementById("userName");
+    var url = avatarUrl(user);
+    if (av) {
+      if (url) {
+        av.style.background = "none";
+        av.innerHTML = '<img src="' + url + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" alt="">';
+      } else {
+        av.style.background = colorOf(user.email);
+        av.textContent = firstChar(user);
+      }
+    }
+    if (nameEl) nameEl.textContent = displayName(user);
   }
 
   /* ────────────── 个人资料 ────────────── */
 
   function renderProfile() {
     var av = document.getElementById("avatar");
-    av.style.background = colorOf(user.email);
-    av.textContent = firstChar(user);
+    var url = avatarUrl(user);
+    if (url) {
+      av.style.background = "none";
+      av.innerHTML = '<img src="' + url + '" alt=""><span class="cam">更换</span>';
+    } else {
+      av.style.background = colorOf(user.email);
+      av.textContent = firstChar(user);
+      var cam = document.createElement("span");
+      cam.className = "cam";
+      cam.textContent = "更换";
+      av.appendChild(cam);
+    }
 
     document.getElementById("nameEl").textContent = displayName(user);
     document.getElementById("emailEl").textContent = user.email;
@@ -71,117 +104,106 @@
     }
   }
 
-  /* ────────────── GitHub 绑定 ────────────── */
+  /* ────────────── GitHub 只读展示 ────────────── */
 
   function renderGithub() {
-    var section = document.getElementById("ghSection");
-    section.innerHTML = "";
-
-    var row = document.createElement("div");
-    row.className = "gh-row";
-
-    var icon = document.createElement("div");
-    icon.className = "gh-icon";
-    icon.textContent = "GH";
-
-    var info = document.createElement("div");
-    info.className = "gh-info";
-
-    var label = document.createElement("div");
-    label.className = "gh-label";
-    label.textContent = user.github ? "已绑定" : "未绑定";
-
-    var val = document.createElement("div");
-    val.className = "gh-value";
-    val.textContent = user.github ? "@" + user.github : "尚未绑定 GitHub 账号";
-
-    info.appendChild(label);
-    info.appendChild(val);
-
-    row.appendChild(icon);
-    row.appendChild(info);
-    section.appendChild(row);
-
-    /* 待审核状态 */
-    if (user.githubPending) {
-      var pending = document.createElement("div");
-      pending.className = "gh-pending";
-      pending.innerHTML = "待审核绑定：<b>@" + user.githubPending + "</b>（等待主管批准）";
-      var cancelBtn = document.createElement("button");
-      cancelBtn.className = "btn danger";
-      cancelBtn.style.marginLeft = "12px";
-      cancelBtn.style.verticalAlign = "middle";
-      cancelBtn.textContent = "取消申请";
-      cancelBtn.addEventListener("click", function () {
-        cancelBtn.disabled = true;
-        post("/api/account/github/cancel").then(function (res) {
-          if (res.ok) {
-            user.githubPending = undefined;
-            renderGithub();
-          } else {
-            alert((res.data && res.data.error) || "取消失败");
-            cancelBtn.disabled = false;
-          }
-        });
-      });
-      pending.appendChild(cancelBtn);
-      section.appendChild(pending);
+    var label = document.getElementById("ghLabel");
+    var value = document.getElementById("ghValue");
+    if (user.github) {
+      label.textContent = "已绑定";
+      value.textContent = "@" + user.github;
+    } else if (user.githubPending) {
+      label.textContent = "待审核";
+      value.textContent = "@" + user.githubPending + "（等待主管批准）";
+    } else {
+      label.textContent = "未绑定";
+      value.textContent = "尚未绑定 GitHub 账号";
     }
+  }
 
-    /* 操作区：绑定输入框 / 解绑按钮 */
-    if (!user.github && !user.githubPending) {
-      var inputRow = document.createElement("div");
-      inputRow.className = "gh-input-row";
-      var input = document.createElement("input");
-      input.type = "text";
-      input.placeholder = "输入 GitHub 用户名，如 LavaTap";
-      var bindBtn = document.createElement("button");
-      bindBtn.className = "btn primary";
-      bindBtn.textContent = isSuper ? "立即绑定" : "提交申请";
-      bindBtn.addEventListener("click", function () {
-        var v = input.value.trim();
-        if (!v) { input.focus(); return; }
-        bindBtn.disabled = true;
-        post("/api/account/github/bind", { github: v }).then(function (res) {
-          if (res.ok) {
-            if (isSuper) {
-              user.github = v;
-            } else {
-              user.githubPending = v;
-            }
-            renderGithub();
-          } else {
-            alert((res.data && res.data.error) || "绑定失败");
-            bindBtn.disabled = false;
-          }
-        });
-      });
-      inputRow.appendChild(input);
-      inputRow.appendChild(bindBtn);
-      section.appendChild(inputRow);
-    } else if (user.github) {
-      var unbindRow = document.createElement("div");
-      unbindRow.style.display = "flex";
-      unbindRow.style.justifyContent = "flex-end";
-      var unbindBtn = document.createElement("button");
-      unbindBtn.className = "btn danger";
-      unbindBtn.textContent = "解绑 GitHub";
-      unbindBtn.addEventListener("click", function () {
-        if (!confirm("确定要解绑 GitHub 账号 @" + user.github + " 吗？")) return;
-        unbindBtn.disabled = true;
-        post("/api/account/github/unbind").then(function (res) {
-          if (res.ok) {
-            user.github = undefined;
-            renderGithub();
-          } else {
-            alert((res.data && res.data.error) || "解绑失败");
-            unbindBtn.disabled = false;
-          }
-        });
-      });
-      unbindRow.appendChild(unbindBtn);
-      section.appendChild(unbindRow);
-    }
+  /* ────────────── 头像上传 + 裁剪 ────────────── */
+
+  var cropState = { img: null, scale: 1, size: 300 };
+
+  function initAvatarUpload() {
+    var avatar = document.getElementById("avatar");
+    var fileInput = document.getElementById("avatarFile");
+    avatar.addEventListener("click", function () { fileInput.click(); });
+    fileInput.addEventListener("change", function (e) {
+      var f = e.target.files && e.target.files[0];
+      if (!f) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        var img = new Image();
+        img.onload = function () {
+          cropState.img = img;
+          cropState.scale = 1;
+          document.getElementById("cropScale").value = 1;
+          openCrop();
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(f);
+      fileInput.value = "";
+    });
+
+    document.getElementById("cropCancel").addEventListener("click", closeCrop);
+    document.getElementById("cropConfirm").addEventListener("click", confirmCrop);
+    document.getElementById("cropScale").addEventListener("input", function (e) {
+      cropState.scale = parseFloat(e.target.value);
+      drawCrop();
+    });
+    document.getElementById("cropMask").addEventListener("click", function (e) {
+      if (e.target.id === "cropMask") closeCrop();
+    });
+  }
+
+  function openCrop() {
+    document.getElementById("cropMask").classList.add("show");
+    drawCrop();
+  }
+
+  function closeCrop() {
+    document.getElementById("cropMask").classList.remove("show");
+  }
+
+  function drawCrop() {
+    var canvas = document.getElementById("cropCanvas");
+    var ctx = canvas.getContext("2d");
+    var img = cropState.img;
+    if (!img) return;
+    var size = cropState.size;
+    canvas.width = size;
+    canvas.height = size;
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(0, 0, size, size);
+    // 以图片中心为中心，按 scale 缩放后绘制
+    var side = Math.min(img.width, img.height);
+    var sx = (img.width - side) / 2;
+    var sy = (img.height - side) / 2;
+    var drawSize = size * cropState.scale;
+    var dx = (size - drawSize) / 2;
+    var dy = (size - drawSize) / 2;
+    ctx.drawImage(img, sx, sy, side, side, dx, dy, drawSize, drawSize);
+    // 圆形预览
+    document.getElementById("cropPreview").src = canvas.toDataURL("image/png");
+  }
+
+  function confirmCrop() {
+    var canvas = document.getElementById("cropCanvas");
+    var dataUrl = canvas.toDataURL("image/png");
+    var btn = document.getElementById("cropConfirm");
+    btn.disabled = true;
+    post("/api/account/avatar", { avatar: dataUrl }).then(function (res) {
+      if (res.ok && res.data && res.data.user) {
+        user.avatar = res.data.user.avatar;
+        renderProfile();
+        closeCrop();
+      } else {
+        alert((res.data && res.data.error) || "上传失败");
+      }
+      btn.disabled = false;
+    });
   }
 
   /* ────────────── 启动 ────────────── */
@@ -189,4 +211,5 @@
   initTopbar();
   renderProfile();
   renderGithub();
+  initAvatarUpload();
 })();

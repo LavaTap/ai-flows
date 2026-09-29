@@ -19,10 +19,13 @@
       </h1>
     </div>
     <div class="top-right">
-      <span class="tab on">AI 管线</span>
-      <a class="tab" href="/team">团队</a>
-      <span class="tab">运营</span>
-      <span class="user-chip"><span class="avatar" aria-hidden="true"></span>未登录</span>
+      <a class="nav-link active" href="/pipeline">AI 管线</a>
+      <a class="nav-link" href="/tickets">工单</a>
+      <a class="nav-link" href="/account">账号管理</a>
+      <a class="nav-link" href="/github-audit">GitHub</a>
+      <a class="nav-link" href="/team" id="teamLink" style="display:none;">团队管理</a>
+      <span class="user-chip"><span class="avatar" aria-hidden="true"></span><span id="userName">未登录</span></span>
+      <button class="logout" id="logoutBtn" type="button">退出</button>
     </div>
   </header>
 

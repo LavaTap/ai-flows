@@ -25,6 +25,10 @@
     return u.name || u.email;
   }
 
+  function avatarUrl(u) {
+    return u.avatar ? "/api/avatars/" + u.avatar : "";
+  }
+
   function post(url, body) {
     var init = { method: "POST", headers: { "Content-Type": "application/json" } };
     if (body !== undefined) init.body = JSON.stringify(body);
@@ -48,12 +52,32 @@
         post("/api/logout").then(function () { location.href = "/login"; });
       });
     }
+    renderUserChip();
+  }
+
+  function renderUserChip() {
+    var chip = document.querySelector(".user-chip");
+    if (!chip) return;
+    var av = chip.querySelector(".avatar");
+    var nameEl = document.getElementById("userName");
+    var url = avatarUrl(user);
+    if (av) {
+      if (url) {
+        av.style.background = "none";
+        av.innerHTML = '<img src="' + url + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" alt="">';
+      } else {
+        av.style.background = colorOf(user.email);
+        av.textContent = firstChar(user);
+      }
+    }
+    if (nameEl) nameEl.textContent = displayName(user);
   }
 
   /* ────────────── 待审核列表 ────────────── */
 
   function renderPending() {
     var list = document.getElementById("pendingList");
+    if (!list) return;
     var pending = members.filter(function (m) { return m.githubPending; });
     var countEl = document.getElementById("pendingCount");
     countEl.textContent = pending.length + " 条待审核";
@@ -70,8 +94,13 @@
 
       var av = document.createElement("div");
       av.className = "pending-avatar";
-      av.style.background = colorOf(m.email);
-      av.textContent = firstChar(m);
+      var avUrl = avatarUrl(m);
+      if (avUrl) {
+        av.innerHTML = '<img src="' + avUrl + '" alt="">';
+      } else {
+        av.style.background = colorOf(m.email);
+        av.textContent = firstChar(m);
+      }
 
       var info = document.createElement("div");
       info.className = "pending-info";
@@ -162,8 +191,13 @@
       cell.className = "m-cell-avatar";
       var av = document.createElement("span");
       av.className = "m-avatar-sm";
-      av.style.background = colorOf(m.email);
-      av.textContent = firstChar(m);
+      var avUrl2 = avatarUrl(m);
+      if (avUrl2) {
+        av.innerHTML = '<img src="' + avUrl2 + '" alt="">';
+      } else {
+        av.style.background = colorOf(m.email);
+        av.textContent = firstChar(m);
+      }
       var txt = document.createElement("span");
       txt.innerHTML = '<div class="m-name">' + escapeHtml(displayName(m)) + '</div>' +
         '<div class="m-email">' + escapeHtml(m.email) + '</div>';

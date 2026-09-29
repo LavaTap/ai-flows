@@ -66,12 +66,6 @@
     ".d-actions .result{font:400 12px/18px var(--font-sans);color:var(--muted);}",
     ".d-actions .result.fail{color:var(--led);}",
     ".d-actions .btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;transform:none;}",
-    ".top-right .logout{font:500 12px/18px var(--font-sans);color:var(--copy);background:var(--glass-fill);",
-    "border:1px solid var(--glass-line);border-radius:999px;padding:4px 12px;cursor:pointer;white-space:nowrap;}",
-    ".top-right .logout:hover{color:var(--led);border-color:rgba(173,49,77,.3);}",
-    ".top-right .accbtn{font:500 12px/18px var(--font-sans);color:var(--teal);background:var(--teal-soft);text-decoration:none;",
-    "border:1px solid var(--teal-line);border-radius:999px;padding:4px 12px;cursor:pointer;white-space:nowrap;display:inline-block;}",
-    ".top-right .accbtn:hover{color:#fff;background:var(--teal);}",
     ".user-chip .rname{color:var(--ink-soft);font-weight:500;}",
     /* 执行角色：紧凑列表（小头像 + 名字），hover 弹出详情卡片 */
     ".d-roles{margin-top:12px;border-top:1px solid var(--glass-line);padding-top:10px;}",
@@ -347,7 +341,7 @@
     }
   })();
 
-  /* 顶栏：登录用户信息（头像配色 + 姓名/岗位）+ 退出 */
+  /* 顶栏：登录用户信息（头像 + 姓名/岗位）+ 退出 */
   (function renderTopbar() {
     var chip = document.querySelector(".user-chip");
     if (chip) {
@@ -355,37 +349,37 @@
       var avatar = document.createElement("span");
       avatar.className = "avatar";
       avatar.setAttribute("aria-hidden", "true");
-      avatar.style.background = colorOf(user.email);
-      avatar.style.color = "#fff";
-      avatar.style.fontWeight = "600";
-      avatar.style.fontSize = "12px";
-      avatar.style.display = "inline-flex";
-      avatar.style.alignItems = "center";
-      avatar.style.justifyContent = "center";
-      avatar.textContent = (user.name || user.email).slice(0, 1);
+      if (user.avatar) {
+        avatar.style.background = "none";
+        avatar.innerHTML = '<img src="/api/avatars/' + user.avatar + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" alt="">';
+      } else {
+        avatar.style.background = colorOf(user.email);
+        avatar.style.color = "#fff";
+        avatar.style.fontWeight = "600";
+        avatar.style.fontSize = "12px";
+        avatar.style.display = "inline-flex";
+        avatar.style.alignItems = "center";
+        avatar.style.justifyContent = "center";
+        avatar.textContent = (user.name || user.email).slice(0, 1);
+      }
       var name = document.createElement("span");
       name.className = "rname";
+      name.id = "userName";
       name.textContent = (user.name ? user.name + " · " : "") + user.title + " · " + ROLE_TEXT[user.role];
       chip.appendChild(avatar);
       chip.appendChild(name);
       chip.title = user.email;
     }
-    var topRight = document.querySelector(".top-right");
-    if (topRight) {
-      var acc = document.createElement("a");
-      acc.href = "/account";
-      acc.className = "accbtn";
-      acc.textContent = "账号管理";
-      acc.title = "管理我的 GitHub 绑定与资料";
-      topRight.appendChild(acc);
-      var out = document.createElement("button");
-      out.type = "button";
-      out.className = "logout";
-      out.textContent = "退出";
+    // 团队链接仅主管可见
+    if (user.role !== "supervisor") {
+      var tl = document.getElementById("teamLink");
+      if (tl) tl.style.display = "none";
+    }
+    var out = document.getElementById("logoutBtn");
+    if (out) {
       out.addEventListener("click", function () {
         post("/api/logout").then(function () { location.href = "/login"; });
       });
-      topRight.appendChild(out);
     }
   })();
 

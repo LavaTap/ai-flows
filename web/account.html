@@ -16,8 +16,6 @@
       font:500 13px/20px var(--font-sans);color:var(--copy);text-decoration:none;transition:all 120ms ease;}
     .side-nav a:hover{background:var(--paper-2);color:var(--ink-soft);}
     .side-nav a.active{background:var(--led-soft);color:var(--led);}
-    .side-nav a .side-dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.6;flex:none;}
-    .side-nav a.active .side-dot{opacity:1;box-shadow:0 0 4px currentColor;}
     .main-content{padding:24px 36px 80px;min-width:0;}
     .breadcrumb{display:flex;align-items:center;gap:8px;font:400 12px/18px var(--font-sans);color:var(--muted);margin-bottom:20px;}
     .breadcrumb a{color:var(--muted);text-decoration:none;}
@@ -29,14 +27,18 @@
     .section{padding:20px 0;border-bottom:1px solid var(--glass-line);}
     .section:first-of-type{padding-top:4px;}
     .section:last-of-type{border-bottom:none;}
-    .section h2{margin:0 0 16px;font:600 14px/22px var(--font-sans);color:var(--ink-soft);
-      display:flex;align-items:center;gap:8px;}
-    .section h2 .dot{width:6px;height:6px;border-radius:50%;background:var(--led);box-shadow:0 0 6px var(--led-glow);}
+    .section h2{margin:0 0 16px;font:600 14px/22px var(--font-sans);color:var(--ink-soft);}
 
     /* 个人资料 */
     .profile-row{display:flex;align-items:center;gap:20px;}
     .profile-avatar{width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-      color:#fff;font:600 28px/1 var(--font-sans);box-shadow:0 4px 12px rgba(20,20,20,.15);flex:none;}
+      color:#fff;font:600 28px/1 var(--font-sans);box-shadow:0 4px 12px rgba(20,20,20,.15);flex:none;
+      background-size:cover;background-position:center;cursor:pointer;position:relative;overflow:hidden;}
+    .profile-avatar:hover::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,.35);}
+    .profile-avatar .cam{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.5);color:#fff;
+      font:500 10px/18px var(--font-sans);text-align:center;opacity:0;transition:opacity .15s;z-index:1;}
+    .profile-avatar:hover .cam{opacity:1;}
+    .profile-avatar img{width:100%;height:100%;object-fit:cover;}
     .profile-info{flex:1;min-width:0;}
     .profile-name{font:700 20px/28px var(--font-sans);color:var(--ink-soft);}
     .profile-email{font:400 13px/20px var(--font-sans);color:var(--muted);margin-top:2px;}
@@ -46,8 +48,6 @@
     .badge{display:inline-block;padding:2px 8px;border-radius:999px;font:500 11px/16px var(--font-sans);}
     .badge.supervisor{background:var(--led-soft);color:var(--led);}
     .badge.staff{background:var(--teal-soft);color:var(--teal);}
-
-    /* GitHub 绑定 */
     .gh-section{display:flex;flex-direction:column;gap:12px;}
     .gh-row{display:flex;align-items:center;gap:12px;}
     .gh-icon{width:28px;height:28px;border-radius:50%;background:#24292f;display:flex;align-items:center;justify-content:center;
@@ -69,6 +69,35 @@
     .btn.danger{background:var(--block-soft);color:var(--block);border-color:rgba(239,68,68,.2);}
     .btn.danger:hover{background:rgba(239,68,68,.18);}
     .btn:disabled{opacity:.5;cursor:not-allowed;}
+    .breadcrumb{display:flex;align-items:center;gap:8px;font:400 12px/18px var(--font-sans);color:var(--muted);margin-bottom:16px;}
+    .breadcrumb a{color:var(--muted);text-decoration:none;}
+    .breadcrumb a:hover{color:var(--led);}
+    .breadcrumb .sep{opacity:.5;}
+    .breadcrumb .current{color:var(--ink-soft);font-weight:500;}
+
+    /* 头像裁剪弹窗 */
+    .crop-mask{position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;align-items:center;
+      justify-content:center;z-index:100;}
+    .crop-mask.show{display:flex;}
+    .crop-box{background:var(--glass-fill);border:1px solid var(--glass-line);border-radius:var(--radius-card);
+      padding:24px;width:420px;box-shadow:0 12px 40px rgba(15,23,42,.25);}
+    .crop-box h3{margin:0 0 16px;font:600 15px/22px var(--font-sans);color:var(--ink-soft);}
+    .crop-stage{position:relative;width:100%;height:320px;background:#0f172a;border-radius:10px;overflow:hidden;
+      margin-bottom:16px;display:flex;align-items:center;justify-content:center;}
+    .crop-stage canvas{max-width:100%;max-height:100%;display:block;}
+    .crop-preview{display:flex;align-items:center;gap:16px;margin-bottom:16px;}
+    .crop-preview .circle{width:56px;height:56px;border-radius:50%;overflow:hidden;border:2px solid var(--glass-line);
+      flex:none;background:#0f172a;}
+    .crop-preview .circle img{width:100%;height:100%;object-fit:cover;}
+    .crop-preview .tip{font:400 12px/18px var(--font-sans);color:var(--muted);}
+    .crop-actions{display:flex;gap:8px;justify-content:flex-end;}
+
+    /* GitHub 只读展示 */
+    .gh-ro{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--glass-line);
+      border-radius:10px;background:var(--paper-2);}
+    .gh-ro .gh-icon{width:32px;height:32px;}
+    .gh-ro-link{margin-left:auto;font:500 12px/18px var(--font-sans);color:var(--led);text-decoration:none;}
+    .gh-ro-link:hover{text-decoration:underline;}
   </style>
 </head>
 <body>
@@ -83,42 +112,45 @@
       </h1>
     </div>
     <div class="top-right">
-      <a href="/pipeline" class="nav-link" style="font:500 12px/18px var(--font-sans);color:var(--ink-soft);text-decoration:none;padding:4px 10px;border-radius:999px;">管线</a>
-      <a href="/account" class="nav-link active" style="font:500 12px/18px var(--font-sans);color:var(--led);text-decoration:none;padding:4px 10px;border-radius:999px;background:var(--led-soft);">账号管理</a>
-      <a href="/team" id="teamLink" class="nav-link" style="font:500 12px/18px var(--font-sans);color:var(--ink-soft);text-decoration:none;padding:4px 10px;border-radius:999px;display:none;">团队管理</a>
+      <a href="/pipeline" class="nav-link">AI 管线</a>
+      <a href="/tickets" class="nav-link">工单</a>
+      <a href="/account" class="nav-link active">账号管理</a>
+      <a href="/github-audit" class="nav-link">GitHub</a>
+      <a href="/team" id="teamLink" class="nav-link" style="display:none;">团队管理</a>
+      <span class="user-chip"><span class="avatar" aria-hidden="true"></span><span id="userName">未登录</span></span>
       <button class="logout" id="logoutBtn">退出</button>
     </div>
   </header>
 
   <div class="page-shell">
-    <!-- 左侧栏 -->
+    <!-- 左侧设置栏 -->
     <aside class="sidebar">
       <div class="side-title">设置</div>
       <nav class="side-nav">
-        <a href="/account" class="active">
-          <span class="side-dot"></span>
-          <span>账号管理</span>
-        </a>
-        <a href="/team" id="sideTeamLink" style="display:none;">
-          <span class="side-dot"></span>
-          <span>团队管理</span>
-        </a>
+        <a href="/account" class="active">账号管理</a>
+        <a href="/github-audit">GitHub 绑定</a>
+        <a href="/team" id="teamSide" style="display:none;">团队管理</a>
       </nav>
     </aside>
 
     <!-- 主内容 -->
-    <main class="main-content">
+    <div class="main-content">
       <div class="breadcrumb">
         <a href="/pipeline">管线</a>
         <span class="sep">›</span>
         <span class="current">账号管理</span>
       </div>
 
+      <h1 class="page-title"><em>我的账号</em></h1>
+      <p class="page-sub">管理你的个人资料与 GitHub 绑定</p>
+
       <!-- 个人资料 -->
-      <section class="section">
-        <h2><span class="dot"></span>个人资料</h2>
+      <div class="section">
+        <h2>个人资料</h2>
         <div class="profile-row">
-          <div class="profile-avatar" id="avatar"></div>
+          <div class="profile-avatar" id="avatar" title="点击更换头像">
+            <span class="cam">更换</span>
+          </div>
           <div class="profile-info">
             <div class="profile-name" id="nameEl"></div>
             <div class="profile-email" id="emailEl"></div>
@@ -129,16 +161,41 @@
             </div>
           </div>
         </div>
-      </section>
+      </div>
 
-      <!-- GitHub 绑定 -->
-      <section class="section">
-        <h2><span class="dot" style="background:#24292f;box-shadow:0 0 6px rgba(36,41,47,.3);"></span>GitHub 绑定</h2>
-        <div class="gh-section" id="ghSection">
-          <!-- 由 JS 渲染 -->
+      <!-- GitHub 绑定（只读展示，操作去 /github-audit） -->
+      <div class="section">
+        <h2>GitHub 绑定</h2>
+        <div class="gh-ro" id="ghRo">
+          <div class="gh-icon">GH</div>
+          <div class="gh-info">
+            <div class="gh-label" id="ghLabel"></div>
+            <div class="gh-value" id="ghValue"></div>
+          </div>
+          <a href="/github-audit" class="gh-ro-link">去管理 →</a>
         </div>
-      </section>
-    </main>
+      </div>
+    </div>
+  </div>
+
+  <!-- 隐藏文件选择 -->
+  <input type="file" id="avatarFile" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none">
+
+  <!-- 头像裁剪弹窗 -->
+  <div class="crop-mask" id="cropMask">
+    <div class="crop-box">
+      <h3>裁剪头像</h3>
+      <div class="crop-stage"><canvas id="cropCanvas"></canvas></div>
+      <div class="crop-preview">
+        <div class="circle"><img id="cropPreview" alt=""></div>
+        <span class="tip">拖动滑块缩放，圆形为最终效果</span>
+      </div>
+      <input type="range" id="cropScale" min="1" max="3" step="0.01" value="1" style="width:100%;margin-bottom:16px;">
+      <div class="crop-actions">
+        <button class="btn" id="cropCancel">取消</button>
+        <button class="btn primary" id="cropConfirm">确认上传</button>
+      </div>
+    </div>
   </div>
 </body>
 </html>

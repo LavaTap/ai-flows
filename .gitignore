@@ -9,6 +9,12 @@ ai-review.config.json
 .ai-review-reports/
 review-report.md
 
+# 工单图片上传（二进制不入库，目录随运行时创建）
+db/ticket-uploads/
+
+# 头像上传（二进制不入库，目录随运行时创建）
+db/avatars/
+
 # 其他借用的非原创agents
 .agents/skills/writing-claude-md/
 .agents/skills/skill-creator/

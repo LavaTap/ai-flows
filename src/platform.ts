@@ -1,8 +1,9 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
+import { randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname, basename, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, type ReviewRecord, type NodeState, type UserAccount } from "./db.js";
+import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, loadTickets, appendTicket, updateTicket, TICKET_IMAGES_DIR, AVATARS_DIR, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment } from "./db.js";
 import { createSession, destroySession, currentUser, sessionCookie, clearCookie, SESSION_COOKIE, parseCookies } from "./auth.js";
 import { loadConfig, type CrawlerConfig, type ReviewConfig } from "./config.js";
 import { collectDiff } from "./collector.js";
@@ -13,6 +14,7 @@ import { isRepo, currentBranch } from "./git.js";
 import { ensureReportServer, REPORTS_DIR } from "./serve.js";
 import { runSkill, sanitizeFilename } from "./skill.js";
 import { runCrawler } from "./crawler.js";
+import { sanitizeRichHtml, isEmptyRichHtml } from "./richtext.js";
 
 /** 平台静态资源目录 web/（src 与 dist 均位于仓库根下一级，向上取根） */
 export const WEB_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
@@ -25,6 +27,24 @@ const UPLOADS_DIR = ".ai-flows-uploads";
 
 /** 需求文本长度上限 */
 const REQUIREMENT_MAX = 4000;
+
+/** 工单标题长度上限 */
+const TICKET_TITLE_MAX = 100;
+
+/** 工单富文本正文 / 评论长度上限（净化前的原始 HTML 长度） */
+const TICKET_CONTENT_MAX = 20000;
+
+/** 工单图片允许的扩展名 → MIME */
+const TICKET_IMAGE_TYPES: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+};
+
+/** 工单图片文件名形态（上传时由服务端生成，严格校验防路径穿越） */
+const TICKET_IMAGE_NAME_RE = /^[a-f0-9]{12}\.(png|jpg|jpeg|gif|webp)$/;
 
 /** 员工只能执行本部门节点；部门主管不限部门（权限最高） */
 export function canExecute(user: UserAccount, node: NodeState): boolean {
@@ -56,6 +76,37 @@ const AI_REVIEW_DEPT = "程序中台";
 export function filterReviewsByUser(reviews: ReviewRecord[], user: UserAccount): ReviewRecord[] {
   if (user.role === "supervisor") return reviews;
   return reviews.filter((r) => r.department === user.department);
+}
+
+/** 工单访问权限：本部门员工 + 部门主管（主管全量）。查看 / 改状态 / 评论同权，不另设入口 */
+export function canAccessTicket(user: UserAccount, ticket: { department: string }): boolean {
+  return user.role === "supervisor" || user.department === ticket.department;
+}
+
+/** 按视角过滤工单：主管全量；员工只看本部门提交的工单 */
+export function filterTicketsByUser(tickets: TicketRecord[], user: UserAccount): TicketRecord[] {
+  if (user.role === "supervisor") return tickets;
+  return tickets.filter((t) => t.department === user.department);
+}
+
+/** 工单状态取值合法（用于请求体校验） */
+export function isTicketStatus(v: unknown): v is TicketStatus {
+  return v === "open" || v === "doing" || v === "resolved";
+}
+
+/** 从净化后的正文中收集引用的本平台图片文件名（挂到工单记录，便于统计/审计） */
+export function collectTicketImages(html: string): string[] {
+  const out = new Set<string>();
+  const re = /<img\b[^>]*\bsrc="\/api\/tickets\/images\/([A-Za-z0-9._-]+)"/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) out.add(m[1]);
+  return [...out];
+}
+
+/** 净化 + 长度校验富文本字段；非法时返回 null */
+function normalizeRichField(raw: unknown): string | null {
+  if (typeof raw !== "string" || raw.length > TICKET_CONTENT_MAX) return null;
+  return sanitizeRichHtml(raw);
 }
 
 /** 按 id 去重，platform 优先于 external（platform 记录有更完整的执行人/角色元信息） */
@@ -113,6 +164,8 @@ interface UserView {
   github?: string;
   /** 待主管审核的 GitHub 用户名（员工自助绑定后展示「待审核」态；缺省表示无待审绑定） */
   githubPending?: string;
+  /** 自定义头像文件名（落 db/avatars/<file>，缺省用首字头像） */
+  avatar?: string;
 }
 
 /** 视图层节点模型（带当前用户权限标记，注入页面 bootstrap） */
@@ -127,7 +180,7 @@ interface NodeView extends NodeState {
 
 /** 剥离密码，输出视图层用户 */
 function toUserView(u: UserAccount): UserView {
-  return { email: u.email, name: u.name, role: u.role, title: u.title, department: u.department, github: u.github, githubPending: u.githubPending };
+  return { email: u.email, name: u.name, role: u.role, title: u.title, department: u.department, github: u.github, githubPending: u.githubPending, avatar: u.avatar };
 }
 
 /** 节点 + 权限 → 视图模型 */
@@ -137,6 +190,58 @@ function toNodeView(user: UserAccount, node: NodeState): NodeView {
     canExecute: canExecute(user, node),
     canApprove: canApprove(user),
     canEdit: canEditRequirement(user, node),
+  };
+}
+
+/** 工单列表项视图（不含正文，列表页只渲染摘要，避免大正文拖慢接口） */
+export interface TicketListItem {
+  id: string;
+  kind: TicketRecord["kind"];
+  title: string;
+  status: TicketStatus;
+  department: string;
+  authorName: string;
+  authorEmail: string;
+  createdAt: string;
+  updatedAt: string;
+  /** 评论条数（详情用 commentList 拿正文） */
+  commentCount: number;
+  /** 正文引用图片数（详情用 content 内的 img 标签渲染） */
+  imageCount: number;
+}
+
+/** 工单完整视图（详情 / 新建后返回；正文已净化，可直接 innerHTML 渲染） */
+export interface TicketView extends TicketListItem {
+  content: string;
+  commentList: TicketComment[];
+  /** 是否由当前用户提交（前端据此做「我提交的」标记） */
+  mine: boolean;
+}
+
+/** 工单 → 列表项视图 */
+function toTicketListItem(t: TicketRecord): TicketListItem {
+  return {
+    id: t.id,
+    kind: t.kind,
+    title: t.title,
+    status: t.status,
+    department: t.department,
+    authorName: t.authorName,
+    authorEmail: t.authorEmail,
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
+    commentCount: t.comments?.length ?? 0,
+    imageCount: t.images?.length ?? 0,
+  };
+}
+
+/** 工单 + 当前用户 → 完整视图 */
+function toTicketView(t: TicketRecord, user: UserAccount): TicketView {
+  return {
+    ...toTicketListItem(t),
+    content: t.content,
+    commentList: t.comments ?? [],
+    mine: t.authorEmail === user.email,
   };
 }
 
@@ -180,6 +285,8 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   "/ai-review-report.js": { file: "ai-review-report.js", type: "text/javascript; charset=utf-8" },
   "/account.js": { file: "account.js", type: "text/javascript; charset=utf-8" },
   "/team.js": { file: "team.js", type: "text/javascript; charset=utf-8" },
+  "/tickets.js": { file: "tickets.js", type: "text/javascript; charset=utf-8" },
+  "/github-audit.js": { file: "github-audit.js", type: "text/javascript; charset=utf-8" },
 };
 
 /** 读 web/ 下静态文件并响应，不存在返回 false */
@@ -238,6 +345,31 @@ function teamHtml(user: UserAccount): string {
     isSupervisor: user.role === "supervisor",
   };
   const inject = `<script>window.__TEAM__ = ${jsonForScript(boot)};</script>\n<script src="/team.js" defer></script>`;
+  return raw.replace("</body>", `${inject}\n</body>`);
+}
+
+/** 渲染 GitHub 绑定管理页：员工自助绑定 + 主管审核；读静态 github-audit.html，注入用户 + 成员 + 部门 bootstrap */
+function githubAuditHtml(user: UserAccount): string {
+  const raw = readFileSync(join(WEB_DIR, "github-audit.html"), "utf8");
+  const allUsers = loadUsers();
+  const boot = {
+    user: toUserView(user),
+    members: allUsers.map(toUserView),
+    isSupervisor: user.role === "supervisor",
+  };
+  const inject = `<script>window.__GHAUDIT__ = ${jsonForScript(boot)};</script>\n<script src="/github-audit.js" defer></script>`;
+  return raw.replace("</body>", `${inject}\n</body>`);
+}
+
+/** 渲染工单页：读静态 tickets.html，注入登录用户 + 部门列表 + 主管标记 bootstrap */
+function ticketsHtml(user: UserAccount): string {
+  const raw = readFileSync(join(WEB_DIR, "tickets.html"), "utf8");
+  const boot = {
+    user: toUserView(user),
+    departments: Array.from(new Set(loadUsers().map((u) => u.department).filter(Boolean))),
+    isSupervisor: user.role === "supervisor",
+  };
+  const inject = `<script>window.__TICKETS__ = ${jsonForScript(boot)};</script>\n<script src="/tickets.js" defer></script>`;
   return raw.replace("</body>", `${inject}\n</body>`);
 }
 
@@ -655,16 +787,18 @@ export async function startPlatformServer(
         sendJson(res, 403, { error: "仅部门主管可设置账号的姓名/部门/职位" });
         return;
       }
-      let patch: { name?: string; department?: string; title?: string } = {};
+      let patch: { name?: string; department?: string; title?: string; avatar?: string } = {};
       try {
         const body = JSON.parse(await readBody(req)) as {
           name?: unknown;
           department?: unknown;
           title?: unknown;
+          avatar?: unknown;
         };
         if (typeof body.name === "string") patch.name = body.name.trim();
         if (typeof body.department === "string") patch.department = body.department.trim();
         if (typeof body.title === "string") patch.title = body.title.trim();
+        if (typeof body.avatar === "string") patch.avatar = body.avatar;
       } catch {
         sendJson(res, 400, { error: "请求体不是合法 JSON" });
         return;
@@ -675,6 +809,10 @@ export async function startPlatformServer(
           sendJson(res, 400, { error: `${k} 不能为空且不超过 30 字符` });
           return;
         }
+      }
+      if (patch.avatar !== undefined && patch.avatar !== "" && !/^[a-f0-9]{12}\.(png|jpg|jpeg|gif|webp)$/.test(patch.avatar)) {
+        sendJson(res, 400, { error: "头像文件名不合法" });
+        return;
       }
       const updated = setUserProfile(pm[1], patch);
       if (!updated) {
@@ -788,6 +926,76 @@ export async function startPlatformServer(
       }
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.end(teamHtml(user));
+      return;
+    }
+
+    // GitHub 绑定管理页（登录即可访问：员工自助绑定 + 主管审核）
+    if (path === "/github-audit" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        res.statusCode = 302;
+        res.setHeader("Location", "/login");
+        res.end();
+        return;
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(githubAuditHtml(user));
+      return;
+    }
+
+    // 头像文件读取：文件名严格校验 [a-f0-9]{12}.(png|jpg|jpeg|gif|webp)，天然免疫穿越
+    const avm = path.match(/^\/api\/avatars\/([a-f0-9]{12}\.(?:png|jpg|jpeg|gif|webp))$/);
+    if (avm && req.method === "GET") {
+      const file = avm[1];
+      const ext = file.split(".").pop() as string;
+      const mime = TICKET_IMAGE_TYPES[ext] || "application/octet-stream";
+      const fp = join(AVATARS_DIR, file);
+      if (!existsSync(fp)) {
+        res.statusCode = 404;
+        res.end("头像不存在");
+        return;
+      }
+      res.setHeader("Content-Type", mime);
+      res.setHeader("Cache-Control", "private, max-age=86400");
+      res.end(readFileSync(fp));
+      return;
+    }
+
+    // 上传头像：自己改自己，接收 base64 data URL，落 db/avatars/，返回文件名
+    if (path === "/api/account/avatar" && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      let dataUrl = "";
+      try {
+        const body = JSON.parse(await readBody(req)) as { avatar?: unknown };
+        if (typeof body.avatar === "string") dataUrl = body.avatar;
+      } catch {
+        sendJson(res, 400, { error: "请求体不是合法 JSON" });
+        return;
+      }
+      const match = dataUrl.match(/^data:image\/(png|jpg|jpeg|gif|webp);base64,(.+)$/);
+      if (!match) {
+        sendJson(res, 400, { error: "头像格式不合法（限 png/jpg/jpeg/gif/webp 的 base64）" });
+        return;
+      }
+      const ext = match[1] === "jpeg" ? "jpg" : match[1];
+      const buf = Buffer.from(match[2], "base64");
+      if (buf.length > 2 * 1024 * 1024) {
+        sendJson(res, 400, { error: "头像不能超过 2MB" });
+        return;
+      }
+      mkdirSync(AVATARS_DIR, { recursive: true });
+      const fileName = `${randomBytes(6).toString("hex")}.${ext}`;
+      writeFileSync(join(AVATARS_DIR, fileName), buf);
+      const updated = setUserProfile(user.email, { avatar: fileName });
+      if (!updated) {
+        sendJson(res, 404, { error: "账号不存在" });
+        return;
+      }
+      sendJson(res, 200, { user: toUserView(updated) });
       return;
     }
 
@@ -1277,6 +1485,248 @@ export async function startPlatformServer(
         `attachment; filename="${encodeURIComponent(artifact.name)}"`
       );
       res.end(readFileSync(abs));
+      return;
+    }
+
+    // 工单页（bug 单；未登录重定向到登录页）
+    if (path === "/tickets" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        res.statusCode = 302;
+        res.setHeader("Location", "/login");
+        res.end();
+        return;
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(ticketsHtml(user));
+      return;
+    }
+
+    // 工单列表：按视角过滤（主管全量 / 员工本部门），按更新时间倒序
+    if (path === "/api/tickets" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const list = filterTicketsByUser(loadTickets(), user)
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .map(toTicketListItem);
+      sendJson(res, 200, { tickets: list, user: toUserView(user) });
+      return;
+    }
+
+    // 新建工单：正文净化后落库，归属提交人部门（可见范围 = 本部门 + 主管）
+    if (path === "/api/tickets" && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      let title = "";
+      let rawContent: unknown = "";
+      try {
+        const body = JSON.parse(await readBody(req, 64 * 1024)) as {
+          title?: unknown;
+          content?: unknown;
+        };
+        if (typeof body.title === "string") title = body.title.trim();
+        rawContent = body.content;
+      } catch {
+        sendJson(res, 400, { error: "请求体过大或不是合法 JSON" });
+        return;
+      }
+      if (!title || title.length > TICKET_TITLE_MAX) {
+        sendJson(res, 400, { error: `标题不能为空且不超过 ${TICKET_TITLE_MAX} 字` });
+        return;
+      }
+      const content = normalizeRichField(rawContent);
+      if (content === null) {
+        sendJson(res, 400, { error: `正文过长（上限 ${TICKET_CONTENT_MAX} 字）` });
+        return;
+      }
+      if (isEmptyRichHtml(content)) {
+        sendJson(res, 400, { error: "正文不能为空" });
+        return;
+      }
+      const now = new Date().toISOString();
+      const record: TicketRecord = {
+        id: `t-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`,
+        kind: "bug",
+        title,
+        content,
+        status: "open",
+        department: user.department,
+        authorName: user.name?.trim() || user.email.split("@")[0],
+        authorEmail: user.email,
+        createdAt: now,
+        updatedAt: now,
+        images: collectTicketImages(content),
+        comments: [],
+      };
+      appendTicket(record);
+      sendJson(res, 201, { ticket: toTicketView(record, user) });
+      return;
+    }
+
+    // 工单图片上传（body 为 base64，服务端生成文件名后落 db/ticket-uploads/）
+    if (path === "/api/tickets/upload" && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      let filename = "";
+      let contentBase64 = "";
+      try {
+        const body = JSON.parse(await readBody(req, 6 * 1024 * 1024)) as {
+          filename?: unknown;
+          contentBase64?: unknown;
+        };
+        if (typeof body.filename === "string") filename = body.filename;
+        if (typeof body.contentBase64 === "string") contentBase64 = body.contentBase64;
+      } catch {
+        sendJson(res, 400, { error: "图片过大（上限 6MB）或不是合法 JSON" });
+        return;
+      }
+      const ext = filename.toLowerCase().split(".").pop() ?? "";
+      if (!contentBase64 || !TICKET_IMAGE_TYPES[ext]) {
+        sendJson(res, 400, { error: "仅支持 png / jpg / gif / webp 图片" });
+        return;
+      }
+      const name = `${randomBytes(6).toString("hex")}.${ext}`;
+      mkdirSync(TICKET_IMAGES_DIR, { recursive: true });
+      writeFileSync(join(TICKET_IMAGES_DIR, name), Buffer.from(contentBase64, "base64"));
+      sendJson(res, 200, { url: `/api/tickets/images/${name}` });
+      return;
+    }
+
+    // 工单图片读取（文件名严格校验，天然免疫路径穿越）
+    const im = path.match(/^\/api\/tickets\/images\/([^/\\]+)$/);
+    if (im && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const name = im[1];
+      if (!TICKET_IMAGE_NAME_RE.test(name)) {
+        sendJson(res, 404, { error: "图片不存在" });
+        return;
+      }
+      const abs = join(TICKET_IMAGES_DIR, name);
+      if (!existsSync(abs)) {
+        sendJson(res, 404, { error: "图片不存在" });
+        return;
+      }
+      const ext = name.split(".").pop() ?? "";
+      res.setHeader("Content-Type", TICKET_IMAGE_TYPES[ext]);
+      res.setHeader("Cache-Control", "private, max-age=86400");
+      res.end(readFileSync(abs));
+      return;
+    }
+
+    // 改工单状态（本部门员工 / 主管）
+    const tsm = path.match(/^\/api\/tickets\/([^/\\]+)\/status$/);
+    if (tsm && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const ticket = loadTickets().find((t) => t.id === tsm[1]);
+      if (!ticket) {
+        sendJson(res, 404, { error: "工单不存在" });
+        return;
+      }
+      if (!canAccessTicket(user, ticket)) {
+        sendJson(res, 403, { error: "仅本部门员工或部门主管可流转该工单" });
+        return;
+      }
+      let next: unknown = "";
+      try {
+        const body = JSON.parse(await readBody(req)) as { status?: unknown };
+        next = body.status;
+      } catch {
+        sendJson(res, 400, { error: "请求体不是合法 JSON" });
+        return;
+      }
+      if (!isTicketStatus(next)) {
+        sendJson(res, 400, { error: "状态取值非法" });
+        return;
+      }
+      const updated = updateTicket(ticket.id, (t) => {
+        t.status = next as TicketStatus;
+        t.updatedAt = new Date().toISOString();
+      });
+      sendJson(res, 200, { ticket: toTicketView(updated as TicketRecord, user) });
+      return;
+    }
+
+    // 新增工单评论（本部门员工 / 主管）
+    const tcm = path.match(/^\/api\/tickets\/([^/\\]+)\/comments$/);
+    if (tcm && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const ticket = loadTickets().find((t) => t.id === tcm[1]);
+      if (!ticket) {
+        sendJson(res, 404, { error: "工单不存在" });
+        return;
+      }
+      if (!canAccessTicket(user, ticket)) {
+        sendJson(res, 403, { error: "仅本部门员工或部门主管可评论该工单" });
+        return;
+      }
+      let rawContent: unknown = "";
+      try {
+        const body = JSON.parse(await readBody(req, 64 * 1024)) as { content?: unknown };
+        rawContent = body.content;
+      } catch {
+        sendJson(res, 400, { error: "请求体过大或不是合法 JSON" });
+        return;
+      }
+      const content = normalizeRichField(rawContent);
+      if (content === null || isEmptyRichHtml(content)) {
+        sendJson(res, 400, { error: "评论内容不能为空或过长" });
+        return;
+      }
+      const comment: TicketComment = {
+        id: `c-${randomBytes(4).toString("hex")}`,
+        author: user.name?.trim() || user.email.split("@")[0],
+        email: user.email,
+        department: user.department,
+        content,
+        at: new Date().toISOString(),
+      };
+      const updated = updateTicket(ticket.id, (t) => {
+        t.comments = [...(t.comments ?? []), comment];
+        t.updatedAt = comment.at;
+      });
+      sendJson(res, 201, { ticket: toTicketView(updated as TicketRecord, user) });
+      return;
+    }
+
+    // 工单详情（本部门员工 / 主管）
+    const tdm = path.match(/^\/api\/tickets\/([^/\\]+)$/);
+    if (tdm && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const ticket = loadTickets().find((t) => t.id === tdm[1]);
+      if (!ticket) {
+        sendJson(res, 404, { error: "工单不存在" });
+        return;
+      }
+      if (!canAccessTicket(user, ticket)) {
+        sendJson(res, 403, { error: "仅本部门员工或部门主管可查看该工单" });
+        return;
+      }
+      sendJson(res, 200, { ticket: toTicketView(ticket, user) });
       return;
     }
 

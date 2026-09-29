@@ -5,6 +5,12 @@ import { fileURLToPath } from "node:url";
 /** 平台数据目录 db/（src 与 dist 均位于仓库根下一级，向上取根） */
 export const DB_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "db");
 
+/** 工单图片上传目录 db/ticket-uploads/（已 gitignore，二进制不入库） */
+export const TICKET_IMAGES_DIR = join(DB_DIR, "ticket-uploads");
+
+/** 头像上传目录 db/avatars/（已 gitignore，二进制不入库） */
+export const AVATARS_DIR = join(DB_DIR, "avatars");
+
 /** 身份：员工 / 部门主管（主管权限最高，可操控并批准所有节点） */
 export type Role = "staff" | "supervisor";
 
@@ -26,6 +32,8 @@ export interface UserAccount {
   github?: string;
   /** 待主管审核的 GitHub 用户名（员工自助绑定后落此，主管批准后转 github） */
   githubPending?: string;
+  /** 自定义头像文件名（落 db/avatars/<file>，缺省用首字头像） */
+  avatar?: string;
 }
 
 /** 节点运行时状态：待执行 / 执行中 / 待验收 / 已执行 */
@@ -141,10 +149,10 @@ export function approveUserGithub(email: string): UserAccount | null {
   return user;
 }
 
-/** 修改账号的姓名/部门/职位（主管管理他人时调用）；只写传入的字段；账号不存在返回 null */
+/** 修改账号的姓名/部门/职位/头像（主管管理他人时调用）；只写传入的字段；账号不存在返回 null */
 export function setUserProfile(
   email: string,
-  patch: { name?: string; department?: string; title?: string }
+  patch: { name?: string; department?: string; title?: string; avatar?: string }
 ): UserAccount | null {
   const users = loadUsers();
   const user = users.find((u) => u.email === email);
@@ -152,6 +160,10 @@ export function setUserProfile(
   if (patch.name !== undefined) user.name = patch.name;
   if (patch.department !== undefined) user.department = patch.department;
   if (patch.title !== undefined) user.title = patch.title;
+  if (patch.avatar !== undefined) {
+    if (patch.avatar) user.avatar = patch.avatar;
+    else delete user.avatar;
+  }
   saveUsers(users);
   return user;
 }
@@ -266,4 +278,290 @@ export function appendReviews(newRecords: ReviewRecord[]): void {
   reviews.push(...newRecords);
   mkdirSync(DB_DIR, { recursive: true });
   writeFileSync(join(DB_DIR, "reviews.json"), JSON.stringify({ reviews }, null, 2), "utf8");
+}
+
+/** 工单状态：待处理 / 处理中 / 已解决（三态可互相流转） */
+export type TicketStatus = "open" | "doing" | "resolved";
+
+/** 工单类型：本期只做 bug 单，预留字段便于后续扩类型 */
+export type TicketKind = "bug";
+
+/** 工单评论（同样按部门视角可见） */
+export interface TicketComment {
+  /** 评论 id */
+  id: string;
+  /** 评论人姓名（角色卡片同源） */
+  author: string;
+  /** 评论人邮箱 */
+  email: string;
+  /** 评论人部门 */
+  department: string;
+  /** 评论正文（白名单净化后的富文本 HTML） */
+  content: string;
+  /** ISO 时间戳 */
+  at: string;
+}
+
+/** 工单（db/tickets.json）。department 决定可见范围：本部门员工 + 主管 */
+export interface TicketRecord {
+  /** 工单 id（t- 前缀 + 时间戳 + 随机串） */
+  id: string;
+  /** 类型：bug */
+  kind: TicketKind;
+  /** 标题 */
+  title: string;
+  /** 正文（白名单净化后的富文本 HTML，落库前必过 sanitizeRichHtml） */
+  content: string;
+  /** 状态：待处理 / 处理中 / 已解决 */
+  status: TicketStatus;
+  /** 提交人所属部门（可见性判据） */
+  department: string;
+  /** 提交人姓名 */
+  authorName: string;
+  /** 提交人邮箱 */
+  authorEmail: string;
+  /** ISO 创建时间 */
+  createdAt: string;
+  /** ISO 最近更新时间（改状态 / 加评论后刷新） */
+  updatedAt: string;
+  /** 正文引用的图片文件名列表（存 db/ticket-uploads/） */
+  images: string[];
+  /** 评论列表（按时间正序） */
+  comments: TicketComment[];
+}
+
+/** 读取全部工单（文件不存在时按空处理） */
+export function loadTickets(): TicketRecord[] {
+  try {
+    const f = join(DB_DIR, "tickets.json");
+    const data = JSON.parse(readFileSync(f, "utf8")) as { tickets?: TicketRecord[] };
+    return data.tickets ?? [];
+  } catch {
+    // 工单库尚未创建时按空处理，不视为错误
+    return [];
+  }
+}
+
+/** 写回全部工单 */
+export function saveTickets(tickets: TicketRecord[]): void {
+  mkdirSync(DB_DIR, { recursive: true });
+  writeFileSync(join(DB_DIR, "tickets.json"), JSON.stringify({ tickets }, null, 2), "utf8");
+}
+
+/** 追加一条工单 */
+export function appendTicket(record: TicketRecord): void {
+  const tickets = loadTickets();
+  tickets.push(record);
+  saveTickets(tickets);
+}
+
+/** 按 id 更新工单（mutate 回调内修改字段）；工单不存在返回 null */
+export function updateTicket(
+  id: string,
+  mutate: (t: TicketRecord) => void
+): TicketRecord | null {
+  const tickets = loadTickets();
+  const ticket = tickets.find((t) => t.id === id);
+  if (!ticket) return null;
+  mutate(ticket);
+  saveTickets(tickets);
+  return ticket;
+}
+
+// ============ AI 对话：会话 + 消息（db/chats.json） ============
+
+/** 聊天消息角色 */
+export type ChatRole = "user" | "assistant";
+
+/** 聊天消息 */
+export interface ChatMessage {
+  /** 消息 id（UUID） */
+  id: string;
+  /** 角色：用户 / AI */
+  role: ChatRole;
+  /** 内容（原始文本，落库原文；前端渲染时再转义） */
+  content: string;
+  /** ISO 时间戳 */
+  at: string;
+  /** 选用的模型配置 id（assistant 消息有值） */
+  modelId?: string;
+  /** token 用量（assistant 消息有值，total tokens） */
+  tokens?: number;
+}
+
+/** 聊天会话（按 ownerEmail 私有，不按部门过滤） */
+export interface ChatSession {
+  /** 会话 id（UUID） */
+  id: string;
+  /** 所有人邮箱（私有可见性判据） */
+  ownerEmail: string;
+  /** 会话标题（首条 user 消息前 30 字截断） */
+  title: string;
+  /** ISO 创建时间 */
+  createdAt: string;
+  /** ISO 最近更新时间（发消息后刷新） */
+  updatedAt: string;
+  /** 消息列表（按时间正序） */
+  messages: ChatMessage[];
+}
+
+/** 聊天库（db/chats.json） */
+export interface ChatStore {
+  sessions: ChatSession[];
+}
+
+/** 读取全部聊天会话（文件不存在时按空处理） */
+export function loadChats(): ChatStore {
+  try {
+    const f = join(DB_DIR, "chats.json");
+    const data = JSON.parse(readFileSync(f, "utf8")) as ChatStore;
+    return { sessions: data.sessions ?? [] };
+  } catch {
+    return { sessions: [] };
+  }
+}
+
+/** 写回全部聊天会话 */
+export function saveChats(store: ChatStore): void {
+  mkdirSync(DB_DIR, { recursive: true });
+  writeFileSync(join(DB_DIR, "chats.json"), JSON.stringify(store, null, 2), "utf8");
+}
+
+/** 追加一条会话 */
+export function appendChat(session: ChatSession): void {
+  const store = loadChats();
+  store.sessions.push(session);
+  saveChats(store);
+}
+
+/** 按 id 更新会话（mutate 回调内修改字段）；会话不存在返回 null */
+export function updateChat(
+  id: string,
+  mutate: (s: ChatSession) => void
+): ChatSession | null {
+  const store = loadChats();
+  const session = store.sessions.find((s) => s.id === id);
+  if (!session) return null;
+  mutate(session);
+  saveChats(store);
+  return session;
+}
+
+/** 按 id 删除会话；不存在返回 false */
+export function deleteChat(id: string): boolean {
+  const store = loadChats();
+  const idx = store.sessions.findIndex((s) => s.id === id);
+  if (idx === -1) return false;
+  store.sessions.splice(idx, 1);
+  saveChats(store);
+  return true;
+}
+
+// ============ AI 对话：模型配置（db/models.json） ============
+
+/** 聊天模型配置。红线：apiKeyEnv 只存环境变量名，不存明文 key */
+export interface ChatModel {
+  /** 配置 id（UUID） */
+  id: string;
+  /** 展示名，如 "DeepSeek Chat" */
+  name: string;
+  /** provider：deepseek / google / aliyun / xfyun / bytedance / baidu */
+  provider: string;
+  /** 模型名，如 deepseek-chat / gpt-4o-mini */
+  model: string;
+  /** API base URL（缺省从 PROVIDER_DEFAULT_ENDPOINTS 回退） */
+  baseUrl: string;
+  /** API Key 环境变量名（红线：不存明文 key） */
+  apiKeyEnv: string;
+  /** 是否激活（同一时刻只能有一条 active） */
+  isActive?: boolean;
+  /** 类别：text / vision / ... */
+  category?: string;
+}
+
+/** 模型配置库（db/models.json） */
+export interface ChatModelStore {
+  /** 当前激活模型 id */
+  activeId: string;
+  /** 全部模型配置 */
+  models: ChatModel[];
+}
+
+/** 种子模型：DeepSeek 默认配置（文件不存在时首次落盘） */
+export const CHAT_MODEL_SEED: ChatModel = {
+  id: "ds-default",
+  name: "DeepSeek Chat",
+  provider: "deepseek",
+  model: "deepseek-chat",
+  baseUrl: "https://api.deepseek.com",
+  apiKeyEnv: "DEEPSEEK_API_KEY",
+  isActive: true,
+  category: "text",
+};
+
+/** 读取全部模型配置（文件不存在时返回种子 DeepSeek 配置并落盘一次） */
+export function loadChatModels(): ChatModelStore {
+  try {
+    const f = join(DB_DIR, "models.json");
+    const data = JSON.parse(readFileSync(f, "utf8")) as ChatModelStore;
+    const models = data.models ?? [];
+    if (models.length === 0) {
+      // 空库：落盘种子并返回
+      const store: ChatModelStore = { activeId: CHAT_MODEL_SEED.id, models: [CHAT_MODEL_SEED] };
+      saveChatModels(store);
+      return store;
+    }
+    return { activeId: data.activeId ?? models.find((m) => m.isActive)?.id ?? models[0].id, models };
+  } catch {
+    const store: ChatModelStore = { activeId: CHAT_MODEL_SEED.id, models: [CHAT_MODEL_SEED] };
+    saveChatModels(store);
+    return store;
+  }
+}
+
+/** 写回全部模型配置 */
+export function saveChatModels(store: ChatModelStore): void {
+  mkdirSync(DB_DIR, { recursive: true });
+  writeFileSync(join(DB_DIR, "models.json"), JSON.stringify(store, null, 2), "utf8");
+}
+
+/** 追加一条模型配置 */
+export function appendChatModel(model: ChatModel): void {
+  const store = loadChatModels();
+  store.models.push(model);
+  saveChatModels(store);
+}
+
+/** 按 id 更新模型配置；不存在返回 null */
+export function updateChatModel(
+  id: string,
+  mutate: (m: ChatModel) => void
+): ChatModel | null {
+  const store = loadChatModels();
+  const model = store.models.find((m) => m.id === id);
+  if (!model) return null;
+  mutate(model);
+  saveChatModels(store);
+  return model;
+}
+
+/** 按 id 删除模型配置；不存在返回 false */
+export function deleteChatModel(id: string): boolean {
+  const store = loadChatModels();
+  const idx = store.models.findIndex((m) => m.id === id);
+  if (idx === -1) return false;
+  store.models.splice(idx, 1);
+  saveChatModels(store);
+  return true;
+}
+
+/** 切换激活模型（把指定 id 设为 active，其余清掉）；不存在返回 null */
+export function setActiveModel(id: string): ChatModel | null {
+  const store = loadChatModels();
+  const target = store.models.find((m) => m.id === id);
+  if (!target) return null;
+  for (const m of store.models) m.isActive = m.id === id;
+  store.activeId = id;
+  saveChatModels(store);
+  return target;
 }

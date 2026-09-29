@@ -188,7 +188,7 @@ body {
   line-height: 18px;
   color: var(--muted);
   padding: 4px 12px;
-  border-radius: var(--radius-pill);
+  border-radius: 8px;
   white-space: nowrap;
   transition: color 150ms ease, background 150ms ease;
   text-decoration: none;
@@ -204,6 +204,45 @@ body {
   color: var(--led);
   background: var(--led-soft);
   font-weight: 500;
+}
+
+/* 顶栏导航链接：药丸形（与账号管理页一致） */
+.nav-link {
+  font: 500 12px/18px var(--font-sans);
+  color: var(--ink-soft);
+  text-decoration: none;
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+  transition: color 150ms ease, background 150ms ease;
+  cursor: pointer;
+}
+
+.nav-link:hover {
+  background: var(--paper-2);
+}
+
+.nav-link.active {
+  color: var(--led);
+  background: var(--led-soft);
+}
+
+/* 顶栏退出按钮：与导航链接同款药丸形 */
+.logout {
+  font: 500 12px/18px var(--font-sans);
+  color: var(--copy);
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+
+.logout:hover {
+  color: var(--led);
+  border-color: rgba(173, 49, 77, 0.3);
 }
 
 .user-chip {
@@ -226,6 +265,10 @@ body {
   border-radius: 50%;
   background: var(--paper-2);
   border: 1px solid var(--glass-line);
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* ============ 主体布局：侧栏 + 管线区 ============ */
@@ -1040,6 +1083,8 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .node,
   .tab,
+  .nav-link,
+  .logout,
   .user-chip,
   .pipeline-item,
   .review-panel,

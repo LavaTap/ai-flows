@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { filterReviewsByUser, canEditRequirement, safeRepoPath } from "./platform.js";
-import type { ReviewRecord, UserAccount, NodeState } from "./db.js";
+import { filterReviewsByUser, canEditRequirement, safeRepoPath, canAccessTicket, filterTicketsByUser, isTicketStatus, collectTicketImages } from "./platform.js";
+import type { ReviewRecord, UserAccount, NodeState, TicketRecord } from "./db.js";
 
 function user(role: "staff" | "supervisor", department: string): UserAccount {
   return {
@@ -78,4 +78,48 @@ test("should resolve paths inside repo root and reject traversal outside", () =>
 test("should reject sibling-prefix paths that do not live inside repo root", () => {
   // D:/code/demo-evil 与 D:/code/demo 前缀相似但不在根内
   assert.strictEqual(safeRepoPath("D:/code/demo", "D:/code/demo-evil/x"), null);
+});
+
+function ticket(department: string): TicketRecord {
+  return {
+    id: "t-1",
+    kind: "bug",
+    title: "标题",
+    content: "<p>正文</p>",
+    status: "open",
+    department,
+    authorName: "测试",
+    authorEmail: "t@ai-flows.com",
+    createdAt: "",
+    updatedAt: "",
+    images: [],
+    comments: [],
+  };
+}
+
+test("should let own-department staff and supervisor access a ticket", () => {
+  assert.strictEqual(canAccessTicket(user("staff", "程序中台"), ticket("程序中台")), true);
+  assert.strictEqual(canAccessTicket(user("staff", "运营部门"), ticket("程序中台")), false);
+  assert.strictEqual(canAccessTicket(user("supervisor", "产品"), ticket("程序中台")), true);
+});
+
+test("should filter tickets by department for staff and keep all for supervisor", () => {
+  const list = [ticket("程序中台"), ticket("运营部门")];
+  assert.strictEqual(filterTicketsByUser(list, user("staff", "运营部门")).length, 1);
+  assert.strictEqual(filterTicketsByUser(list, user("staff", "用户研究部门")).length, 0);
+  assert.strictEqual(filterTicketsByUser(list, user("supervisor", "运营部门")).length, 2);
+});
+
+test("should accept only known ticket statuses", () => {
+  assert.strictEqual(isTicketStatus("open"), true);
+  assert.strictEqual(isTicketStatus("resolved"), true);
+  assert.strictEqual(isTicketStatus("closed"), false);
+  assert.strictEqual(isTicketStatus(1), false);
+  assert.strictEqual(isTicketStatus(undefined), false);
+});
+
+test("should collect platform image names referenced by sanitized html", () => {
+  const html = '<p><img src="/api/tickets/images/a1b2c3d4e5f6.png"><img src="/api/tickets/images/a1b2c3d4e5f6.png"><img src="https://x/y.png"></p>';
+  assert.deepStrictEqual(collectTicketImages(html), ["a1b2c3d4e5f6.png"]);
+  assert.deepStrictEqual(collectTicketImages("<p>无图</p>"), []);
 });

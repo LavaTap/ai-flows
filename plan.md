@@ -50,8 +50,10 @@
 | 提交验收（执行中 → 待验收） | ✅（限本部门） | ✅ |
 | 通过验收 / 驳回（待验收 → 已执行 / 执行中） | ❌ | ✅（全部节点） |
 | 操控停用/启用节点 | ❌ | ✅（权限最高） |
+| 提交 bug 单 | ✅ | ✅ |
+| 查看 / 流转状态 / 评论工单 | ✅（限本部门） | ✅（全部部门） |
 
-> 判定只走 `platform.ts` 的 `canExecute` / `canApprove` / `canEditRequirement`；前端按钮显隐仅是展示。
+> 判定只走 `platform.ts` 的 `canExecute` / `canApprove` / `canEditRequirement`；工单可见与操作判定走 `canAccessTicket` / `filterTicketsByUser`；前端按钮显隐仅是展示。
 
 ## 6. 管线节点模型
 
@@ -74,15 +76,22 @@ ai-flows/
 │   ├── ai-pipeline.html      # DONE：管线静态页（平台态由 platform 服务注入 bootstrap）
 │   ├── ai-pipeline.css       # DONE：管线页样式（纸灰 + 玻璃 + LED 风）
 │   ├── ai-pipeline-app.js    # DONE：平台增强脚本（登录态 + 执行/批准按钮，静态预览不生效）
+│   ├── tickets.html          # DONE：工单（bug 单）静态页（左列表 + 右详情/编辑器）
+│   ├── tickets.js            # DONE：工单页脚本（富文本编辑器 + 筛选 + 状态流转 + 评论）
+│   ├── github-audit.html     # DONE：GitHub 绑定管理页（员工自助 + 主管审核）
+│   ├── github-audit.js       # DONE：GitHub 绑定页脚本
 │   ├── login.html            # DONE：登录页
 │   └── login.css             # DONE：登录页样式
 ├── db/
 │   ├── users.json            # DONE：账号库（6 个种子账号，不开放注册）
-│   └── pipeline.json         # DONE：节点运行时状态（执行/批准写回）
+│   ├── pipeline.json         # DONE：节点运行时状态（执行/批准写回）
+│   ├── tickets.json          # DONE：工单库（提交/状态/评论写回）
+│   └── ticket-uploads/       # 工单图片（gitignore，运行时创建）
 └── src/
-    ├── db.ts                 # DONE：账号/节点读写 + authenticate（JSON + node:fs）
+    ├── db.ts                 # DONE：账号/节点/工单读写 + authenticate（JSON + node:fs）
     ├── auth.ts               # DONE：内存会话 + cookie（HttpOnly，24h）
     ├── platform.ts           # DONE：平台 HTTP 服务（路由 + 权限 + 注入渲染）
+    ├── richtext.ts           # DONE：富文本白名单净化（工单正文/评论防 XSS）
     ├── skill.ts              # DONE：skill 执行器（SKILL.md 作系统提示 → LLM 生成 → 产物落盘 + 进度回调）
     └── index.ts              # DONE：新增 platform 子命令
 ```
@@ -100,6 +109,10 @@ ai-flows/
 9. **P8 评审记录跨仓库聚合 + 报告页改造**（已完成）：`ai-review.config.json` 新增 `reviews.scanRoots`（默认 `["."]`）+ `reviews.gitHubTokenEnv`（默认 `GH_TOKEN`）；`collectExternalReviews` 改递归遍历 scanRoots（限 3 层深度，跳过 `.git`/`node_modules`/`dist` 等），跨仓库报告带 `repo` 字段标记来源仓库名；`reportUrl` 仅在报告 JSON 存在于平台当前仓库时回填（跨仓库报告留空，详情面板显示来源仓库标签）；启动时加载平台自身配置的 scanRoots（加载失败回退到只扫本仓库）。报告页布局重排：左侧新建「仓库面板」（上半仓库目录树 + 中变更文件目录 + 下问题列表，整面板可折叠为窄条）；目录树数据源 auto fallback：优先 GitHub Trees API（`git remote get-url origin` 解析 owner/repo + `GET /repos/{o}/{r}/git/trees/{branch}?recursive=1`，token 从环境变量读，零依赖走全局 `fetch`），失败回退 `node:fs` 本地递归；问题列表精简为一行（severity + 条例 ID + 行号区间），完整内容通过 `<script type="application/json" id="issueStore">` 注入；点击问题项 → 在 diff 区间末尾行后展开堆叠菜单（含完整错误 + 修复建议，同区间多问题堆叠）+ 高亮区间按 severity 配色（blocker 红 / warning 琥珀 / info 青绿，遵守禁蓝色约束）。
 
 10. **P9 节点 01 改接外部调研 agent**（已完成）：`ai-review.config.json` 新增 `crawler` 段（`root` 调研 agent 项目根 / `command` 缺省 `claude` / `args` / `outputDir` 缺省 `output` / `timeoutMs`）；节点 01 runner 由 `skill:research-crawler` 改为 `research-crawler`，执行时把「调研需求内容」文本经 stdin 直接作为 agent prompt，在该项目内跑完 skill 后把 `output/` 整目录打包为 zip（`src/crawler.ts` 零依赖 zip：CRC32 + `zlib.deflateRawSync`）落盘到节点输出目录，作为可下载产物；不再产出 Markdown，节点 01 的「需求分析」（`product-analysis`）按钮同步移除。
+
+11. **P10 工单平台 · bug 单页**（已完成）：挂现有 platform 服务（`GET /tickets`，页面 `web/tickets.html` + `web/tickets.js`，顶栏各页统一补「工单」入口）。每个登录用户在页面内有独立富文本编辑器（`contenteditable` + `execCommand` 工具栏：加粗/斜体/下划线/删除线、字号、无序/有序列表、引用、插入图片、清除格式；粘贴统一转纯文本）。数据落 `db/tickets.json`（`src/db.ts` 新增 `loadTickets`/`appendTicket`/`updateTicket`），提交人 `department` 即可见范围判据：本部门员工 + 主管（`canAccessTicket` / `filterTicketsByUser`，与服务端校验双保险，路由内不另写权限）。工单三态 `open（待处理）/ doing（处理中）/ resolved（已解决）` 可互相流转；评论与正文同权、按部门可见。接口：`GET/POST /api/tickets`、`GET /api/tickets/<id>`、`POST /api/tickets/<id>/status`、`POST /api/tickets/<id>/comments`、`POST /api/tickets/upload`、`GET /api/tickets/images/<file>`。富文本一律经 `src/richtext.ts` 的 `sanitizeRichHtml` 白名单净化后才落库并回显（`<script>`/事件处理器/`javascript:`/外链图片全丢）；图片按 base64 上传，服务端生成 `[a-f0-9]{12}.<ext>` 文件名落 `db/ticket-uploads/`（已 gitignore），正文只存 `/api/tickets/images/<file>` 引用，图片读取按文件名严格校验防穿越。列表页支持状态分段筛选 + 关键词搜索 + 「只看我提交的」。冒烟 25 项全过（净化、可见性、跨部门 403、状态/评论、图片上传与读取、未登录 401/302、路径穿越 404）。
+
+12. **P11 账号头像 + GitHub 独立页 + 顶栏统一**（已完成）：`UserAccount` 新增 `avatar` 字段，二进制落 `db/avatars/`（gitignore），`users.json` 只存文件名。账号管理页（`account.html`）头像可点击上传，前端 canvas 居中裁剪为正方形 + 滑块缩放 + 圆形预览，确认后 `POST /api/account/avatar`（限 png/jpg/jpeg/gif/webp、≤2MB）上传，`GET /api/avatars/<file>` 读取（文件名严格校验 `[a-f0-9]{12}.<ext>` 防穿越）；缺省回退首字配色头像。GitHub 绑定管理从 `account.html`（操作）+ `team.html`（审核）拆出独立页 `/github-audit`（`web/github-audit.html` + `web/github-audit.js`）：员工区自助绑定/解绑/取消待审，主管区待审核列表 + 成员 GitHub 一览；`account.html` 只展示 GitHub 状态只读并引导到 `/github-audit`，`team.html` 移除 GitHub 审核卡只保留成员资料管理。顶栏统一：`.nav-link` / `.tab` 由椭圆 `999px` 改为方形圆角 `8px`；所有页面（管线/工单/账号/团队/GitHub）右上角统一展示 `user-chip`（自定义头像图片或首字配色 + 姓名）+ 退出按钮。团队页部门下拉 `.edit-select` 统一自定义箭头 + `border-radius:8px`，与 `.edit-input` 风格一致。冒烟 15 项全过（页面渲染、头像上传/读取/穿越拦截、未登录 302、员工 team 403）。
 
 ## 8. 待确认事项（实施时已按默认处理）
 
