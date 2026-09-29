@@ -91,16 +91,22 @@ body {
 
 /* ============ 顶栏 ============ */
 .topbar {
-  position: relative;
-  z-index: 2;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--s-16);
-  padding: var(--s-12) var(--s-24);
+  height: 56px;
+  padding: 0 var(--s-24);
   background: var(--glass-fill);
   border-bottom: 1px solid var(--glass-line);
 }
+
+body { padding-top: 56px; }
 
 .brand {
   display: flex;

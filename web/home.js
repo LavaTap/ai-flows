@@ -62,14 +62,15 @@
 
   function clearHistory() {
     saveHistory([]);
-    renderHistory();
+    renderHistory(state.type);
   }
 
   /* ─── 渲染：单条结果 ─── */
 
   function renderUserRow(u) {
     var meta = [u.department || "无部门", u.title || ""].filter(Boolean).join(" · ");
-    var href = "#";
+    var prefix = (u.email || "").split("@")[0] || u.email;
+    var href = "/profile/" + encodeURIComponent(prefix);
     return '<a class="res-row" href="' + href + '" data-type="user" data-email="' + esc(u.email) + '">' +
       avatarHtml(u) +
       '<span class="res-body">' +
@@ -102,14 +103,16 @@
           var title = row.querySelector(".res-title");
           addHistory({ _type: "ticket", id: id, title: title ? title.textContent : id });
         } else if (type === "user") {
-          // 员工点击先记历史，暂不跳转（未来可跳转到资料页）
+          // 员工点击记浏览历史，正常跳转个人主页
           var email = row.getAttribute("data-email");
           var name = row.querySelector(".res-title");
+          var deptEl = row.querySelector(".res-meta");
+          var dept = deptEl ? deptEl.textContent.split(" · ")[0] : "";
           addHistory({
             _type: "user", email: email,
             name: name ? name.textContent : email,
+            department: dept,
           });
-          e.preventDefault();
         }
       });
     }
@@ -132,13 +135,23 @@
     bindRowClicks(byId("results"));
   }
 
-  function renderHistory() {
-    var list = getHistory();
+  function renderHistory(filterType) {
+    var all = getHistory();
+    var list = filterType && filterType !== "all"
+      ? all.filter(function (x) { return x._type === filterType; })
+      : all;
     if (!list.length) {
-      byId("results").innerHTML = '<div class="home-hint">输入关键词开始搜索<br>或选择上方分类浏览</div>';
+      var emptyTip = "暂无浏览记录";
+      if (filterType === "user") emptyTip = "暂无浏览过的员工";
+      else if (filterType === "ticket") emptyTip = "暂无浏览过的工单";
+      else if (filterType === "kb") emptyTip = "知识库暂未接入";
+      byId("results").innerHTML = '<div class="home-hint">' + emptyTip + "</div>";
       return;
     }
-    var html = '<div class="res-section-title">最近浏览' +
+    var title = "最近浏览";
+    if (filterType === "user") title = "最近浏览的员工";
+    else if (filterType === "ticket") title = "最近浏览的工单";
+    var html = '<div class="res-section-title">' + title +
       '<button class="clear-hist" type="button" id="clearHist">清空</button>' +
       "</div>";
     for (var i = 0; i < list.length; i++) {
@@ -157,12 +170,19 @@
 
   function search() {
     var type = state.type;
+    // 无搜索词时，展示浏览记录（按类型过滤）
+    if (!state.q) {
+      if (type === "kb") {
+        byId("results").innerHTML = '<div class="home-hint">知识库暂未接入</div>';
+      } else {
+        renderHistory(type);
+      }
+      return;
+    }
     if (type === "kb") {
       byId("results").innerHTML = '<div class="home-hint">知识库暂未接入</div>';
       return;
     }
-    // 无搜索词 + 全部类型 → 展示浏览记录
-    if (!state.q && type === "all") { renderHistory(); return; }
     fetch("/api/search?type=" + encodeURIComponent(type) + "&q=" + encodeURIComponent(state.q))
       .then(function (r) {
         if (r.status === 401) { location.href = "/login"; return null; }

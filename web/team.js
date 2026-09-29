@@ -181,8 +181,12 @@
 
       /* 成员列 */
       var tdName = document.createElement("td");
-      var cell = document.createElement("div");
+      var cell = document.createElement("a");
       cell.className = "m-cell-avatar";
+      var prefix = (m.email || "").split("@")[0] || m.email;
+      cell.href = "/profile/" + encodeURIComponent(prefix);
+      cell.style.textDecoration = "none";
+      cell.style.color = "inherit";
       var av = document.createElement("span");
       av.className = "m-avatar-sm";
       var avUrl2 = avatarUrl(m);

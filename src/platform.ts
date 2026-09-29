@@ -376,6 +376,7 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   "/github-audit.js": { file: "github-audit.js", type: "text/javascript; charset=utf-8" },
   "/chat.js": { file: "chat.js", type: "text/javascript; charset=utf-8" },
   "/home.js": { file: "home.js", type: "text/javascript; charset=utf-8" },
+  "/profile.js": { file: "profile.js", type: "text/javascript; charset=utf-8" },
 };
 
 /** 读 web/ 下静态文件并响应，不存在返回 false */
@@ -492,6 +493,18 @@ function homeHtml(user: UserAccount): string {
   const raw = readFileSync(join(WEB_DIR, "home.html"), "utf8");
   const boot = { user: toUserView(user) };
   const inject = `<script>window.__HOME__ = ${jsonForScript(boot)};</script>\n<script src="/home.js" defer></script>`;
+  return raw.replace("</body>", `${inject}\n</body>`);
+}
+
+/** 渲染员工个人主页：读静态 profile.html，注入当前用户 + 目标用户 */
+function profileHtml(user: UserAccount, target: UserAccount): string {
+  const raw = readFileSync(join(WEB_DIR, "profile.html"), "utf8");
+  const boot = {
+    user: toUserView(user),
+    target: toUserView(target),
+    isSupervisor: user.role === "supervisor",
+  };
+  const inject = `<script>window.__PROFILE__ = ${jsonForScript(boot)};</script>\n<script src="/profile.js" defer></script>`;
   return raw.replace("</body>", `${inject}\n</body>`);
 }
 
@@ -1057,6 +1070,25 @@ export async function startPlatformServer(
       }
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.end(homeHtml(user));
+      return;
+    }
+
+    // 员工个人主页（路由用邮箱前缀，URL 编码）
+    const profileMatch = path.match(/^\/profile\/([^/\\]+)$/);
+    if (profileMatch && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        res.statusCode = 302;
+        res.setHeader("Location", "/login");
+        res.end();
+        return;
+      }
+      const prefix = decodePathSegment(profileMatch[1]);
+      if (!prefix) { sendJson(res, 404, { error: "用户不存在" }); return; }
+      const target = loadUsers().find((u) => u.email.split("@")[0] === prefix);
+      if (!target) { sendJson(res, 404, { error: "用户不存在" }); return; }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(profileHtml(user, target));
       return;
     }
 
