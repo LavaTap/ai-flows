@@ -15,7 +15,7 @@
   var STATUS_TEXT = { todo: "待执行", running: "执行中", in_review: "待验收", done: "已执行" };
   var STATUS_CLS = { todo: "st-todo", running: "st-running", in_review: "st-review", done: "st-done" };
   /* 平台可选部门（主管在成员管理中据此下拉分配） */
-  var DEPARTMENTS = ["用户研究部门", "程序中台", "运营部门"];
+  var DEPARTMENTS = ["用户研究部", "程序中台", "平台运营部"];
   /* 头像调色板：按邮箱哈希取色，前端保证同一账号颜色稳定 */
   var PALETTE = ["#ad314d", "#2aa198", "#b58900", "#6c71c4", "#cb4b16", "#859900"];
 
@@ -69,7 +69,7 @@
     ".user-chip .rname{color:var(--ink-soft);font-weight:500;}",
     /* 执行角色：紧凑列表（小头像 + 名字），hover 弹出详情卡片 */
     ".d-roles{margin-top:12px;border-top:1px solid var(--glass-line);padding-top:10px;}",
-    ".d-roles-head{font:600 12px/18px var(--font-sans);color:var(--ink-soft);margin-bottom:8px;}",
+    ".d-roles-head{font:600 12px/18px var(--font-sans);color:var(--ink-soft);margin-bottom:8px;display:flex;align-items:center;gap:6px;position:relative;}",
     ".d-roles-list{display:flex;gap:8px;flex-wrap:wrap;}",
     ".role-chip{position:relative;display:inline-flex;align-items:center;gap:6px;padding:4px 10px 4px 4px;",
     "border:1px solid var(--glass-line);border-radius:999px;background:var(--glass-fill);cursor:default;white-space:nowrap;}",
@@ -90,6 +90,40 @@
     ".rc-name{font:700 15px/22px var(--font-sans);color:var(--ink-soft);white-space:nowrap;}",
     ".rc-sub{font:400 12px/18px var(--font-sans);color:var(--muted);white-space:nowrap;}",
     ".rc-email{font:400 11.5px/17px var(--font-mono);color:var(--led);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;}",
+    ".d-roles-empty{font:400 12px/18px var(--font-sans);color:var(--muted);padding:4px 0;}",
+    ".role-add-btn{margin-left:auto;width:22px;height:22px;border:1px solid var(--glass-line);border-radius:6px;",
+    "background:var(--glass-fill);color:var(--ink-soft);font:600 14px/1 var(--font-sans);cursor:pointer;",
+    "display:inline-flex;align-items:center;justify-content:center;transition:all 150ms ease;position:relative;}",
+    ".role-add-btn:hover{background:var(--led);color:#fff;border-color:var(--led);}",
+    ".role-add-btn.active{background:var(--led);color:#fff;border-color:var(--led);}",
+    /* 悬浮搜索面板：浮在执行角色板块右上方 */
+    ".role-search-panel{position:absolute;top:calc(100% + 6px);right:0;width:280px;",
+    "border:1px solid var(--glass-line-strong);border-radius:10px;background:var(--glass-fill);",
+    "padding:8px;display:none;z-index:30;box-shadow:0 8px 24px rgba(15,23,42,.14),0 2px 6px rgba(15,23,42,.08);}",
+    ".role-search-panel.show{display:block;}",
+    ".rsp-close{position:absolute;top:6px;right:6px;width:20px;height:20px;border:none;",
+    "background:transparent;color:var(--muted);font:500 14px/1 var(--font-sans);cursor:pointer;",
+    "display:inline-flex;align-items:center;justify-content:center;border-radius:4px;}",
+    ".rsp-close:hover{background:var(--paper-2);color:var(--ink-soft);}",
+    ".rsp-search{width:100%;padding:7px 10px;border:1px solid var(--glass-line);border-radius:8px;",
+    "background:#fff;font:400 12px/18px var(--font-sans);color:var(--ink);box-sizing:border-box;margin-bottom:8px;}",
+    ".rsp-search:focus{outline:none;border-color:var(--led);box-shadow:0 0 0 3px var(--led-soft);}",
+    ".rsp-list{max-height:240px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;}",
+    ".rsp-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--glass-line);",
+    "border-radius:8px;background:#fff;}",
+    ".rsp-row:hover{border-color:var(--led);}",
+    ".rsp-avatar{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;",
+    "color:#fff;font:600 12px/1 var(--font-sans);flex:none;box-shadow:0 1px 3px rgba(20,20,20,.15);}",
+    ".rsp-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;}",
+    ".rsp-name{font:500 12px/18px var(--font-sans);color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}",
+    ".rsp-meta{font:400 10.5px/15px var(--font-sans);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}",
+    ".rsp-add{padding:4px 12px;border-radius:6px;font:500 11px/18px var(--font-sans);cursor:pointer;",
+    "border:1px solid var(--led-line);background:var(--led);color:#fff;white-space:nowrap;flex:none;transition:all 120ms ease;}",
+    ".rsp-add:hover:not(:disabled){background:#4338ca;border-color:#4338ca;}",
+    ".rsp-add:disabled{opacity:.45;cursor:not-allowed;}",
+    ".rsp-empty{font:400 12px/18px var(--font-sans);color:var(--muted);text-align:center;padding:16px 0;}",
+    ".rsp-error{margin-top:6px;padding:6px 10px;border-radius:6px;background:var(--block-soft);",
+    "color:var(--block);font:400 11px/16px var(--font-sans);border:1px solid var(--block-line);}",
     /* 进度条 */
     ".d-progress{width:100%;}",
     ".d-progress .bar{height:8px;border-radius:999px;background:rgba(0,0,0,.08);overflow:hidden;}",
@@ -107,6 +141,13 @@
     ".d-arts-head{font:600 12px/18px var(--font-sans);color:var(--ink-soft);}",
     ".d-arts a{font:500 12px/18px var(--font-sans);color:var(--led);text-decoration:none;}",
     ".d-arts a:hover{text-decoration:underline;}",
+    /* 工单引用 */
+    ".d-ticket{width:100%;display:flex;align-items:center;gap:8px;padding:2px 0;}",
+    ".d-ticket .lbl{font:500 12px/18px var(--font-sans);color:var(--muted);}",
+    ".d-ticket a{display:inline-flex;align-items:center;padding:2px 10px;border-radius:999px;",
+    "border:1px solid var(--glass-line);background:var(--glass-fill);",
+    "font:500 12px/18px var(--font-mono);color:var(--led);text-decoration:none;}",
+    ".d-ticket a:hover{border-color:var(--led);}",
     /* 弹窗（挂在 body，脱离缩放容器） */
     ".ai-modal{position:fixed;inset:0;background:rgba(20,20,20,.35);backdrop-filter:blur(3px);z-index:900;",
     "display:flex;align-items:center;justify-content:center;}",
@@ -376,13 +417,31 @@
     if (!node) return;
     var old = panel.querySelector(".d-roles");
     if (old) old.remove();
+    var isSuper = boot && boot.user && boot.user.role === "supervisor";
     var team = members.filter(function (m) { return m.department === node.department; });
-    if (!team.length) return;
     var box = document.createElement("div");
     box.className = "d-roles";
     var head = document.createElement("div");
     head.className = "d-roles-head";
-    head.textContent = "执行角色";
+    head.appendChild(document.createTextNode("执行角色"));
+    if (isSuper) {
+      var addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.className = "role-add-btn";
+      addBtn.title = "添加执行角色";
+      addBtn.textContent = "+";
+      addBtn.addEventListener("click", function (e) { e.stopPropagation(); toggleRoleSearcher(head, node, idx, addBtn); });
+      head.appendChild(addBtn);
+    }
+    box.appendChild(head);
+    if (!team.length) {
+      var empty = document.createElement("div");
+      empty.className = "d-roles-empty";
+      empty.textContent = "暂无执行角色";
+      box.appendChild(empty);
+      panel.appendChild(box);
+      return;
+    }
     var list = document.createElement("div");
     list.className = "d-roles-list";
     team.forEach(function (m) {
@@ -424,9 +483,141 @@
       chip.appendChild(card);
       list.appendChild(chip);
     });
-    box.appendChild(head);
     box.appendChild(list);
     panel.appendChild(box);
+  }
+
+  /** 主管搜索员工加入节点部门（悬浮面板，依附在 + 按钮下方） */
+  function toggleRoleSearcher(head, node, idx, addBtn) {
+    var panel = head.querySelector(".role-search-panel");
+    if (!panel) {
+      panel = buildRoleSearchPanel(node, idx, addBtn);
+      head.appendChild(panel);
+    }
+    var show = !panel.classList.contains("show");
+    panel.classList.toggle("show", show);
+    addBtn.classList.toggle("active", show);
+    if (show) {
+      var input = panel.querySelector(".rsp-search");
+      if (input) setTimeout(function () { input.focus(); }, 50);
+    }
+  }
+
+  function buildRoleSearchPanel(node, idx, addBtn) {
+    var panel = document.createElement("div");
+    panel.className = "role-search-panel";
+
+    /* 关闭按钮 */
+    var closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "rsp-close";
+    closeBtn.textContent = "×";
+    closeBtn.title = "关闭";
+    closeBtn.addEventListener("click", function () {
+      panel.classList.remove("show");
+      addBtn.classList.remove("active");
+    });
+    panel.appendChild(closeBtn);
+
+    /* 搜索框 */
+    var input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = "搜索姓名 / 邮箱 / 部门 / 职位…";
+    input.className = "rsp-search";
+    panel.appendChild(input);
+
+    /* 错误提示 */
+    var errorEl = document.createElement("div");
+    errorEl.className = "rsp-error";
+    errorEl.style.display = "none";
+    panel.appendChild(errorEl);
+
+    /* 结果列表 */
+    var list = document.createElement("div");
+    list.className = "rsp-list";
+    panel.appendChild(list);
+
+    function showError(msg) {
+      errorEl.textContent = msg;
+      errorEl.style.display = "block";
+    }
+    function hideError() {
+      errorEl.style.display = "none";
+    }
+
+    function renderList(q) {
+      list.textContent = "";
+      hideError();
+      var pool = members.filter(function (mem) {
+        return mem.department !== node.department;
+      });
+      var filtered = q ? pool.filter(function (mem) {
+        var name = (mem.name || "").toLowerCase();
+        var email = (mem.email || "").toLowerCase();
+        var dept = (mem.department || "").toLowerCase();
+        var title = (mem.title || "").toLowerCase();
+        return name.indexOf(q) >= 0 || email.indexOf(q) >= 0 ||
+               dept.indexOf(q) >= 0 || title.indexOf(q) >= 0;
+      }) : pool.slice(0, 30);
+      if (!filtered.length) {
+        var empty = document.createElement("div");
+        empty.className = "rsp-empty";
+        empty.textContent = q ? "未找到匹配的员工" : "暂无可添加的员工";
+        list.appendChild(empty);
+        return;
+      }
+      filtered.forEach(function (mem) {
+        var row = document.createElement("div");
+        row.className = "rsp-row";
+        var av = document.createElement("span");
+        av.className = "rsp-avatar";
+        av.style.background = colorOf(mem.email);
+        av.textContent = firstChar(mem);
+        var info = document.createElement("span");
+        info.className = "rsp-info";
+        var nm = document.createElement("span");
+        nm.className = "rsp-name";
+        nm.textContent = displayName(mem);
+        var mt = document.createElement("span");
+        mt.className = "rsp-meta";
+        mt.textContent = (mem.department || "无部门") + " · " + (mem.title || "");
+        info.appendChild(nm);
+        info.appendChild(mt);
+        var add = document.createElement("button");
+        add.type = "button";
+        add.className = "rsp-add";
+        add.textContent = "加入";
+        add.addEventListener("click", function () {
+          add.disabled = true;
+          add.textContent = "添加中…";
+          hideError();
+          post("/api/nodes/" + encodeURIComponent(node.id) + "/executors", { email: mem.email }).then(function (res) {
+            if (!handleAuth(res)) { add.disabled = false; add.textContent = "加入"; return; }
+            if (res.ok) {
+              refreshNodes();
+            } else {
+              add.disabled = false;
+              add.textContent = "加入";
+              showError((res.data && res.data.error) || "添加失败");
+            }
+          }).catch(function () {
+            add.disabled = false;
+            add.textContent = "加入";
+            showError("网络异常");
+          });
+        });
+        row.appendChild(av);
+        row.appendChild(info);
+        row.appendChild(add);
+        list.appendChild(row);
+      });
+    }
+
+    input.addEventListener("input", function () {
+      renderList(input.value.trim().toLowerCase());
+    });
+    renderList("");
+    return panel;
   }
 
   /* ────────────────────────────── 弹窗 ────────────────────────────── */
@@ -996,6 +1187,24 @@
     }
     wrap.appendChild(row1);
 
+    /* 工单引用：每个节点必挂一张需求工单，点击可跳转工单系统 */
+    if (node.ticketId) {
+      var tkRow = document.createElement("div");
+      tkRow.className = "d-ticket";
+      var tkLbl = document.createElement("span");
+      tkLbl.className = "lbl";
+      tkLbl.textContent = "需求工单";
+      var tkLink = document.createElement("a");
+      tkLink.href = "/tickets?id=" + encodeURIComponent(node.ticketId);
+      tkLink.target = "_blank";
+      tkLink.rel = "noopener";
+      tkLink.textContent = node.ticketId;
+      tkLink.title = "打开该节点的需求工单";
+      tkRow.appendChild(tkLbl);
+      tkRow.appendChild(tkLink);
+      wrap.appendChild(tkRow);
+    }
+
     /* 进度条（执行中且服务端已回报进度） */
     if (node.status === "running" && node.progress != null) {
       var pg = document.createElement("div");
@@ -1144,6 +1353,39 @@
       tipNote.className = "note";
       tipNote.textContent = "仅本部门员工或部门主管可操作该节点";
       wrap.appendChild(tipNote);
+      return;
+    }
+
+    /* 主管审核入口：在任意非 done 状态下均可审核 */
+    if (node.canApprove) {
+      var hasFiles = (node.uploads && node.uploads.length > 0);
+      if (!hasFiles) {
+        var noFileNote = document.createElement("span");
+        noFileNote.className = "note";
+        noFileNote.textContent = "员工尚未提交文件，无法审核";
+        wrap.appendChild(noFileNote);
+        return;
+      }
+      addBtn("审核通过", false, function () {
+        return post("/api/nodes/" + node.id + "/approve").then(function (res) {
+          if (!handleAuth(res)) return;
+          if (res.ok && res.data.node) {
+            nodes[idx] = res.data.node;
+            renderActions(idx);
+          } else { alert((res.data && res.data.error) || "操作失败"); renderActions(idx); }
+        });
+      });
+      addBtn("驳回", true, function () {
+        var reason = prompt("驳回意见（将退回「执行中」）：", "验收不通过，请修改后重新提交");
+        if (reason === null) return Promise.resolve();
+        return post("/api/nodes/" + node.id + "/reject", { reason: reason }).then(function (res) {
+          if (!handleAuth(res)) return;
+          if (res.ok && res.data.node) {
+            nodes[idx] = res.data.node;
+            renderActions(idx);
+          } else { alert((res.data && res.data.error) || "操作失败"); renderActions(idx); }
+        });
+      });
       return;
     }
 

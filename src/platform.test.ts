@@ -99,15 +99,15 @@ function ticket(department: string): TicketRecord {
 
 test("should let own-department staff and supervisor access a ticket", () => {
   assert.strictEqual(canAccessTicket(user("staff", "程序中台"), ticket("程序中台")), true);
-  assert.strictEqual(canAccessTicket(user("staff", "运营部门"), ticket("程序中台")), false);
+  assert.strictEqual(canAccessTicket(user("staff", "平台运营部"), ticket("程序中台")), false);
   assert.strictEqual(canAccessTicket(user("supervisor", "产品"), ticket("程序中台")), true);
 });
 
 test("should filter tickets by department for staff and keep all for supervisor", () => {
-  const list = [ticket("程序中台"), ticket("运营部门")];
-  assert.strictEqual(filterTicketsByUser(list, user("staff", "运营部门")).length, 1);
-  assert.strictEqual(filterTicketsByUser(list, user("staff", "用户研究部门")).length, 0);
-  assert.strictEqual(filterTicketsByUser(list, user("supervisor", "运营部门")).length, 2);
+  const list = [ticket("程序中台"), ticket("平台运营部")];
+  assert.strictEqual(filterTicketsByUser(list, user("staff", "平台运营部")).length, 1);
+  assert.strictEqual(filterTicketsByUser(list, user("staff", "用户研究部")).length, 0);
+  assert.strictEqual(filterTicketsByUser(list, user("supervisor", "平台运营部")).length, 2);
 });
 
 test("should accept only known ticket statuses", () => {

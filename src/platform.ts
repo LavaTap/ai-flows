@@ -203,6 +203,8 @@ interface NodeView extends NodeState {
   canApprove: boolean;
   /** 当前用户能否编辑需求文本/上传附件（与执行权限一致） */
   canEdit: boolean;
+  /** 挂在该节点上的需求工单 id（每节点一张，未挂单不允许执行/审核） */
+  ticketId?: string;
 }
 
 /** 剥离密码，输出视图层用户 */
@@ -210,10 +212,61 @@ function toUserView(u: UserAccount): UserView {
   return { email: u.email, name: u.name, role: u.role, title: u.title, department: u.department, github: u.github, githubPending: u.githubPending, avatar: u.avatar };
 }
 
-/** 节点 + 权限 → 视图模型 */
-function toNodeView(user: UserAccount, node: NodeState): NodeView {
+/** 节点需求工单：nodeId 命中且未指派给具体员工的那张 requirement 工单 */
+function findRequirementTicket(nodeId: string, tickets?: TicketRecord[]): TicketRecord | undefined {
+  const list = tickets ?? loadTickets();
+  return list.find((t) => t.nodeId === nodeId && t.kind === "requirement" && !t.assigneeEmail);
+}
+
+/** 自动生成工单 id（t- 前缀 + 时间戳 + 随机串，与手动工单同形） */
+function newTicketId(): string {
+  return `t-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`;
+}
+
+/** 为单个节点补齐需求工单（幂等），返回该节点的需求工单 */
+function ensureNodeRequirementTicket(node: NodeState): TicketRecord {
+  const existing = findRequirementTicket(node.id);
+  if (existing) return existing;
+  const now = new Date().toISOString();
+  const text = (node.requirementText ?? "").trim();
+  const record: TicketRecord = {
+    id: newTicketId(),
+    kind: "requirement",
+    title: `[需求] ${node.step}`,
+    content:
+      `<p>节点「${esc(node.step)}」（${esc(node.department)}）的需求工单。</p>` +
+      (text ? `<p>${esc(text)}</p>` : "<p>需求内容待补充。</p>"),
+    status: "open",
+    department: node.department,
+    authorName: "系统",
+    authorEmail: "",
+    createdAt: now,
+    updatedAt: now,
+    images: [],
+    comments: [],
+    nodeId: node.id,
+  };
+  appendTicket(record);
+  return record;
+}
+
+/** 为全部节点补齐需求工单（幂等），返回最新工单列表 */
+function ensureNodeRequirementTickets(): TicketRecord[] {
+  for (const node of loadNodes()) ensureNodeRequirementTicket(node);
+  return loadTickets();
+}
+
+/** 剥离富文本标签取纯文本（首页搜索工单正文用） */
+function htmlToPlainText(html: string): string {
+  return html.replace(/<[^>]*>/g, " ").replace(/&[a-z]+;/gi, " ").toLowerCase();
+}
+
+/** 节点 + 权限 → 视图模型（tickets 传入可避免逐节点重复查库） */
+function toNodeView(user: UserAccount, node: NodeState, tickets?: TicketRecord[]): NodeView {
+  const req = findRequirementTicket(node.id, tickets);
   return {
     ...node,
+    ticketId: req?.id,
     canExecute: canExecute(user, node),
     canApprove: canApprove(user),
     canEdit: canEditRequirement(user, node),
@@ -235,6 +288,10 @@ export interface TicketListItem {
   commentCount: number;
   /** 正文引用图片数（详情用 content 内的 img 标签渲染） */
   imageCount: number;
+  /** 关联的管线节点 id（节点自动生成的工单才有） */
+  nodeId?: string;
+  /** 指派给的员工邮箱（把员工加入节点执行人时自动生成的工单才有） */
+  assigneeEmail?: string;
 }
 
 /** 工单完整视图（详情 / 新建后返回；正文已净化，可直接 innerHTML 渲染） */
@@ -259,6 +316,8 @@ function toTicketListItem(t: TicketRecord): TicketListItem {
     updatedAt: t.updatedAt,
     commentCount: t.comments?.length ?? 0,
     imageCount: t.images?.length ?? 0,
+    nodeId: t.nodeId,
+    assigneeEmail: t.assigneeEmail,
   };
 }
 
@@ -316,6 +375,7 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   "/tickets.js": { file: "tickets.js", type: "text/javascript; charset=utf-8" },
   "/github-audit.js": { file: "github-audit.js", type: "text/javascript; charset=utf-8" },
   "/chat.js": { file: "chat.js", type: "text/javascript; charset=utf-8" },
+  "/home.js": { file: "home.js", type: "text/javascript; charset=utf-8" },
 };
 
 /** 读 web/ 下静态文件并响应，不存在返回 false */
@@ -339,13 +399,14 @@ async function pipelineHtml(user: UserAccount, repo: string): Promise<string> {
     loadNodes().map((n) => refreshNodeReportUrl(n, repo)),
   );
   const repoName = repo.replace(/[\\/]/g, "").split(".").slice(-2).join(".") || repo;
+  const tickets = ensureNodeRequirementTickets();
   const boot = {
     pipelineName: loadPipelineName(),
     repoName: repoName.replace(/^.*[\\/]/, ""),
     repoPath: repo,
     user: toUserView(user),
     members: loadUsers().map(toUserView),
-    nodes: nodesWithUrls.map((n) => toNodeView(user, n)),
+    nodes: nodesWithUrls.map((n) => toNodeView(user, n, tickets)),
   };
   const inject = `<script>window.__PIPELINE__ = ${jsonForScript(boot)};</script>\n<script src="/ai-pipeline-app.js" defer></script>`;
   return raw.replace("</body>", `${inject}\n</body>`);
@@ -423,6 +484,14 @@ function chatHtml(user: UserAccount): string {
     isSupervisor: user.role === "supervisor",
   };
   const inject = `<script>window.__CHAT__ = ${jsonForScript(boot)};</script>\n<script src="/chat.js" defer></script>`;
+  return raw.replace("</body>", `${inject}\n</body>`);
+}
+
+/** 渲染首页：读静态 home.html，注入登录用户 bootstrap */
+function homeHtml(user: UserAccount): string {
+  const raw = readFileSync(join(WEB_DIR, "home.html"), "utf8");
+  const boot = { user: toUserView(user) };
+  const inject = `<script>window.__HOME__ = ${jsonForScript(boot)};</script>\n<script src="/home.js" defer></script>`;
   return raw.replace("</body>", `${inject}\n</body>`);
 }
 
@@ -700,6 +769,9 @@ export async function startPlatformServer(
   }
   if (dirty) saveNodes(bootNodes);
 
+  // 启动即为每个节点补齐需求工单（每节点必须有需求工单才能执行/审核）
+  ensureNodeRequirementTickets();
+
   const server = createServer(async (req, res) => {
     const u = new URL(req.url ?? "/", `http://${host}`);
     const path = u.pathname;
@@ -924,11 +996,12 @@ export async function startPlatformServer(
       const nodesWithUrls = await Promise.all(
         loadNodes().map((n) => refreshNodeReportUrl(n, repo)),
       );
+      const tickets = ensureNodeRequirementTickets();
       sendJson(res, 200, {
         pipelineName: loadPipelineName(),
         user: toUserView(user),
         members: loadUsers().map(toUserView),
-        nodes: nodesWithUrls.map((n) => toNodeView(user, n)),
+        nodes: nodesWithUrls.map((n) => toNodeView(user, n, tickets)),
         busy: [...busy],
       });
       return;
@@ -970,6 +1043,20 @@ export async function startPlatformServer(
       const refreshed = await refreshReviewUrls(all, repo);
       const sorted = refreshed.sort((a, b) => b.generatedAt.localeCompare(a.generatedAt));
       sendJson(res, 200, { reviews: filterReviewsByUser(sorted, user) });
+      return;
+    }
+
+    // 首页（未登录重定向到登录页）
+    if (path === "/home" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        res.statusCode = 302;
+        res.setHeader("Location", "/login");
+        res.end();
+        return;
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(homeHtml(user));
       return;
     }
 
@@ -1194,6 +1281,8 @@ export async function startPlatformServer(
           sendJson(res, 403, { error: "仅本部门员工或部门主管可执行该节点" });
           return;
         }
+        // 每个节点必须先挂需求工单（缺则即时补齐），再允许执行
+        ensureNodeRequirementTicket(node);
         if (!node.ready || !node.runner) {
           sendJson(res, 400, { error: "该环节能力待接入，暂不可执行" });
           return;
@@ -1447,28 +1536,35 @@ export async function startPlatformServer(
       }
 
       if (action === "approve") {
-        // 主管通过：in_review → done
+        // 主管通过：非 done 状态均可审核 → done
         if (!canApprove(user)) {
           sendJson(res, 403, { error: "仅部门主管可批准节点" });
           return;
         }
-        if (node.status !== "in_review") {
-          sendJson(res, 409, { error: "仅「待验收」状态可批准" });
+        if (node.status === "done") {
+          sendJson(res, 409, { error: "节点已验收通过，无需重复审核" });
           return;
         }
+        if (!node.uploads || node.uploads.length === 0) {
+          sendJson(res, 409, { error: "员工尚未提交文件，无法审核" });
+          return;
+        }
+        // 审核前确保节点挂有需求工单
+        ensureNodeRequirementTicket(node);
         node.status = "done";
+        node.rejection = undefined;
         saveNodes(nodes);
         sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
         return;
       }
 
-      // reject：主管驳回，in_review → running（附驳回意见）
+      // reject：主管驳回，非 done → running（附驳回意见）
       if (!canApprove(user)) {
         sendJson(res, 403, { error: "仅部门主管可驳回节点" });
         return;
       }
-      if (node.status !== "in_review") {
-        sendJson(res, 409, { error: "仅「待验收」状态可驳回" });
+      if (node.status === "done") {
+        sendJson(res, 409, { error: "节点已验收通过，不可驳回" });
         return;
       }
       let reason = "验收不通过，请修改后重新提交";
@@ -1483,6 +1579,71 @@ export async function startPlatformServer(
       node.status = "running";
       node.rejection = reason;
       saveNodes(nodes);
+      sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
+      return;
+    }
+
+    // 主管把员工加入节点执行人：改其所属部门到该节点 + 自动在该账号下生成工单
+    const exm = path.match(/^\/api\/nodes\/([^/\\]+)\/executors$/);
+    if (exm && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      if (!canApprove(user)) {
+        sendJson(res, 403, { error: "仅部门主管可添加执行人" });
+        return;
+      }
+      const node = loadNodes().find((n) => n.id === exm[1]);
+      if (!node) {
+        sendJson(res, 404, { error: "节点不存在" });
+        return;
+      }
+      let email = "";
+      try {
+        const body = JSON.parse(await readBody(req)) as { email?: unknown };
+        if (typeof body.email === "string") email = body.email.trim();
+      } catch {
+        sendJson(res, 400, { error: "请求体不是合法 JSON" });
+        return;
+      }
+      const target = loadUsers().find((u) => u.email === email);
+      if (!target) {
+        sendJson(res, 404, { error: "员工不存在" });
+        return;
+      }
+      // 加入节点部门（执行角色按部门派生）
+      if (target.department !== node.department) {
+        setUserProfile(target.email, { department: node.department });
+      }
+      const reqTicket = ensureNodeRequirementTicket(node);
+      // 同一员工同一节点只建一张指派工单（幂等）
+      const existing = loadTickets().find(
+        (t) => t.nodeId === node.id && t.assigneeEmail === target.email,
+      );
+      if (!existing) {
+        const now = new Date().toISOString();
+        const assignee = target.name?.trim() || target.email.split("@")[0];
+        appendTicket({
+          id: newTicketId(),
+          kind: "requirement",
+          title: `[执行] ${node.step}`,
+          content:
+            `<p>节点「${esc(node.step)}」（${esc(node.department)}）的执行工单，指派给 ${esc(assignee)}。</p>` +
+            `<p>对应需求工单：${esc(reqTicket.id)}</p>`,
+          status: "open",
+          department: node.department,
+          authorName: user.name?.trim() || user.email.split("@")[0],
+          authorEmail: user.email,
+          createdAt: now,
+          updatedAt: now,
+          images: [],
+          comments: [],
+          nodeId: node.id,
+          assigneeEmail: target.email,
+        });
+      }
       sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
       return;
     }
@@ -1745,7 +1906,12 @@ export async function startPlatformServer(
         return;
       }
       if (!canAccessTicket(user, ticket)) {
-        sendJson(res, 403, { error: "仅本部门员工或部门主管可流转该工单" });
+        sendJson(res, 403, { error: "仅本部门员工或部门主管可查看该工单" });
+        return;
+      }
+      // 状态流转仅主管可操作（员工只能查看 / 评论）
+      if (!canApprove(user)) {
+        sendJson(res, 403, { error: "仅部门主管可切换工单状态" });
         return;
       }
       let next: unknown = "";
@@ -2192,10 +2358,63 @@ export async function startPlatformServer(
       return;
     }
 
-    // 根路径：按登录态分流
+    // 首页全局搜索：type=user（姓名/邮箱/职位/部门）| ticket（标题/提交人/正文，按视角过滤）| kb（暂空）
+    if (path === "/api/search" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const type = u.searchParams.get("type") ?? "user";
+      const q = (u.searchParams.get("q") ?? "").trim().toLowerCase();
+      if (type === "kb") {
+        sendJson(res, 200, { results: [] });
+        return;
+      }
+      if (type === "user") {
+        const results = loadUsers()
+          .filter(
+            (x) =>
+              !q ||
+              [x.name, x.email, x.title, x.department].some((v) =>
+                (v ?? "").toLowerCase().includes(q),
+              ),
+          )
+          .slice(0, 50)
+          .map((x) => ({
+            email: x.email,
+            name: x.name,
+            title: x.title,
+            department: x.department,
+            role: x.role,
+            avatar: x.avatar,
+          }));
+        sendJson(res, 200, { results });
+        return;
+      }
+      if (type === "ticket") {
+        const results = filterTicketsByUser(loadTickets(), user)
+          .filter(
+            (t) =>
+              !q ||
+              [t.title, t.authorName, t.authorEmail, htmlToPlainText(t.content)].some((v) =>
+                (v ?? "").toLowerCase().includes(q),
+              ),
+          )
+          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+          .slice(0, 50)
+          .map(toTicketListItem);
+        sendJson(res, 200, { results });
+        return;
+      }
+      sendJson(res, 400, { error: "未知的搜索类型" });
+      return;
+    }
+
+    // 根路径：按登录态分流（登录后进首页）
     if (path === "/" && req.method === "GET") {
       res.statusCode = 302;
-      res.setHeader("Location", currentUser(req) ? "/pipeline" : "/login");
+      res.setHeader("Location", currentUser(req) ? "/home" : "/login");
       res.end();
       return;
     }

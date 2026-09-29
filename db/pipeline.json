@@ -3,7 +3,7 @@
   "nodes": [
     {
       "id": "01",
-      "department": "用户研究部门",
+      "department": "用户研究部",
       "step": "产品调研",
       "ready": true,
       "status": "todo",
@@ -14,7 +14,7 @@
     },
     {
       "id": "02",
-      "department": "用户研究部门",
+      "department": "用户研究部",
       "step": "产品策划案",
       "ready": true,
       "status": "todo",
@@ -33,7 +33,7 @@
     },
     {
       "id": "04",
-      "department": "运营部门",
+      "department": "平台运营部",
       "step": "运营",
       "ready": false,
       "status": "todo"

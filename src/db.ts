@@ -24,7 +24,7 @@ export interface UserAccount {
   role: Role;
   /** 岗位名，如 用户调研实习生 */
   title: string;
-  /** 归属部门：用户研究部门 / 程序中台 / 运营部门（主管不限部门、权限最高） */
+  /** 归属部门：用户研究部 / 程序中台 / 平台运营部（主管不限部门、权限最高） */
   department: string;
   /** 中文姓名（角色卡片展示；旧数据缺省时回退邮箱前缀） */
   name?: string;
@@ -144,8 +144,8 @@ export interface PipelineData {
 /** 工单状态：待处理 / 处理中 / 已解决（三态可互相流转） */
 export type TicketStatus = "open" | "doing" | "resolved";
 
-/** 工单类型：本期只做 bug 单，预留字段便于后续扩类型 */
-export type TicketKind = "bug";
+/** 工单类型：bug=手动新建；requirement=管线节点自动生成（节点需求工单 / 指派给执行人的工单） */
+export type TicketKind = "bug" | "requirement";
 
 /** 工单评论（同样按部门视角可见） */
 export interface TicketComment {
@@ -167,7 +167,7 @@ export interface TicketComment {
 export interface TicketRecord {
   /** 工单 id（t- 前缀 + 时间戳 + 随机串） */
   id: string;
-  /** 类型：bug */
+  /** 类型：bug（手动新建）/ requirement（节点自动生成） */
   kind: TicketKind;
   /** 标题 */
   title: string;
@@ -189,6 +189,10 @@ export interface TicketRecord {
   images: string[];
   /** 评论列表（按时间正序） */
   comments: TicketComment[];
+  /** 关联的管线节点 id（节点需求工单 / 指派工单才有） */
+  nodeId?: string;
+  /** 指派给的员工邮箱（把员工加入节点执行人时自动生成的工单才有） */
+  assigneeEmail?: string;
 }
 
 /** 聊天消息角色 */
@@ -494,6 +498,8 @@ interface TicketRow {
   created_at: string;
   updated_at: string;
   images: string | null;
+  node_id: string | null;
+  assignee_email: string | null;
 }
 
 interface CommentRow {
@@ -644,6 +650,8 @@ function ticketParams(t: TicketRecord, ord: number): Record<string, unknown> {
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
     images: JSON.stringify(t.images ?? []),
+    nodeId: t.nodeId ?? null,
+    assigneeEmail: t.assigneeEmail ?? null,
   };
 }
 
@@ -711,7 +719,7 @@ function insertReviews(c: Database.Database, records: ReviewRecord[], startOrd: 
 
 function insertTickets(c: Database.Database, tickets: TicketRecord[], startOrd: number): void {
   const insT = c.prepare(
-    "INSERT OR REPLACE INTO tickets (ord,id,kind,title,content,status,department,author_name,author_email,created_at,updated_at,images) VALUES (@ord,@id,@kind,@title,@content,@status,@department,@authorName,@authorEmail,@createdAt,@updatedAt,@images)"
+    "INSERT OR REPLACE INTO tickets (ord,id,kind,title,content,status,department,author_name,author_email,created_at,updated_at,images,node_id,assignee_email) VALUES (@ord,@id,@kind,@title,@content,@status,@department,@authorName,@authorEmail,@createdAt,@updatedAt,@images,@nodeId,@assigneeEmail)"
   );
   const insC = c.prepare(
     "INSERT OR REPLACE INTO ticket_comments (ord,id,ticket_id,author,email,department,content,at) VALUES (@ord,@id,@ticketId,@author,@email,@department,@content,@at)"
@@ -988,6 +996,8 @@ export function loadTickets(): TicketRecord[] {
       updatedAt: r.updated_at,
       images,
       comments: byTicket.get(r.id) ?? [],
+      nodeId: r.node_id ?? undefined,
+      assigneeEmail: r.assignee_email ?? undefined,
     };
   });
 }

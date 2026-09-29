@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>工单 · AI-FLOWS 平台</title>
+  <title>工单系统 · AI-FLOWS 平台</title>
   <link rel="stylesheet" href="./ai-pipeline.css">
   <script src="/user-menu.js" defer></script>
   <style>
@@ -55,6 +55,7 @@
     .tk-badge.open { background: var(--amber-soft); color: var(--amber); }
     .tk-badge.doing { background: var(--led-soft); color: var(--led); }
     .tk-badge.resolved { background: var(--teal-soft); color: var(--teal); }
+    .tk-badge.req { background: var(--paper-2); color: var(--muted); }
 
     /* ---- 右列：详情 / 编辑器 ---- */
     .panel { padding: 22px 24px; min-height: 320px; }
@@ -128,10 +129,11 @@
       <h1 class="brand-title">
         <span class="tt-pipeline">AI-FLOWS</span>
         <span class="tt-sep">/</span>
-        <span>工单</span>
+        <span>工单系统</span>
       </h1>
     </div>
     <div class="top-right">
+      <a class="nav-link" href="/home">首页</a>
       <a class="nav-link" href="/pipeline">AI 管线</a>
       <a class="nav-link" href="/tickets">工单</a>
       <a class="nav-link" href="/github-audit">GitHub</a>
@@ -157,10 +159,10 @@
   <div class="page-shell">
     <div class="page-head">
       <div>
-        <h1 class="page-title"><em>Bug 单</em></h1>
-        <p class="page-sub">提交缺陷并跟踪处理进度；同部门同事与主管可见</p>
+        <h1 class="page-title"><em>工单系统</em></h1>
+        <p class="page-sub">提交工单并跟踪处理进度；同部门同事与主管可见，状态仅主管可切换</p>
       </div>
-      <button class="btn primary" id="newBtn" type="button">新建 bug 单</button>
+      <button class="btn primary" id="newBtn" type="button">新建工单</button>
     </div>
 
     <div class="tk-layout">
@@ -180,7 +182,7 @@
       <!-- 右列：详情 / 编辑器 -->
       <section class="card panel">
         <div class="panel-empty" id="emptyState">
-          <span>选择左侧工单查看详情，或点「新建 bug 单」</span>
+          <span>选择左侧工单查看详情，或点「新建工单」</span>
         </div>
 
         <div id="detailView" hidden>
@@ -205,7 +207,7 @@
 
         <div id="editorView" hidden>
           <div class="tk-editor-head">
-            <h2>新建 bug 单</h2>
+            <h2>新建工单</h2>
             <button class="btn" id="cancelBtn" type="button">取消</button>
           </div>
           <div class="tk-field-label">标题</div>

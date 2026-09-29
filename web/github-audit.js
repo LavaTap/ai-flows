@@ -57,8 +57,6 @@
     if (isSuper) {
       var teamLink = document.getElementById("teamLink");
       if (teamLink) teamLink.style.display = "inline-block";
-      var teamSide = document.getElementById("teamSide");
-      if (teamSide) teamSide.style.display = "flex";
     }
     renderUserChip();
   }

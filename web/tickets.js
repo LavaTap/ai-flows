@@ -186,6 +186,12 @@
 
       var meta = document.createElement("div");
       meta.className = "tk-item-meta";
+      if (t.kind === "requirement") {
+        var kindBadge = document.createElement("span");
+        kindBadge.className = "tk-badge req";
+        kindBadge.textContent = t.assigneeEmail ? "指派" : "需求";
+        meta.appendChild(kindBadge);
+      }
       var badge = document.createElement("span");
       badge.className = "tk-badge " + t.status;
       badge.textContent = STATUS_LABEL[t.status] || t.status;
@@ -222,6 +228,18 @@
     label.className = "label";
     label.textContent = "状态";
     bar.appendChild(label);
+    // 状态流转仅主管可操作：员工只看只读状态
+    if (!isSuper) {
+      var ro = document.createElement("span");
+      ro.className = "tk-badge " + t.status;
+      ro.textContent = STATUS_LABEL[t.status] || t.status;
+      bar.appendChild(ro);
+      var hint = document.createElement("span");
+      hint.className = "label";
+      hint.textContent = "（仅主管可切换）";
+      bar.appendChild(hint);
+      return;
+    }
     STATUS_ORDER.forEach(function (s) {
       var btn = document.createElement("button");
       btn.type = "button";
@@ -461,7 +479,11 @@
     byId("cancelBtn2").addEventListener("click", function () { showPanel("empty"); });
     byId("saveBtn").addEventListener("click", saveTicket);
     byId("commentSubmit").addEventListener("click", addComment);
-    loadTickets();
+    loadTickets().then(function () {
+      // 支持从节点面板 / 首页搜索带 ?id= 直接打开某张工单
+      var deepId = new URLSearchParams(location.search).get("id");
+      if (deepId) openDetail(deepId);
+    });
   }
 
   if (document.readyState === "loading") {

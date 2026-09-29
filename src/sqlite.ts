@@ -67,18 +67,20 @@ CREATE TABLE IF NOT EXISTS reviews (
 );
 
 CREATE TABLE IF NOT EXISTS tickets (
-  ord          INTEGER NOT NULL,
-  id           TEXT PRIMARY KEY,
-  kind         TEXT NOT NULL,
-  title        TEXT NOT NULL,
-  content      TEXT NOT NULL,
-  status       TEXT NOT NULL,
-  department   TEXT NOT NULL,
-  author_name  TEXT NOT NULL,
-  author_email TEXT NOT NULL,
-  created_at   TEXT NOT NULL,
-  updated_at   TEXT NOT NULL,
-  images       TEXT
+  ord            INTEGER NOT NULL,
+  id             TEXT PRIMARY KEY,
+  kind           TEXT NOT NULL,
+  title          TEXT NOT NULL,
+  content        TEXT NOT NULL,
+  status         TEXT NOT NULL,
+  department     TEXT NOT NULL,
+  author_name    TEXT NOT NULL,
+  author_email   TEXT NOT NULL,
+  created_at     TEXT NOT NULL,
+  updated_at     TEXT NOT NULL,
+  images         TEXT,
+  node_id        TEXT,
+  assignee_email TEXT
 );
 
 CREATE TABLE IF NOT EXISTS ticket_comments (
@@ -147,6 +149,12 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id
 
 let conn: Database.Database | null = null;
 
+/** 幂等补列：CREATE TABLE IF NOT EXISTS 不会给已存在的表加列，老库升级靠这里补 */
+function ensureColumn(c: Database.Database, table: string, column: string, ddl: string): void {
+  const cols = c.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some((x) => x.name === column)) c.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+}
+
 /** 取全局唯一 SQLite 连接（首次调用建目录、开库、开 WAL、建表） */
 export function getDb(): Database.Database {
   if (conn) return conn;
@@ -156,6 +164,9 @@ export function getDb(): Database.Database {
   c.pragma("journal_mode = WAL");
   c.pragma("foreign_keys = ON");
   c.exec(SCHEMA_SQL);
+  // 老库补列（工单关联管线节点 / 指派给员工）
+  ensureColumn(c, "tickets", "node_id", "node_id TEXT");
+  ensureColumn(c, "tickets", "assignee_email", "assignee_email TEXT");
   conn = c;
   return conn;
 }

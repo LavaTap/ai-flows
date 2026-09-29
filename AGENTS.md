@@ -45,7 +45,7 @@
 | `reporter.ts` | Markdown 报告 + HTML 模板渲染 `renderTemplate()` |
 | `serve.ts` | 报告 HTTP 服务（`node:http`）+ 报告列表页 + `POST /reports/<id>/push` 确认提交（需带 commit message，有暂存先 commit 再 push；无暂存且信息与 HEAD 不同则 amend 改写） |
 | `publisher.ts` | 多目标远端推送、https token 注入；内部推送置 `AI_REVIEW_INTERNAL_PUSH=1`，防被 pre-push hook 循环拦截 |
-| `platform.ts` | 平台 HTTP 服务：登录会话 + 管线页注入 `window.__PIPELINE__` + 节点执行/提交/验收/驳回 API + 需求编辑/附件上传/目录浏览/产物下载 + `GET /api/reviews` 评审记录（平台历史 + 外部报告聚合，按视角过滤）+ 账号管理 API（我的资料 / 头像上传 `POST /api/account/avatar` / GitHub 自助绑定 / 主管审核绑定 / 主管改他人姓名·部门·职位·头像）+ 工单 API（`/tickets` 页 + 列表/详情/新建/状态流转/评论/图片上传读取，注入 `window.__TICKETS__`）+ GitHub 绑定页 `/github-audit`（员工自助绑定 + 主管审核，注入 `window.__GHAUDIT__`）+ 头像读取 `GET /api/avatars/<file>`；权限判定 `canExecute` / `canApprove` / `canEditRequirement` / `filterReviewsByUser` / `canAccessTicket` / `filterTicketsByUser` / `isTicketStatus` / `safeRepoPath`；节点 02 后台跑 skill、节点 01 后台跑外部调研 agent、节点 03 后台跑评审链，`busy` 集合防并发 |
+| `platform.ts` | 平台 HTTP 服务：登录会话 + 首页 `/home`（注入 `window.__HOME__`）+ `GET /api/search` 全局搜索（员工/工单/知识库）+ 管线页注入 `window.__PIPELINE__` + 节点执行/提交/验收/驳回 API + `POST /api/nodes/<id>/executors` 主管添加执行人（自动建指派工单）+ 需求编辑/附件上传/目录浏览/产物下载 + `GET /api/reviews` 评审记录（平台历史 + 外部报告聚合，按视角过滤）+ 账号管理 API（我的资料 / 头像上传 `POST /api/account/avatar` / GitHub 自助绑定 / 主管审核绑定 / 主管改他人姓名·部门·职位·头像）+ 工单 API（`/tickets` 页 + 列表/详情/新建/状态流转/评论/图片上传读取，注入 `window.__TICKETS__`；状态仅主管可切换）+ GitHub 绑定页 `/github-audit`（员工自助绑定 + 主管审核，注入 `window.__GHAUDIT__`）+ 头像读取 `GET /api/avatars/<file>`；权限判定 `canExecute` / `canApprove` / `canEditRequirement` / `filterReviewsByUser` / `canAccessTicket` / `filterTicketsByUser` / `isTicketStatus` / `safeRepoPath` / `decodePathSegment`；节点 02 后台跑 skill、节点 01 后台跑外部调研 agent、节点 03 后台跑评审链，`busy` 集合防并发；节点需求工单自动生成（`ensureNodeRequirementTicket`），节点面板返回 `ticketId` 可跳转工单系统 |
 | `richtext.ts` | 富文本白名单净化 `sanitizeRichHtml()` / `isEmptyRichHtml()`：工单正文与评论来自 contenteditable，属不可信输入，落库与回显前必须过白名单（去 `<script>`/事件处理器/`javascript:`/外链图片），零依赖手写标签扫描器 |
 | `skill.ts` | skill 执行器：SKILL.md（剥 frontmatter）作系统提示 + 需求/附件组装 prompt → `callModel` 生成 Markdown 产物写入输出目录，进度经回调回写 db；不感知节点/权限 |
 | `crawler.ts` | 节点 01 调研 agent 执行器：需求文本经 stdin 作 agent（`crawler.root` 项目内，命令 `crawler.command`）prompt → 跑完把 agent `output/` 目录打包 zip（零依赖 CRC32 + `zlib.deflateRawSync`，含 `collectFiles`）；不感知节点/权限 |
@@ -76,7 +76,10 @@
 | 确认提交需 commit message | `POST /reports/<id>/push` 必须带非空 `message`，否则 400；有暂存变更先 `commitStaged` 再 `pushToTargets`，杜绝评审通过即自动推送；无暂存且 `message` 与 HEAD 不同时先 `amendCommitMessage` 改写最近一次提交。页面提交栏展示 HEAD 提交描述并预填完整信息（serve 渲染时实时注入 `view.head`） |
 | `run` 缺省不推送 | `run` 不带 `--push` 时一律不推送；推送只走页面「确认提交」或显式 `--push` |
 | 平台权限唯一入口 | 节点执行/验收/需求编辑判定只用 `platform.ts` 的 `canExecute` / `canApprove` / `canEditRequirement`（员工限本部门、主管不限）；前端按钮显隐只是展示，服务端校验才算数，路由内不得另写权限逻辑 |
-| 工单可见性唯一入口 | 工单查看 / 流转状态 / 评论判定只用 `platform.ts` 的 `canAccessTicket`（员工限本部门、主管全量），列表过滤用 `filterTicketsByUser`；前端隐藏按钮只是展示，服务端校验才算数 |
+| 工单可见性唯一入口 | 工单查看 / 评论判定只用 `platform.ts` 的 `canAccessTicket`（员工限本部门、主管全量），列表过滤用 `filterTicketsByUser`；前端隐藏按钮只是展示，服务端校验才算数 |
+| 工单状态仅主管可切换 | `POST /api/tickets/<id>/status` 在 `canAccessTicket` 之后额外校验 `canApprove`，员工 `403`；前端对非主管只渲染只读徽章 + 「（仅主管可切换）」提示 |
+| 节点需求工单自动生成 | 每个管线节点必须挂一张 `kind="requirement"` 的需求工单（`ensureNodeRequirementTicket` 幂等建单），节点面板返回 `ticketId` 可跳转 `/tickets?id=`；执行 / 审核前先确保挂单 |
+| 主管加执行人即建指派工单 | `POST /api/nodes/<id>/executors` 改员工部门到节点部门，并幂等创建 `kind="requirement"` + `assigneeEmail` 的指派工单（标题 `[执行] <step>`） |
 | 富文本必须净化 | 工单正文与评论来自 contenteditable，落库前必须过 `src/richtext.ts` 的 `sanitizeRichHtml()`（去 `<script>` / `on*` 事件 / `javascript:` / 外链图片），只回显净化后 HTML，禁止信任前端提交的 HTML |
 | 工单图片只认本地上传 | 正文图片 `src` 只允许 `/api/tickets/images/<file>`；文件名由服务端生成 `[a-f0-9]{12}.<ext>`，读取按该形态严格校验（天然免疫穿越）；二进制落 `db/ticket-uploads/`（已 gitignore），**不入库**（工单表只存文件名） |
 | 头像只认本地上传 | 头像二进制落 `db/avatars/`（已 gitignore），users 表只存文件名；上传走 `POST /api/account/avatar`（自己改自己，限 png/jpg/jpeg/gif/webp、≤2MB）；读取 `GET /api/avatars/<file>` 文件名严格校验 `[a-f0-9]{12}.(png|jpg|jpeg|gif|webp)`；缺省回退首字配色头像 |
@@ -84,11 +87,11 @@
 | 顶栏导航方形圆角 | 顶栏 `.nav-link` / `.tab` 统一 `border-radius:8px`（方形圆角，非椭圆 999px）；所有页面右上角统一展示 `user-chip`（头像 + 姓名），有自定义头像显示图片，否则首字配色 |
 | 顶栏用户菜单 | 顶栏 `user-chip` 为可点开菜单（`web/user-menu.js` 共享脚本 + `ai-pipeline.css` 的 `.user-menu`/`.user-panel`）：面板上部为放大的头像 + 姓名 + 邮箱，分隔线下为「设置」项（→ `/account`）；原顶栏「账号管理」导航项已收纳进该面板，各页脚本只管 `#userName` 与 chip 头像 |
 | 账号与密码 | 账号唯一来源 SQLite `users` 表（种子仍由 `db/users.json` 首次导入），**不开放注册**；演示期密码明文 123456，上线前必须换 `node:crypto` scrypt 加盐哈希 |
-| 部门与账号数据 | 平台账号分三大部门：`用户研究部门` / `程序中台` / `运营部门`；节点 01/02 属用户研究、03 属程序中台、04 属运营，账号 `department` 与节点 `department` 需对齐（`canExecute`/角色卡片按它过滤） |
+| 部门与账号数据 | 平台账号分三大部门：`用户研究部` / `程序中台` / `平台运营部`；节点 01/02 属用户研究、03 属程序中台、04 属运营，账号 `department` 与节点 `department` 需对齐（`canExecute`/角色卡片按它过滤） |
 | GitHub 自助绑定 + 主管审核 | 主管绑定即刻写入 `github`；员工绑定写 `githubPending`，主管经 `/api/account/<email>/github/{approve,reject}` 批准后转 `github` 才生效；员工可自行取消待审或解绑已生效绑定 |
 | 资料主管可改 | 设置任意账号的姓名 / 部门 / 职位只走 `POST /api/account/<email>/profile`，仅主管（`canApprove`）可调；员工只能绑自己的 GitHub，不能改任何账号资料。路径里的 email 必须经 `decodePathSegment()` 还原（前端会编码成 `%40`），解码后含 `/` `\` 一律按不存在处理 |
 | 头像上传体积 | `POST /api/account/avatar` 收 base64 data URL，请求体上限 `AVATAR_BODY_MAX`（4MB，覆盖 2MB 图的 base64 膨胀）；用默认 16KB 上限会拒掉真实图片 |
-| 角色卡片排版 | 节点详情「执行角色」卡片统一长方形：左头像 + 右侧加粗姓名 + 下方「部门/职位」（如 用户研究部门 / 用户研究实习生）；账号管理弹窗在顶栏「账号管理」按钮打开 |
+| 角色卡片排版 | 节点详情「执行角色」卡片统一长方形：左头像 + 右侧加粗姓名 + 下方「部门/职位」（如 用户研究部 / 用户研究实习生）；账号管理弹窗在顶栏「账号管理」按钮打开 |
 | 会话与 cookie | 内存 `Map` 会话 + `HttpOnly` `SameSite=Lax` cookie；服务重启全部失效（演示可接受，会话不写库、不引 Redis） |
 | 对话记忆压缩 | AI 对话按账号隔离（`ChatSession.ownerEmail`）；未纳入摘要的历史原文累计字数超 `chat.compressChars`（默认 400）时，用 `callModelOnce` + `buildSummaryMessages` 把旧摘要与新原文合并压缩为 `session.summary` 落库（`summaryUpto` 记已覆盖条数）；此后 prompt 只送【摘要 + 未压缩近期原文】。压缩失败不阻断对话 |
 | 节点状态机 | `todo → running → in_review → done` 四态；执行完成保持 `running` 等 `submit`，`submit` 进 `in_review`，仅主管可 `approve`（→ `done` 终态）/ `reject`（→ `running` 附意见）；状态不符的动作返回 409；服务启动把残留 `running` 复位为 `todo`、旧 `approved` 迁移为 `done` |
@@ -176,7 +179,7 @@ export default function main() {}
 | `reviewer.ts` | `extractJson` | 带围栏、带前后缀文字、非法 JSON 抛错 |
 | `publisher.ts` | `injectToken` | https 注入、已有凭据剥离、ssh 地址不动 |
 | `serve.ts` | `/reports/<id>` 路由 | `../` 等路径穿越必须 404 |
-| `platform.ts` | `canExecute` / `canApprove` / `canEditRequirement` / `filterReviewsByUser` / `canAccessTicket` / `filterTicketsByUser` / `isTicketStatus` / `collectTicketImages` / `safeRepoPath` / `decodePathSegment` | 员工限本部门、主管全节点可执行；员工不可批准；需求编辑同执行权限；评审记录主管全量、员工本部门；工单主管全量、员工本部门；状态取值白名单；正文图片引用去重提取；目录穿越拦截；路径段 URL 解码并拒绝含分隔符、非法编码 |
+| `platform.ts` | `canExecute` / `canApprove` / `canEditRequirement` / `filterReviewsByUser` / `canAccessTicket` / `filterTicketsByUser` / `isTicketStatus` / `collectTicketImages` / `safeRepoPath` / `decodePathSegment` / `ensureNodeRequirementTicket` / `htmlToPlainText` | 员工限本部门、主管全节点可执行；员工不可批准；需求编辑同执行权限；评审记录主管全量、员工本部门；工单主管全量、员工本部门；状态取值白名单；正文图片引用去重提取；目录穿越拦截；路径段 URL 解码并拒绝含分隔符、非法编码；节点需求工单幂等建单（缺则补齐）；HTML 转 纯文本用于工单搜索 |
 | `richtext.ts` | `sanitizeRichHtml` / `isEmptyRichHtml` | 保留编辑器产出的白名单标签与属性；去 `<script>`/事件处理器/`javascript:`/外链图片；未知标签丢标签留文本；裸 `<` `&` 转义；纯标签空正文判空 |
 | `skill.ts` | `sanitizeFilename` / `buildSkillPrompt` / `resolveSkillDoc` | 文件名净化；含/不含附件的 prompt 组装；未知 skill 抛错 |
 | `crawler.ts` | `crc32` / `buildZip` / `collectFiles` | CRC32 标准校验值；zip 经 `inflateRawSync` 往返一致、空条目归档合法；目录递归条目名为 posix 相对路径 |
