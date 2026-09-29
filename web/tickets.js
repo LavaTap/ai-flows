@@ -25,6 +25,14 @@
     return email ? email.charAt(0).toUpperCase() : "?";
   }
 
+  function emailPrefix(email) {
+    return email ? email.split("@")[0] : "";
+  }
+
+  function profileUrl(email) {
+    return "/profile/" + encodeURIComponent(emailPrefix(email));
+  }
+
   function formatTime(iso) {
     if (!iso) return "";
     var d = new Date(iso);
@@ -93,6 +101,95 @@
 
     var file = node.querySelector(".rt-file");
 
+    // @ 提及弹出层
+    var mentionPop = document.createElement("div");
+    mentionPop.className = "mention-pop";
+    mentionPop.style.display = "none";
+    node.appendChild(mentionPop);
+    var mentionIdx = 0;
+    var mentionList = [];
+    var mentionActive = false;
+    var mentionQuery = "";
+    var mentionRange = null; // 保存 @ 起始位置，用于替换
+
+    function closeMention() {
+      mentionActive = false;
+      mentionPop.style.display = "none";
+      mentionQuery = "";
+      mentionList = [];
+    }
+
+    function searchMention(q) {
+      get("/api/search?type=user&q=" + encodeURIComponent(q)).then(function (r) {
+        if (!r.ok || !mentionActive) return;
+        mentionList = (r.data && r.data.results) || [];
+        mentionIdx = 0;
+        renderMentionList();
+      });
+    }
+
+    function renderMentionList() {
+      if (!mentionList.length) {
+        mentionPop.innerHTML = '<div class="mention-item" style="cursor:default;color:var(--muted);">没有匹配的成员</div>';
+        mentionPop.style.display = "block";
+        return;
+      }
+      mentionPop.innerHTML = "";
+      mentionList.forEach(function (u, i) {
+        var item = document.createElement("div");
+        item.className = "mention-item" + (i === mentionIdx ? " on" : "");
+        var av = document.createElement("div");
+        av.className = "tk-avatar";
+        av.style.background = colorOf(u.email);
+        av.textContent = firstChar(u.name, u.email);
+        item.appendChild(av);
+        var meta = document.createElement("div");
+        meta.className = "mi-meta";
+        var name = document.createElement("div");
+        name.className = "mi-name";
+        name.textContent = u.name;
+        meta.appendChild(name);
+        var dept = document.createElement("div");
+        dept.className = "mi-dept";
+        dept.textContent = u.department || "";
+        meta.appendChild(dept);
+        item.appendChild(meta);
+        item.addEventListener("mousedown", function (e) {
+          e.preventDefault();
+          insertMention(u);
+        });
+        mentionPop.appendChild(item);
+      });
+      mentionPop.style.display = "block";
+    }
+
+    function insertMention(u) {
+      if (!mentionRange) return;
+      body.focus();
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(mentionRange);
+      // 删除 @ 到当前位置的文字
+      var range = sel.getRangeAt(0);
+      range.deleteContents();
+      // 插入 mention 链接
+      var a = document.createElement("a");
+      a.href = profileUrl(u.email);
+      a.className = "mention-link";
+      a.textContent = "@" + u.name;
+      a.contentEditable = "false";
+      range.insertNode(a);
+      // 光标移到链接后面
+      range.setStartAfter(a);
+      range.setEndAfter(a);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      // 加个空格
+      document.execCommand("insertText", false, " ");
+      closeMention();
+    }
+
     Array.prototype.forEach.call(node.querySelectorAll(".rt-btn"), function (btn) {
       // 用 mousedown 阻止默认行为，保住编辑区内的选区
       btn.addEventListener("mousedown", function (e) { e.preventDefault(); });
@@ -104,15 +201,44 @@
           file.click();
           return;
         }
+        if (action === "mention") {
+          body.focus();
+          document.execCommand("insertText", false, "@");
+          // 手动触发 @ 提及检测
+          triggerMentionCheck();
+          return;
+        }
         body.focus();
         if (cmd) document.execCommand(cmd, false, null);
         if (block) document.execCommand("formatBlock", false, block);
       });
     });
 
+    node.querySelector(".rt-size").addEventListener("mousedown", function (e) { e.preventDefault(); });
     node.querySelector(".rt-size").addEventListener("change", function () {
+      var px = this.value;
       body.focus();
-      document.execCommand("fontSize", false, this.value);
+      var sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      var range = sel.getRangeAt(0);
+      // 确保选区在编辑器内
+      if (!body.contains(range.commonAncestorContainer)) return;
+      if (range.collapsed) return;
+      var span = document.createElement("span");
+      span.style.fontSize = px;
+      try {
+        range.surroundContents(span);
+      } catch (e) {
+        // 选区跨节点时 surroundContents 会失败，回退到 extractContents
+        var frag = range.extractContents();
+        span.appendChild(frag);
+        range.insertNode(span);
+      }
+      // 恢复选区到新 span 内
+      sel.removeAllRanges();
+      var newRange = document.createRange();
+      newRange.selectNodeContents(span);
+      sel.addRange(newRange);
     });
 
     file.addEventListener("change", function () {
@@ -134,6 +260,83 @@
       document.execCommand("insertText", false, text);
     });
 
+    // @ 提及：监听输入
+    function triggerMentionCheck() {
+      var sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return closeMention();
+      var range = sel.getRangeAt(0);
+      if (!body.contains(range.startContainer)) return closeMention();
+
+      // 从光标位置向前找最近的 @
+      var textNode = range.startContainer;
+      var offset = range.startOffset;
+      var text = "";
+      if (textNode.nodeType === 3) {
+        text = textNode.textContent.substring(0, offset);
+      }
+      var atPos = text.lastIndexOf("@");
+      if (atPos === -1) return closeMention();
+
+      // @ 前面必须是行首或空格
+      var prevChar = atPos > 0 ? text.charAt(atPos - 1) : "";
+      if (prevChar && prevChar !== " " && prevChar !== "\n") return closeMention();
+
+      var query = text.substring(atPos + 1);
+      // 查询词里不能有空格（空格表示结束）
+      if (query.indexOf(" ") !== -1) return closeMention();
+      if (query.length > 20) return closeMention();
+
+      mentionActive = true;
+      mentionQuery = query;
+
+      // 保存 @ 位置的 range，用于替换
+      mentionRange = document.createRange();
+      mentionRange.setStart(textNode, atPos);
+      mentionRange.setEnd(textNode, offset);
+
+      // 定位弹出层
+      var rect = range.getBoundingClientRect();
+      var bodyRect = node.getBoundingClientRect();
+      mentionPop.style.left = (rect.left - bodyRect.left) + "px";
+      mentionPop.style.top = (rect.bottom - bodyRect.top + 4) + "px";
+
+      searchMention(query);
+    }
+
+    body.addEventListener("input", function () {
+      triggerMentionCheck();
+    });
+
+    body.addEventListener("keydown", function (e) {
+      if (!mentionActive) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeMention();
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (mentionList.length) {
+          mentionIdx = (mentionIdx + 1) % mentionList.length;
+          renderMentionList();
+        }
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (mentionList.length) {
+          mentionIdx = (mentionIdx - 1 + mentionList.length) % mentionList.length;
+          renderMentionList();
+        }
+      } else if (e.key === "Enter" || e.key === "Tab") {
+        if (mentionList.length && mentionList[mentionIdx]) {
+          e.preventDefault();
+          insertMention(mentionList[mentionIdx]);
+        }
+      }
+    });
+
+    // 点击编辑器外关闭提及
+    document.addEventListener("mousedown", function (e) {
+      if (!node.contains(e.target)) closeMention();
+    });
+
     return {
       getHtml: function () { return body.innerHTML; },
       clear: function () { body.innerHTML = ""; },
@@ -146,7 +349,8 @@
   var state = {
     tickets: [],
     current: null,
-    filter: { status: "all", q: "", mine: false }
+    filter: { status: "all", q: "", mine: false },
+    editing: false
   };
   var createEditor = null;
   var commentEditor = null;
@@ -221,6 +425,48 @@
     return span;
   }
 
+  /**
+   * 把 HTML 中的 @姓名 转换成可点击的 mention 链接
+   * 由于服务端净化后只保留白名单标签，这里用 DOM 操作遍历文本节点
+   */
+  function renderMentionsInHtml(html) {
+    var div = document.createElement("div");
+    div.innerHTML = html;
+    // 遍历所有文本节点，替换 @xxx 为链接
+    var walker = document.createTreeWalker(div, NodeFilter.SHOW_TEXT, null);
+    var nodes = [];
+    var n;
+    while (n = walker.nextNode()) nodes.push(n);
+    nodes.forEach(function (textNode) {
+      var text = textNode.textContent;
+      // 匹配 @后面跟中文/英文/数字（直到空格或标点或行尾）
+      var re = /@([^\s@，。、；：,.<>"'()（）【】\[\]{}！!？?\/\\]+)/g;
+      if (!re.test(text)) return;
+      re.lastIndex = 0;
+      var frag = document.createDocumentFragment();
+      var last = 0;
+      var m;
+      while ((m = re.exec(text))) {
+        if (m.index > last) {
+          frag.appendChild(document.createTextNode(text.substring(last, m.index)));
+        }
+        var a = document.createElement("a");
+        a.href = "#"; // 纯展示用，真实跳转需知道 email，这里先占位
+        a.className = "mention-link";
+        a.textContent = m[0];
+        // 由于纯文本匹配不知道 email，这里只做样式高亮，不做跳转
+        // 如果以后需要跳转，可以在存库时就存成带 data-email 的链接
+        frag.appendChild(a);
+        last = m.index + m[0].length;
+      }
+      if (last < text.length) {
+        frag.appendChild(document.createTextNode(text.substring(last)));
+      }
+      textNode.parentNode.replaceChild(frag, textNode);
+    });
+    return div.innerHTML;
+  }
+
   function renderStatusBar(t) {
     var bar = byId("dStatusBar");
     bar.innerHTML = "";
@@ -270,7 +516,21 @@
 
       var who = document.createElement("div");
       who.className = "tk-comment-who";
-      who.textContent = c.author;
+      var whoLink = document.createElement("a");
+      whoLink.href = profileUrl(c.email);
+      whoLink.className = "author-link";
+      whoLink.textContent = c.author;
+      whoLink.addEventListener("click", function (e) {
+        e.preventDefault();
+        try {
+          var recents = JSON.parse(localStorage.getItem("home_recent") || "[]");
+          recents = recents.filter(function (r) { return r.id !== c.email; });
+          recents.unshift({ _type: "user", email: c.email, name: c.author, department: c.department, id: c.email });
+          localStorage.setItem("home_recent", JSON.stringify(recents.slice(0, 20)));
+        } catch (e) {}
+        location.href = profileUrl(c.email);
+      });
+      who.appendChild(whoLink);
       var sub = document.createElement("span");
       sub.textContent = (c.department ? c.department + " · " : "") + formatTime(c.at);
       who.appendChild(sub);
@@ -278,7 +538,7 @@
 
       var body = document.createElement("div");
       body.className = "tk-comment-body";
-      body.innerHTML = c.content; // 服务端已白名单净化
+      body.innerHTML = renderMentionsInHtml(c.content); // 服务端已净化，补 mention 链接
       main.appendChild(body);
 
       row.appendChild(main);
@@ -300,15 +560,45 @@
     badge.className = "tk-badge " + t.status;
     badge.textContent = STATUS_LABEL[t.status] || t.status;
 
+    // 编辑按钮：只有提交人可见
+    var editBtn = byId("editBtn");
+    if (t.authorEmail === user.email) {
+      editBtn.style.display = "";
+      editBtn.onclick = openEdit;
+    } else {
+      editBtn.style.display = "none";
+    }
+
     var meta = byId("dMeta");
     meta.innerHTML = "";
-    meta.appendChild(metaItem("提交人 ", t.authorName + (t.mine ? "（我）" : "")));
+    // 提交人：可点击跳转到个人主页
+    var authorSpan = document.createElement("span");
+    var authorB = document.createElement("b");
+    authorB.textContent = "提交人 ";
+    authorSpan.appendChild(authorB);
+    var authorLink = document.createElement("a");
+    authorLink.href = profileUrl(t.authorEmail);
+    authorLink.className = "author-link";
+    authorLink.textContent = t.authorName + (t.mine ? "（我）" : "");
+    authorLink.addEventListener("click", function (e) {
+      e.preventDefault();
+      // 记录浏览历史并跳转
+      try {
+        var recents = JSON.parse(localStorage.getItem("home_recent") || "[]");
+        recents = recents.filter(function (r) { return r.id !== t.authorEmail; });
+        recents.unshift({ _type: "user", email: t.authorEmail, name: t.authorName, department: t.department, id: t.authorEmail });
+        localStorage.setItem("home_recent", JSON.stringify(recents.slice(0, 20)));
+      } catch (e) {}
+      location.href = profileUrl(t.authorEmail);
+    });
+    authorSpan.appendChild(authorLink);
+    meta.appendChild(authorSpan);
     meta.appendChild(metaItem("部门 ", t.department));
     meta.appendChild(metaItem("创建 ", formatTime(t.createdAt)));
     meta.appendChild(metaItem("更新 ", formatTime(t.updatedAt)));
 
     renderStatusBar(t);
-    byId("dContent").innerHTML = t.content; // 服务端已白名单净化
+    byId("dContent").innerHTML = renderMentionsInHtml(t.content); // 服务端已净化，补 mention 链接
     renderComments(t);
     byId("commentError").hidden = true;
     renderList();
@@ -335,11 +625,31 @@
   }
 
   function openCreate() {
+    state.editing = false;
     showPanel("editor");
     byId("editorError").hidden = true;
     byId("eTitle").value = "";
+    document.querySelector("#editorView h2").textContent = "新建工单";
+    document.querySelector("#editorView .tk-hint").textContent =
+      "支持加粗 / 斜体 / 下划线 / 删除线 / 字号 / 列表 / 引用 / 插入图片 / @提及成员；图片上限 6MB。";
     if (!createEditor) createEditor = makeEditor(byId("editorHost"));
     else createEditor.clear();
+    byId("eTitle").focus();
+  }
+
+  function openEdit() {
+    if (!state.current) return;
+    state.editing = true;
+    showPanel("editor");
+    byId("editorError").hidden = true;
+    document.querySelector("#editorView h2").textContent = "编辑工单";
+    document.querySelector("#editorView .tk-hint").textContent =
+      "修改标题或正文后提交，更新时间将自动刷新。";
+    byId("eTitle").value = state.current.title;
+    if (!createEditor) createEditor = makeEditor(byId("editorHost"));
+    // 用原始 HTML 填充（去掉 mention 链接的渲染，保持纯文本 @ 形式以便再编辑）
+    createEditor.getBodyHtml = function () { return state.current.content; };
+    byId("editorHost").querySelector(".rt-body").innerHTML = state.current.content;
     byId("eTitle").focus();
   }
 
@@ -359,7 +669,10 @@
     }
     var btn = byId("saveBtn");
     btn.disabled = true;
-    post("/api/tickets", { title: title, content: html }).then(function (r) {
+    var isEdit = state.editing && state.current;
+    var url = isEdit ? "/api/tickets/" + encodeURIComponent(state.current.id) : "/api/tickets";
+    var method = isEdit ? "PUT" : "POST";
+    request(method, url, { title: title, content: html }).then(function (r) {
       btn.disabled = false;
       if (!r.ok) {
         err.textContent = (r.data && r.data.error) || "提交失败";
@@ -369,6 +682,7 @@
       err.hidden = true;
       createEditor.clear();
       var ticket = r.data.ticket;
+      state.editing = false;
       return loadTickets().then(function () { renderDetail(ticket); });
     }).catch(function () {
       btn.disabled = false;
@@ -427,6 +741,17 @@
       });
   }
 
+  function onCancelEdit() {
+    if (state.editing && state.current) {
+      // 编辑取消 → 返回详情
+      showPanel("detail");
+      state.editing = false;
+    } else {
+      // 新建取消 → 回到空态
+      showPanel("empty");
+    }
+  }
+
   /* ────────────── 初始化 ────────────── */
 
   function initTopbar() {
@@ -475,8 +800,8 @@
       placeholder: "补充说明…"
     });
     byId("newBtn").addEventListener("click", openCreate);
-    byId("cancelBtn").addEventListener("click", function () { showPanel("empty"); });
-    byId("cancelBtn2").addEventListener("click", function () { showPanel("empty"); });
+    byId("cancelBtn").addEventListener("click", onCancelEdit);
+    byId("cancelBtn2").addEventListener("click", onCancelEdit);
     byId("saveBtn").addEventListener("click", saveTicket);
     byId("commentSubmit").addEventListener("click", addComment);
     loadTickets().then(function () {

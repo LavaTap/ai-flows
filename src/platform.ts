@@ -2012,6 +2012,64 @@ export async function startPlatformServer(
       return;
     }
 
+    // 编辑工单（仅提交人自己可编辑标题和正文，同步更新时间）
+    const tem = path.match(/^\/api\/tickets\/([^/\\]+)$/);
+    if (tem && req.method === "PUT") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const ticket = loadTickets().find((t) => t.id === tem[1]);
+      if (!ticket) {
+        sendJson(res, 404, { error: "工单不存在" });
+        return;
+      }
+      if (!canAccessTicket(user, ticket)) {
+        sendJson(res, 403, { error: "仅本部门员工或部门主管可查看该工单" });
+        return;
+      }
+      if (ticket.authorEmail !== user.email) {
+        sendJson(res, 403, { error: "仅提交人可编辑工单" });
+        return;
+      }
+      let title = "";
+      let rawContent: unknown = "";
+      try {
+        const body = JSON.parse(await readBody(req, 64 * 1024)) as {
+          title?: unknown;
+          content?: unknown;
+        };
+        if (typeof body.title === "string") title = body.title.trim();
+        rawContent = body.content;
+      } catch {
+        sendJson(res, 400, { error: "请求体过大或不是合法 JSON" });
+        return;
+      }
+      if (!title || title.length > TICKET_TITLE_MAX) {
+        sendJson(res, 400, { error: `标题不能为空且不超过 ${TICKET_TITLE_MAX} 字` });
+        return;
+      }
+      const content = normalizeRichField(rawContent);
+      if (content === null) {
+        sendJson(res, 400, { error: `正文过长（上限 ${TICKET_CONTENT_MAX} 字）` });
+        return;
+      }
+      if (isEmptyRichHtml(content)) {
+        sendJson(res, 400, { error: "正文不能为空" });
+        return;
+      }
+      const now = new Date().toISOString();
+      const updated = updateTicket(ticket.id, (t) => {
+        t.title = title;
+        t.content = content;
+        t.images = collectTicketImages(content);
+        t.updatedAt = now;
+      });
+      sendJson(res, 200, { ticket: toTicketView(updated as TicketRecord, user) });
+      return;
+    }
+
     // 工单详情（本部门员工 / 主管）
     const tdm = path.match(/^\/api\/tickets\/([^/\\]+)$/);
     if (tdm && req.method === "GET") {

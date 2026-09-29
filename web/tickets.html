@@ -7,14 +7,11 @@
   <link rel="stylesheet" href="./ai-pipeline.css">
   <script src="/user-menu.js" defer></script>
   <style>
-    /* 工单页专用样式：左列表 + 右详情/编辑器 */
+    /* 工单页专用样式：左列表贴边 + 右详情 */
     body { background: var(--paper); }
+    [hidden] { display: none !important; }
 
-    .page-shell { max-width: 1120px; margin: 0 auto; padding: 28px 24px 72px; }
-    .page-title { font: 300 28px/36px var(--font-sans); color: var(--ink-soft); margin: 0 0 4px; }
-    .page-title em { font-style: normal; color: var(--led); font-weight: 500; }
-    .page-sub { font: 400 13px/20px var(--font-sans); color: var(--muted); margin: 0; }
-    .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+    .page-shell { padding: 0; }
 
     .btn { padding: 8px 16px; border-radius: 8px; font: 500 12px/18px var(--font-sans); cursor: pointer;
       border: 1px solid var(--glass-line); background: var(--glass-fill); color: var(--ink-soft); white-space: nowrap; }
@@ -23,15 +20,20 @@
     .btn.primary:hover { background: #4338ca; }
     .btn:disabled { opacity: .5; cursor: not-allowed; }
 
-    .tk-layout { display: grid; grid-template-columns: 348px minmax(0, 1fr); gap: 20px; align-items: start; }
+    .tk-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 0;
+      height: calc(100vh - 56px); }
     @media (max-width: 900px) { .tk-layout { grid-template-columns: minmax(0, 1fr); } }
 
     /* 去卡片化：无背景/边框/阴影，仅结构容器 */
     .card { background: transparent; border: none; border-radius: 0; box-shadow: none; }
 
     /* ---- 左列：筛选 + 列表 ---- */
-    .side { padding: 16px; position: sticky; top: 16px; }
-    .seg { display: flex; gap: 4px; background: var(--paper-2); border-radius: 999px; padding: 3px; margin-bottom: 10px; }
+    .side { padding: 16px 12px; height: 100%; overflow-y: auto;
+      border-right: 1px solid var(--glass-line); background: var(--paper-2); }
+    .side-top { display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 10px; }
+    .side-top .new-mini { padding: 5px 12px; font-size: 11px; line-height: 16px; }
+    .seg { display: flex; gap: 4px; background: var(--glass-fill); border-radius: 999px; padding: 3px; margin-bottom: 10px; }
     .seg button { flex: 1; border: 0; background: transparent; border-radius: 999px; cursor: pointer;
       font: 500 12px/18px var(--font-sans); color: var(--muted); padding: 6px 0; }
     .seg button.on { background: var(--glass-fill); color: var(--led); box-shadow: 0 1px 2px rgba(15,23,42,.08); }
@@ -41,8 +43,8 @@
     .mine-toggle { display: flex; align-items: center; gap: 6px; margin: 10px 0 4px;
       font: 400 12px/18px var(--font-sans); color: var(--muted); cursor: pointer; }
 
-    .tk-list { list-style: none; margin: 12px 0 0; padding: 0; max-height: calc(100vh - 300px); overflow: auto; }
-    .tk-item { padding: 12px 12px; border: 1px solid transparent; border-radius: 12px; cursor: pointer; }
+    .tk-list { list-style: none; margin: 12px 0 0; padding: 0; }
+    .tk-item { padding: 10px 12px; border: 1px solid transparent; border-radius: 10px; cursor: pointer; }
     .tk-item:hover { background: var(--paper-2); }
     .tk-item.on { background: var(--led-soft); border-color: rgba(79,70,229,.25); }
     .tk-item-title { font: 600 13px/20px var(--font-sans); color: var(--ink-soft); margin-bottom: 6px;
@@ -58,9 +60,9 @@
     .tk-badge.req { background: var(--paper-2); color: var(--muted); }
 
     /* ---- 右列：详情 / 编辑器 ---- */
-    .panel { padding: 22px 24px; min-height: 320px; }
+    .panel { height: 100%; overflow-y: auto; padding: 28px 40px; }
     .panel-empty { display: flex; flex-direction: column; align-items: center; justify-content: center;
-      min-height: 320px; gap: 8px; color: var(--muted-2); font: 400 13px/20px var(--font-sans); }
+      height: 100%; gap: 8px; color: var(--muted-2); font: 400 13px/20px var(--font-sans); }
     .tk-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
     .tk-head h2 { flex: 1; margin: 0; font: 600 19px/28px var(--font-sans); color: var(--ink); }
     .tk-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font: 400 12px/18px var(--font-sans); color: var(--muted); margin-bottom: 14px; }
@@ -118,6 +120,31 @@
     .rt-body:empty::before { content: attr(data-placeholder); color: var(--muted-2); }
     .rt.small .rt-body { min-height: 84px; max-height: 200px; }
 
+    /* @ 提及下拉 */
+    .mention-pop { position: absolute; z-index: 50; background: #fff; border: 1px solid var(--glass-line);
+      border-radius: 8px; box-shadow: 0 4px 16px rgba(15,23,42,.12); max-height: 220px; overflow-y: auto;
+      min-width: 200px; padding: 4px; }
+    .mention-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+      border-radius: 6px; cursor: pointer; font: 400 12px/18px var(--font-sans); color: var(--ink-soft); }
+    .mention-item:hover, .mention-item.on { background: var(--led-soft); color: var(--led); }
+    .mention-item .tk-avatar { width: 24px; height: 24px; font-size: 11px; }
+    .mention-item .mi-meta { flex: 1; min-width: 0; }
+    .mention-item .mi-name { font-weight: 500; font-size: 12px; }
+    .mention-item .mi-dept { font-size: 11px; color: var(--muted); }
+
+    /* 工单内容中 @ 提及链接 */
+    .tk-content a.mention-link, .tk-comment-body a.mention-link {
+      color: var(--led); font-weight: 500; text-decoration: none; background: var(--led-soft);
+      padding: 1px 6px; border-radius: 4px; }
+    .tk-content a.mention-link:hover, .tk-comment-body a.mention-link:hover {
+      text-decoration: underline; }
+
+    /* 提交人可点击跳转 */
+    .tk-meta .author-link { color: var(--led); cursor: pointer; text-decoration: none; }
+    .tk-meta .author-link:hover { text-decoration: underline; }
+    .tk-comment-who .author-link { color: inherit; text-decoration: none; cursor: pointer; }
+    .tk-comment-who .author-link:hover { color: var(--led); }
+
     .tk-hint { font: 400 11px/16px var(--font-sans); color: var(--muted-2); margin-top: 6px; }
     .tk-error { font: 400 12px/18px var(--font-sans); color: var(--block); margin-top: 8px; }
   </style>
@@ -157,17 +184,13 @@
   </header>
 
   <div class="page-shell">
-    <div class="page-head">
-      <div>
-        <h1 class="page-title"><em>工单系统</em></h1>
-        <p class="page-sub">提交工单并跟踪处理进度；同部门同事与主管可见，状态仅主管可切换</p>
-      </div>
-      <button class="btn primary" id="newBtn" type="button">新建工单</button>
-    </div>
-
     <div class="tk-layout">
-      <!-- 左列：筛选 + 列表 -->
+      <!-- 左列：筛选 + 列表（贴边） -->
       <aside class="card side">
+        <div class="side-top">
+          <div style="font:600 13px/18px var(--font-sans); color:var(--ink);">工单</div>
+          <button class="btn primary new-mini" id="newBtn" type="button">+ 新建</button>
+        </div>
         <div class="seg" id="statusSeg">
           <button type="button" data-status="all" class="on">全部</button>
           <button type="button" data-status="open">待处理</button>
@@ -188,7 +211,10 @@
         <div id="detailView" hidden>
           <div class="tk-head">
             <h2 id="dTitle"></h2>
-            <span class="tk-badge" id="dStatus"></span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <button class="btn" id="editBtn" type="button" style="display:none;">编辑</button>
+              <span class="tk-badge" id="dStatus"></span>
+            </div>
           </div>
           <div class="tk-meta" id="dMeta"></div>
           <div class="tk-statusbar" id="dStatusBar"></div>
@@ -214,7 +240,7 @@
           <input class="tk-input" id="eTitle" maxlength="100" placeholder="一句话说明问题，如：报告页在 Safari 下错位">
           <div class="tk-field-label">问题描述</div>
           <div id="editorHost"></div>
-          <div class="tk-hint">支持加粗 / 斜体 / 下划线 / 删除线 / 字号 / 列表 / 引用 / 插入图片；图片上限 6MB。</div>
+          <div class="tk-hint">支持加粗 / 斜体 / 下划线 / 删除线 / 字号 / 列表 / 引用 / 插入图片 / @提及成员；图片上限 6MB。</div>
           <div class="tk-editor-foot">
             <button class="btn" id="cancelBtn2" type="button">取消</button>
             <button class="btn primary" id="saveBtn" type="button">提交工单</button>
@@ -230,10 +256,15 @@
     <div class="rt">
       <div class="rt-bar">
         <select class="rt-size" title="字号">
-          <option value="2">小</option>
-          <option value="3" selected>正文</option>
-          <option value="5">大</option>
-          <option value="6">特大</option>
+          <option value="12px">12px</option>
+          <option value="13px" selected>13px</option>
+          <option value="14px">14px</option>
+          <option value="16px">16px</option>
+          <option value="18px">18px</option>
+          <option value="20px">20px</option>
+          <option value="24px">24px</option>
+          <option value="28px">28px</option>
+          <option value="32px">32px</option>
         </select>
         <button type="button" class="rt-btn" data-cmd="bold" title="加粗"><b>B</b></button>
         <button type="button" class="rt-btn" data-cmd="italic" title="斜体"><i>I</i></button>
@@ -245,6 +276,7 @@
         <button type="button" class="rt-btn" data-block="blockquote" title="引用">引用</button>
         <span class="rt-sep"></span>
         <button type="button" class="rt-btn" data-action="image" title="插入图片">图片</button>
+        <button type="button" class="rt-btn" data-action="mention" title="提及成员">@提及</button>
         <button type="button" class="rt-btn" data-cmd="removeFormat" title="清除格式">清格式</button>
       </div>
       <div class="rt-body" contenteditable="true" data-placeholder="描述复现步骤、预期结果与实际结果…"></div>

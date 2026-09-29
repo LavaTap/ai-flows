@@ -72,18 +72,19 @@
     ".d-roles-head{font:600 12px/18px var(--font-sans);color:var(--ink-soft);margin-bottom:8px;display:flex;align-items:center;gap:6px;position:relative;}",
     ".d-roles-list{display:flex;gap:8px;flex-wrap:wrap;}",
     ".role-chip{position:relative;display:inline-flex;align-items:center;gap:6px;padding:4px 10px 4px 4px;",
-    "border:1px solid var(--glass-line);border-radius:999px;background:var(--glass-fill);cursor:default;white-space:nowrap;}",
+    "border:1px solid var(--glass-line);border-radius:999px;background:var(--glass-fill);cursor:pointer;white-space:nowrap;}",
     ".role-chip:hover{background:var(--paper-2);}",
     ".rc-chip-avatar{width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;",
     "color:#fff;font:600 11px/1 var(--font-sans);flex:none;box-shadow:0 1px 3px rgba(20,20,20,.15);}",
     ".rc-chip-name{font:500 12px/18px var(--font-sans);color:var(--ink-soft);}",
-    /* hover 弹出的完整长方形卡片 */
+    /* hover 弹出的完整长方形卡片（JS 控制显隐，鼠标可移入卡片） */
     ".role-card{position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);",
     "display:none;width:352px;padding:12px 14px;border:1px solid var(--glass-line-strong);",
     "border-radius:12px;background:var(--glass-fill);",
     "box-shadow:0 8px 24px rgba(15,23,42,.12),0 2px 6px rgba(15,23,42,.08);",
-    "z-index:20;pointer-events:none;}",
-    ".role-chip:hover .role-card{display:flex;}",
+    "z-index:25;cursor:pointer;flex-direction:row;gap:0;}",
+    ".role-card.show{display:flex;}",
+    ".role-card:hover{background:var(--paper-2);}",
     ".rc-avatar{width:42px;height:42px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;",
     "color:#fff;font:600 18px/1 var(--font-sans);flex:none;box-shadow:0 2px 6px rgba(15,23,42,.15);}",
     ".rc-body{display:flex;flex-direction:column;min-width:0;margin-left:12px;justify-content:center;flex:1;}",
@@ -481,6 +482,42 @@
       card.appendChild(av);
       card.appendChild(body);
       chip.appendChild(card);
+
+      /* hover 显隐：带 200ms 延迟，鼠标可从 chip 移到 card 上不消失 */
+      var hideTimer = null;
+      function showCard() {
+        if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+        card.classList.add("show");
+      }
+      function hideCardSoon() {
+        if (hideTimer) clearTimeout(hideTimer);
+        hideTimer = setTimeout(function () {
+          card.classList.remove("show");
+          hideTimer = null;
+        }, 200);
+      }
+      chip.addEventListener("mouseenter", showCard);
+      chip.addEventListener("mouseleave", hideCardSoon);
+      card.addEventListener("mouseenter", showCard);
+      card.addEventListener("mouseleave", hideCardSoon);
+
+      /* 点击 chip 或卡片 → 跳转到个人主页 */
+      function goProfile(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var prefix = m.email.split("@")[0];
+        // 记录浏览历史
+        try {
+          var recents = JSON.parse(localStorage.getItem("home_recent") || "[]");
+          recents = recents.filter(function (r) { return r.id !== m.email; });
+          recents.unshift({ _type: "user", email: m.email, name: displayName(m), department: m.department, id: m.email });
+          localStorage.setItem("home_recent", JSON.stringify(recents.slice(0, 20)));
+        } catch (e) {}
+        window.open("/profile/" + encodeURIComponent(prefix), "_blank");
+      }
+      chip.addEventListener("click", goProfile);
+      card.addEventListener("click", goProfile);
+
       list.appendChild(chip);
     });
     box.appendChild(list);
