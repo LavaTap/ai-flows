@@ -25,6 +25,12 @@
     return email ? email.charAt(0).toUpperCase() : "?";
   }
 
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
   function emailPrefix(email) {
     return email ? email.split("@")[0] : "";
   }
@@ -59,6 +65,126 @@
 
   function post(url, body) { return request("POST", url, body); }
   function get(url) { return request("GET", url); }
+
+  /* ────────────── 成员与用户卡片 ────────────── */
+
+  var members = boot.members || [];
+
+  function memberByEmail(email) {
+    if (!email) return null;
+    for (var i = 0; i < members.length; i++) {
+      if (members[i].email === email) return members[i];
+    }
+    return null;
+  }
+
+  function memberByName(name) {
+    if (!name) return null;
+    for (var i = 0; i < members.length; i++) {
+      if ((members[i].name || "").trim() === name) return members[i];
+    }
+    return null;
+  }
+
+  /** 生成「首字 / 头像图」圆形头像元素 */
+  function makeAvatar(user, email, cls) {
+    var av = document.createElement("span");
+    av.className = cls;
+    if (user && user.avatar) {
+      av.innerHTML = '<img src="/api/avatars/' + esc(user.avatar) + '" alt="">';
+    } else {
+      av.style.background = colorOf(email);
+      av.textContent = firstChar(user && user.name, email);
+    }
+    return av;
+  }
+
+  /** 记录浏览历史并跳转个人主页 */
+  function goProfile(email, name, department) {
+    try {
+      var recents = JSON.parse(localStorage.getItem("home_recent") || "[]");
+      recents = recents.filter(function (r) { return r.id !== email; });
+      recents.unshift({ _type: "user", email: email, name: name, department: department, id: email });
+      localStorage.setItem("home_recent", JSON.stringify(recents.slice(0, 20)));
+    } catch (e) {}
+    location.href = profileUrl(email);
+  }
+
+  var cardTimer = null;
+
+  function showUserCard(email, anchor) {
+    var card = byId("userCard");
+    var m = memberByEmail(email);
+    if (!card || !m) return;
+    if (cardTimer) { clearTimeout(cardTimer); cardTimer = null; }
+    card.innerHTML = "";
+    var head = document.createElement("div");
+    head.className = "uc-head";
+    head.appendChild(makeAvatar(m, email, "uc-av"));
+    var box = document.createElement("div");
+    box.style.minWidth = "0";
+    var nm = document.createElement("div");
+    nm.className = "uc-name";
+    nm.textContent = m.name || m.email;
+    var sub = document.createElement("div");
+    sub.className = "uc-sub";
+    sub.textContent = [m.department, m.title].filter(Boolean).join(" · ");
+    box.appendChild(nm);
+    box.appendChild(sub);
+    head.appendChild(box);
+    card.appendChild(head);
+
+    var row = document.createElement("div");
+    row.className = "uc-row";
+    var lb = document.createElement("b");
+    lb.textContent = "邮箱";
+    row.appendChild(lb);
+    var val = document.createElement("span");
+    val.className = "mono";
+    val.textContent = m.email;
+    row.appendChild(val);
+    card.appendChild(row);
+
+    card.hidden = false;
+    // 定位：优先锚点右下方，超出视口时收敛
+    var r = anchor.getBoundingClientRect();
+    var w = card.offsetWidth, h = card.offsetHeight;
+    var left = Math.min(Math.max(8, r.left), window.innerWidth - w - 8);
+    var top = r.bottom + 8;
+    if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 8);
+    card.style.left = left + "px";
+    card.style.top = top + "px";
+  }
+
+  function hideUserCard(now) {
+    var card = byId("userCard");
+    if (!card) return;
+    if (now) {
+      if (cardTimer) { clearTimeout(cardTimer); cardTimer = null; }
+      card.hidden = true;
+      return;
+    }
+    cardTimer = setTimeout(function () { card.hidden = true; }, 140);
+  }
+
+  /** 给元素绑定「悬停弹用户卡片」行为 */
+  function bindUserCard(el, email) {
+    if (!email) return;
+    el.addEventListener("mouseenter", function () { showUserCard(email, el); });
+    el.addEventListener("mouseleave", function () { hideUserCard(false); });
+  }
+
+  /** 在容器内挂一次的事件代理：鼠标移出卡片本身也隐藏 */
+  function initUserCard() {
+    var card = byId("userCard");
+    if (!card) return;
+    card.addEventListener("mouseenter", function () {
+      if (cardTimer) { clearTimeout(cardTimer); cardTimer = null; }
+    });
+    card.addEventListener("mouseleave", function () { hideUserCard(false); });
+    document.addEventListener("mousedown", function () { hideUserCard(true); });
+    window.addEventListener("scroll", function () { if (!byId("userCard").hidden) hideUserCard(true); }, true);
+  }
 
   /* ────────────── 富文本编辑器（工具栏 + contenteditable） ────────────── */
 
@@ -176,6 +302,7 @@
       var a = document.createElement("a");
       a.href = profileUrl(u.email);
       a.className = "mention-link";
+      a.setAttribute("data-email", u.email);
       a.textContent = "@" + u.name;
       a.contentEditable = "false";
       range.insertNode(a);
@@ -353,7 +480,6 @@
     editing: false
   };
   var createEditor = null;
-  var commentEditor = null;
 
   function filtered() {
     var q = state.filter.q.trim().toLowerCase();
@@ -361,7 +487,7 @@
       if (state.filter.status !== "all" && t.status !== state.filter.status) return false;
       if (state.filter.mine && t.authorEmail !== user.email) return false;
       if (q) {
-        var hay = (t.title + " " + t.authorName + " " + t.authorEmail).toLowerCase();
+        var hay = (t.title + " " + t.authorName + " " + t.authorEmail + " " + (t.assigneeName || "")).toLowerCase();
         if (hay.indexOf(q) === -1) return false;
       }
       return true;
@@ -404,6 +530,7 @@
       var who = document.createElement("span");
       who.className = "grow";
       who.textContent = t.authorName + (t.authorEmail === user.email ? "（我）" : "");
+      if (t.assigneeName) who.textContent += " → " + t.assigneeName;
       meta.appendChild(who);
 
       var time = document.createElement("span");
@@ -426,45 +553,84 @@
   }
 
   /**
-   * 把 HTML 中的 @姓名 转换成可点击的 mention 链接
-   * 由于服务端净化后只保留白名单标签，这里用 DOM 操作遍历文本节点
+   * 升级富文本里的 @提及：把服务端存下的 a[data-email]（或旧数据的 a.mention-link）
+   * 渲染成「头像 + 名字」胶囊，并挂上悬停用户卡片与个人主页跳转
    */
-  function renderMentionsInHtml(html) {
-    var div = document.createElement("div");
-    div.innerHTML = html;
-    // 遍历所有文本节点，替换 @xxx 为链接
-    var walker = document.createTreeWalker(div, NodeFilter.SHOW_TEXT, null);
-    var nodes = [];
-    var n;
-    while (n = walker.nextNode()) nodes.push(n);
-    nodes.forEach(function (textNode) {
-      var text = textNode.textContent;
-      // 匹配 @后面跟中文/英文/数字（直到空格或标点或行尾）
-      var re = /@([^\s@，。、；：,.<>"'()（）【】\[\]{}！!？?\/\\]+)/g;
-      if (!re.test(text)) return;
-      re.lastIndex = 0;
-      var frag = document.createDocumentFragment();
-      var last = 0;
-      var m;
-      while ((m = re.exec(text))) {
-        if (m.index > last) {
-          frag.appendChild(document.createTextNode(text.substring(last, m.index)));
-        }
-        var a = document.createElement("a");
-        a.href = "#"; // 纯展示用，真实跳转需知道 email，这里先占位
-        a.className = "mention-link";
-        a.textContent = m[0];
-        // 由于纯文本匹配不知道 email，这里只做样式高亮，不做跳转
-        // 如果以后需要跳转，可以在存库时就存成带 data-email 的链接
-        frag.appendChild(a);
-        last = m.index + m[0].length;
+  function decorateRich(root) {
+    var links = root.querySelectorAll("a.mention-link, a[data-email]");
+    Array.prototype.forEach.call(links, function (a) {
+      var email = a.getAttribute("data-email") || "";
+      var name = a.textContent.replace(/^@/, "").trim();
+      if (!email) {
+        var hit = memberByName(name);
+        if (hit) email = hit.email;
       }
-      if (last < text.length) {
-        frag.appendChild(document.createTextNode(text.substring(last)));
+      var m = memberByEmail(email);
+      a.classList.remove("mention-link");
+      a.classList.add("mention-chip");
+      a.setAttribute("data-email", email);
+      a.href = email ? profileUrl(email) : "#";
+      a.innerHTML = "";
+      a.appendChild(makeAvatar(m, email, "mc-av"));
+      var nm = document.createElement("span");
+      nm.textContent = "@" + ((m && m.name) || name);
+      a.appendChild(nm);
+      if (email) {
+        bindUserCard(a, email);
+        a.addEventListener("click", function (e) {
+          e.preventDefault();
+          goProfile(email, (m && m.name) || name, m && m.department);
+        });
       }
-      textNode.parentNode.replaceChild(frag, textNode);
     });
-    return div.innerHTML;
+  }
+
+  /**
+   * 纯文本评论 → 落库 HTML：转义 + 换行转 <br> + @姓名 转带 data-email 的提及链接
+   * （评论输入为纯文本，这里只做最小转换，仍由服务端 sanitizeRichHtml 二次净化）
+   */
+  function buildCommentHtml(text) {
+    var names = [];
+    var byName = {};
+    members.forEach(function (m) {
+      var nm = (m.name || "").trim();
+      if (!nm || byName[nm]) return;
+      byName[nm] = m;
+      names.push(nm);
+    });
+    names.sort(function (a, b) { return b.length - a.length; });
+
+    function escText(s) {
+      return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    var out = "";
+    var plain = "";
+    function flush() {
+      if (plain) { out += escText(plain); plain = ""; }
+    }
+    var i = 0;
+    while (i < text.length) {
+      var ch = text.charAt(i);
+      if (ch === "@" && (i === 0 || /[\s\u3000]/.test(text.charAt(i - 1)))) {
+        var hit = null;
+        for (var k = 0; k < names.length; k++) {
+          if (text.substr(i + 1, names[k].length) === names[k]) { hit = names[k]; break; }
+        }
+        if (hit) {
+          flush();
+          var m = byName[hit];
+          out += '<a href="' + esc(profileUrl(m.email)) + '" data-email="' + esc(m.email) + '">@' + escText(hit) + "</a>";
+          i += hit.length + 1;
+          continue;
+        }
+      }
+      if (ch === "\n") { flush(); out += "<br>"; i++; continue; }
+      plain += ch;
+      i++;
+    }
+    flush();
+    return out;
   }
 
   function renderStatusBar(t) {
@@ -522,14 +688,9 @@
       whoLink.textContent = c.author;
       whoLink.addEventListener("click", function (e) {
         e.preventDefault();
-        try {
-          var recents = JSON.parse(localStorage.getItem("home_recent") || "[]");
-          recents = recents.filter(function (r) { return r.id !== c.email; });
-          recents.unshift({ _type: "user", email: c.email, name: c.author, department: c.department, id: c.email });
-          localStorage.setItem("home_recent", JSON.stringify(recents.slice(0, 20)));
-        } catch (e) {}
-        location.href = profileUrl(c.email);
+        goProfile(c.email, c.author, c.department);
       });
+      bindUserCard(whoLink, c.email);
       who.appendChild(whoLink);
       var sub = document.createElement("span");
       sub.textContent = (c.department ? c.department + " · " : "") + formatTime(c.at);
@@ -538,7 +699,8 @@
 
       var body = document.createElement("div");
       body.className = "tk-comment-body";
-      body.innerHTML = renderMentionsInHtml(c.content); // 服务端已净化，补 mention 链接
+      body.innerHTML = c.content; // 服务端已净化
+      decorateRich(body);
       main.appendChild(body);
 
       row.appendChild(main);
@@ -550,6 +712,177 @@
     byId("emptyState").hidden = which !== "empty";
     byId("detailView").hidden = which !== "detail";
     byId("editorView").hidden = which !== "editor";
+  }
+
+  /* ────────────── 负责人（指派 / 改派 / 清除） ────────────── */
+
+  var assignPop = null;
+
+  function onAssignDocDown(e) {
+    if (assignPop && !assignPop.contains(e.target)) closeAssignPop();
+  }
+
+  function closeAssignPop() {
+    if (!assignPop) return;
+    assignPop.remove();
+    assignPop = null;
+    document.removeEventListener("mousedown", onAssignDocDown, true);
+    window.removeEventListener("scroll", onAssignDocDown, true);
+  }
+
+  /** 负责人 meta 项：名字胶囊（悬停出用户卡片）+ 主管「指派 / 改派」按钮 */
+  function renderAssignee(t) {
+    var span = document.createElement("span");
+    var b = document.createElement("b");
+    b.textContent = "负责人 ";
+    span.appendChild(b);
+    if (t.assigneeEmail) {
+      var m = memberByEmail(t.assigneeEmail);
+      var chip = document.createElement("a");
+      chip.className = "mention-chip";
+      chip.href = profileUrl(t.assigneeEmail);
+      chip.setAttribute("data-email", t.assigneeEmail);
+      chip.appendChild(makeAvatar(m, t.assigneeEmail, "mc-av"));
+      var nm = document.createElement("span");
+      nm.textContent = (m && m.name) || t.assigneeName || t.assigneeEmail;
+      chip.appendChild(nm);
+      chip.addEventListener("click", function (e) {
+        e.preventDefault();
+        goProfile(t.assigneeEmail, (m && m.name) || t.assigneeName, m && m.department);
+      });
+      bindUserCard(chip, t.assigneeEmail);
+      span.appendChild(chip);
+    } else {
+      var none = document.createElement("span");
+      none.className = "tk-none";
+      none.textContent = "未指派";
+      span.appendChild(none);
+    }
+    if (isSuper) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "tk-assign-btn";
+      btn.textContent = t.assigneeEmail ? "改派" : "指派";
+      btn.addEventListener("click", function () { openAssignPop(btn, t); });
+      span.appendChild(btn);
+    }
+    return span;
+  }
+
+  /** 打开成员选择浮层（仅主管） */
+  function openAssignPop(anchor, t) {
+    closeAssignPop();
+    var pop = document.createElement("div");
+    pop.className = "assign-pop";
+    var title = document.createElement("div");
+    title.className = "ap-title";
+    title.textContent = t.nodeId
+      ? "指派负责人（该员工会加入关联节点的执行角色）"
+      : "指派负责人（被指派者会收到消息提醒）";
+    pop.appendChild(title);
+    var search = document.createElement("input");
+    search.className = "tk-input";
+    search.type = "search";
+    search.placeholder = "搜索姓名 / 邮箱 / 部门";
+    search.maxLength = 40;
+    pop.appendChild(search);
+    var list = document.createElement("ul");
+    list.className = "ap-list";
+    pop.appendChild(list);
+
+    function renderMemberList(q) {
+      var ql = (q || "").trim().toLowerCase();
+      var hit = members.filter(function (m) {
+        if (!ql) return true;
+        var hay = ((m.name || "") + " " + m.email + " " + (m.department || "") + " " + (m.title || "")).toLowerCase();
+        return hay.indexOf(ql) !== -1;
+      }).slice(0, 30);
+      list.innerHTML = "";
+      if (!hit.length) {
+        var empty = document.createElement("li");
+        empty.className = "tk-empty";
+        empty.textContent = "没有匹配的成员";
+        list.appendChild(empty);
+        return;
+      }
+      hit.forEach(function (m) {
+        var li = document.createElement("li");
+        li.className = "ap-item";
+        li.appendChild(makeAvatar(m, m.email, "tk-avatar"));
+        var meta = document.createElement("div");
+        meta.className = "ap-meta";
+        var nm = document.createElement("div");
+        nm.className = "ap-name";
+        nm.textContent = (m.name || m.email) + (m.email === t.assigneeEmail ? "（当前负责人）" : "");
+        var sub = document.createElement("div");
+        sub.className = "ap-sub";
+        sub.textContent = [m.department, m.title, m.email].filter(Boolean).join(" · ");
+        meta.appendChild(nm);
+        meta.appendChild(sub);
+        li.appendChild(meta);
+        li.addEventListener("click", function () {
+          closeAssignPop();
+          assignTicket(t.id, m.email);
+        });
+        list.appendChild(li);
+      });
+    }
+
+    if (t.assigneeEmail) {
+      var clear = document.createElement("button");
+      clear.type = "button";
+      clear.className = "ap-clear";
+      clear.textContent = "清除负责人";
+      clear.addEventListener("click", function () {
+        closeAssignPop();
+        assignTicket(t.id, "");
+      });
+      pop.appendChild(clear);
+    }
+
+    pop.style.visibility = "hidden";
+    document.body.appendChild(pop);
+    assignPop = pop;
+    renderMemberList("");
+    search.addEventListener("input", function () { renderMemberList(search.value); });
+    search.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") closeAssignPop();
+    });
+
+    var r = anchor.getBoundingClientRect();
+    var w = pop.offsetWidth, h = pop.offsetHeight;
+    var left = Math.min(Math.max(8, r.right - w), window.innerWidth - w - 8);
+    var top = r.bottom + 6;
+    if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
+    pop.style.left = left + "px";
+    pop.style.top = top + "px";
+    pop.style.visibility = "";
+    document.addEventListener("mousedown", onAssignDocDown, true);
+    window.addEventListener("scroll", onAssignDocDown, true);
+    search.focus();
+  }
+
+  function assignTicket(id, email) {
+    return post("/api/tickets/" + encodeURIComponent(id) + "/assignee", { email: email })
+      .then(function (r) {
+        if (!r.ok) {
+          alert((r.data && r.data.error) || "指派失败");
+          return;
+        }
+        var ticket = r.data.ticket;
+        state.current = ticket;
+        state.tickets = state.tickets.map(function (x) {
+          return x.id === ticket.id
+            ? Object.assign({}, x, {
+                assigneeEmail: ticket.assigneeEmail,
+                assigneeName: ticket.assigneeName,
+                updatedAt: ticket.updatedAt,
+              })
+            : x;
+        });
+        renderDetail(ticket);
+      })
+      .catch(function () { alert("指派失败，请稍后重试"); });
   }
 
   function renderDetail(t) {
@@ -571,7 +904,7 @@
 
     var meta = byId("dMeta");
     meta.innerHTML = "";
-    // 提交人：可点击跳转到个人主页
+    // 提交人：可点击跳转到个人主页，悬停出用户卡片
     var authorSpan = document.createElement("span");
     var authorB = document.createElement("b");
     authorB.textContent = "提交人 ";
@@ -582,23 +915,20 @@
     authorLink.textContent = t.authorName + (t.mine ? "（我）" : "");
     authorLink.addEventListener("click", function (e) {
       e.preventDefault();
-      // 记录浏览历史并跳转
-      try {
-        var recents = JSON.parse(localStorage.getItem("home_recent") || "[]");
-        recents = recents.filter(function (r) { return r.id !== t.authorEmail; });
-        recents.unshift({ _type: "user", email: t.authorEmail, name: t.authorName, department: t.department, id: t.authorEmail });
-        localStorage.setItem("home_recent", JSON.stringify(recents.slice(0, 20)));
-      } catch (e) {}
-      location.href = profileUrl(t.authorEmail);
+      goProfile(t.authorEmail, t.authorName, t.department);
     });
+    bindUserCard(authorLink, t.authorEmail);
     authorSpan.appendChild(authorLink);
     meta.appendChild(authorSpan);
+    meta.appendChild(renderAssignee(t));
     meta.appendChild(metaItem("部门 ", t.department));
     meta.appendChild(metaItem("创建 ", formatTime(t.createdAt)));
     meta.appendChild(metaItem("更新 ", formatTime(t.updatedAt)));
 
     renderStatusBar(t);
-    byId("dContent").innerHTML = renderMentionsInHtml(t.content); // 服务端已净化，补 mention 链接
+    var contentEl = byId("dContent");
+    contentEl.innerHTML = t.content; // 服务端已净化
+    decorateRich(contentEl);
     renderComments(t);
     byId("commentError").hidden = true;
     renderList();
@@ -647,8 +977,7 @@
       "修改标题或正文后提交，更新时间将自动刷新。";
     byId("eTitle").value = state.current.title;
     if (!createEditor) createEditor = makeEditor(byId("editorHost"));
-    // 用原始 HTML 填充（去掉 mention 链接的渲染，保持纯文本 @ 形式以便再编辑）
-    createEditor.getBodyHtml = function () { return state.current.content; };
+    // 用落库原文填充（服务端已净化的 HTML，@提及链接保留 data-email 以便再次编辑）
     byId("editorHost").querySelector(".rt-body").innerHTML = state.current.content;
     byId("eTitle").focus();
   }
@@ -707,18 +1036,135 @@
       });
   }
 
+  /* ────────────── 纯文本评论输入（@提及成员） ────────────── */
+
+  var cm = { active: false, start: -1, query: "", list: [], idx: 0 };
+
+  function cmClose() {
+    cm.active = false;
+    cm.query = "";
+    cm.list = [];
+    var pop = byId("commentPop");
+    if (pop) { pop.hidden = true; pop.innerHTML = ""; }
+  }
+
+  /** 评论输入框：监听 @ 触发成员候选（纯文本输入，选中后插入 @姓名） */
+  function initCommentInput() {
+    var input = byId("commentInput");
+    var box = input.parentNode;
+    var pop = document.createElement("div");
+    pop.className = "mention-pop";
+    pop.id = "commentPop";
+    pop.hidden = true;
+    box.appendChild(pop);
+
+    function filterMembers(q) {
+      var ql = (q || "").trim().toLowerCase();
+      var hit = !ql ? members : members.filter(function (u) {
+        return ((u.name || "") + " " + u.email).toLowerCase().indexOf(ql) !== -1;
+      });
+      return hit.slice(0, 8);
+    }
+
+    function cmRender() {
+      if (!cm.active) return;
+      pop.innerHTML = "";
+      if (!cm.list.length) {
+        var empty = document.createElement("div");
+        empty.className = "mention-item";
+        empty.style.cursor = "default";
+        empty.style.color = "var(--muted)";
+        empty.textContent = "没有匹配的成员";
+        pop.appendChild(empty);
+      }
+      cm.list.forEach(function (u, i) {
+        var item = document.createElement("div");
+        item.className = "mention-item" + (i === cm.idx ? " on" : "");
+        item.appendChild(makeAvatar(u, u.email, "tk-avatar"));
+        var meta = document.createElement("div");
+        meta.className = "mi-meta";
+        var nm = document.createElement("div");
+        nm.className = "mi-name";
+        nm.textContent = u.name || u.email;
+        var dp = document.createElement("div");
+        dp.className = "mi-dept";
+        dp.textContent = u.department || "";
+        meta.appendChild(nm);
+        meta.appendChild(dp);
+        item.appendChild(meta);
+        item.addEventListener("mousedown", function (e) { e.preventDefault(); cmInsert(u); });
+        pop.appendChild(item);
+      });
+      var r = input.getBoundingClientRect();
+      var br = box.getBoundingClientRect();
+      pop.style.left = Math.max(0, r.left - br.left) + "px";
+      pop.style.top = (r.bottom - br.top + 4) + "px";
+      pop.style.minWidth = "220px";
+      pop.hidden = false;
+    }
+
+    function cmCheck() {
+      var pos = input.selectionStart;
+      var before = input.value.slice(0, pos);
+      var m = before.match(/(^|[\s\u3000])@([^\s@]{0,20})$/);
+      if (!m) { cmClose(); return; }
+      cm.active = true;
+      cm.start = pos - m[2].length - 1;
+      cm.query = m[2];
+      cm.list = filterMembers(m[2]);
+      cm.idx = 0;
+      cmRender();
+    }
+
+    function cmInsert(u) {
+      var nm = u.name || u.email.split("@")[0];
+      var pos = input.selectionStart;
+      var v = input.value;
+      input.value = v.slice(0, cm.start) + "@" + nm + " " + v.slice(pos);
+      var np = cm.start + nm.length + 2;
+      input.setSelectionRange(np, np);
+      cmClose();
+      input.focus();
+    }
+
+    input.addEventListener("input", cmCheck);
+    input.addEventListener("click", cmCheck);
+    input.addEventListener("keydown", function (e) {
+      if (!cm.active) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        cmClose();
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (cm.list.length) { cm.idx = (cm.idx + 1) % cm.list.length; cmRender(); }
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (cm.list.length) { cm.idx = (cm.idx - 1 + cm.list.length) % cm.list.length; cmRender(); }
+      } else if (e.key === "Enter" || e.key === "Tab") {
+        if (cm.list.length && cm.list[cm.idx]) {
+          e.preventDefault();
+          cmInsert(cm.list[cm.idx]);
+        }
+      }
+    });
+    document.addEventListener("mousedown", function (e) {
+      if (!box.contains(e.target)) cmClose();
+    });
+  }
+
   function addComment() {
     if (!state.current) return;
     var err = byId("commentError");
-    var html = commentEditor ? commentEditor.getHtml() : "";
-    if (isEmptyHtml(html)) {
+    var input = byId("commentInput");
+    var text = input.value.replace(/\r\n?/g, "\n").trim();
+    if (!text) {
       err.textContent = "评论内容不能为空";
       err.hidden = false;
       return;
     }
     var btn = byId("commentSubmit");
     btn.disabled = true;
-    post("/api/tickets/" + encodeURIComponent(state.current.id) + "/comments", { content: html })
+    post("/api/tickets/" + encodeURIComponent(state.current.id) + "/comments", { content: buildCommentHtml(text) })
       .then(function (r) {
         btn.disabled = false;
         if (!r.ok) {
@@ -727,7 +1173,8 @@
           return;
         }
         err.hidden = true;
-        commentEditor.clear();
+        input.value = "";
+        cmClose();
         var ticket = r.data.ticket;
         state.current = ticket;
         renderComments(ticket);
@@ -794,11 +1241,9 @@
 
   function init() {
     initTopbar();
+    initUserCard();
     initFilters();
-    commentEditor = makeEditor(byId("commentEditorHost"), {
-      small: true,
-      placeholder: "补充说明…"
-    });
+    initCommentInput();
     byId("newBtn").addEventListener("click", openCreate);
     byId("cancelBtn").addEventListener("click", onCancelEdit);
     byId("cancelBtn2").addEventListener("click", onCancelEdit);

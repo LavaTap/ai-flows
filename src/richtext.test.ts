@@ -47,3 +47,21 @@ test("should detect empty rich text", () => {
   assert.strictEqual(isEmptyRichHtml("<p>&nbsp;</p>"), true);
   assert.strictEqual(isEmptyRichHtml("<p>hi</p>"), false);
 });
+
+test("should keep data-email on mention links", () => {
+  assert.strictEqual(
+    sanitizeRichHtml('<a href="/profile/zhangli" data-email="zhangli@ai-flows.com">@张莉</a>'),
+    '<a href="/profile/zhangli" data-email="zhangli@ai-flows.com">@张莉</a>'
+  );
+});
+
+test("should drop invalid data-email values on links", () => {
+  assert.strictEqual(
+    sanitizeRichHtml('<a href="/x" data-email="not-an-email">@x</a>'),
+    '<a href="/x">@x</a>'
+  );
+  assert.strictEqual(
+    sanitizeRichHtml('<a href="/x" data-email="a" onerror="x">@x</a>'),
+    '<a href="/x">@x</a>'
+  );
+});

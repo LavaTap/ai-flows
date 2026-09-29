@@ -16,13 +16,16 @@ const VOID_TAGS = new Set(["br", "hr", "img"]);
 
 /** 各标签允许的属性白名单（未列出 = 该标签不允许任何属性） */
 const ALLOWED_ATTRS: Record<string, Set<string>> = {
-  a: new Set(["href", "title"]),
+  a: new Set(["href", "title", "data-email"]),
   img: new Set(["src", "alt", "width", "height"]),
   font: new Set(["size", "color"]),
 };
 
 /** 图片只能引用本平台上传接口的地址（禁止外链，避免信息外泄与追踪） */
 const IMG_SRC_RE = /^\/api\/tickets\/images\/[A-Za-z0-9._-]+$/;
+
+/** @提及链接带上的被提及人邮箱（前端据此渲染头像 + 名字与悬停用户卡片） */
+const EMAIL_RE = /^[^\s<>"'@/\\]+@[^\s<>"'@/\\]+\.[^\s<>"'@/\\]+$/;
 
 /** 剥离控制字符（避免零宽 / 换行注入进属性值） */
 function stripControl(v: string): string {
@@ -51,6 +54,7 @@ function cleanAttrValue(tag: string, name: string, raw: string): string | null {
   if (tag === "a") {
     if (name === "href") return /^(https?:\/\/|mailto:|\/)/i.test(val) ? val : null;
     if (name === "title") return val.slice(0, 200);
+    if (name === "data-email") return EMAIL_RE.test(val) ? val.slice(0, 120) : null;
     return null;
   }
   if (tag === "font") {

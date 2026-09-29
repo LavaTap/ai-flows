@@ -23,3 +23,7 @@ db/avatars/
 .agents/skills/writing-claude-md/
 .agents/skills/skill-creator/
 .agents/skills/ui-ux-pro-max/
+
+.tmp-pptx-old/
+.tmp-pptx-export/
+ppt/

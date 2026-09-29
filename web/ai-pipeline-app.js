@@ -75,18 +75,28 @@
     "border:1px solid var(--glass-line);border-radius:999px;background:var(--glass-fill);cursor:pointer;white-space:nowrap;}",
     ".role-chip:hover{background:var(--paper-2);}",
     ".rc-chip-avatar{width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;",
-    "color:#fff;font:600 11px/1 var(--font-sans);flex:none;box-shadow:0 1px 3px rgba(20,20,20,.15);}",
-    ".rc-chip-name{font:500 12px/18px var(--font-sans);color:var(--ink-soft);}",
-    /* hover 弹出的完整长方形卡片（JS 控制显隐，鼠标可移入卡片） */
-    ".role-card{position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);",
-    "display:none;width:352px;padding:12px 14px;border:1px solid var(--glass-line-strong);",
+    "color:#fff;font:600 11px/1 var(--font-sans);flex:none;box-shadow:0 1px 3px rgba(20,20,20,.15);cursor:pointer;overflow:hidden;}",
+    ".rc-chip-avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%;}",
+    ".rc-chip-name{font:500 12px/18px var(--font-sans);color:var(--ink-soft);cursor:pointer;}",
+    /* hover 弹出的完整长方形卡片（即时显示 + 淡入位移过渡，鼠标可移入卡片） */
+    ".role-card{position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%) translateY(-4px);",
+    "display:flex;flex-wrap:wrap;width:352px;padding:12px 14px;border:1px solid var(--glass-line-strong);",
     "border-radius:12px;background:var(--glass-fill);",
     "box-shadow:0 8px 24px rgba(15,23,42,.12),0 2px 6px rgba(15,23,42,.08);",
-    "z-index:25;cursor:pointer;flex-direction:row;gap:0;}",
-    ".role-card.show{display:flex;}",
+    "opacity:0;visibility:hidden;pointer-events:none;transition:opacity 120ms ease,transform 120ms ease,visibility 120ms;",
+    "z-index:25;cursor:pointer;flex-direction:row;gap:0;align-items:center;}",
+    ".role-card.show{opacity:1;visibility:visible;pointer-events:auto;transform:translateX(-50%) translateY(0);}",
+    ".role-card.pinned{border-color:var(--led);box-shadow:0 10px 28px rgba(79,70,229,.18),0 2px 6px rgba(15,23,42,.08);}",
     ".role-card:hover{background:var(--paper-2);}",
+    ".rc-del{flex:0 0 100%;margin-top:10px;padding:7px 12px;border-radius:8px;cursor:pointer;",
+    "border:1px solid rgba(229,72,77,.4);background:rgba(229,72,77,.08);color:#c62a2f;",
+    "font:500 12px/18px var(--font-sans);display:none;}",
+    ".role-card.pinned .rc-del{display:block;}",
+    ".rc-del:hover{background:rgba(229,72,77,.16);border-color:#e5484d;}",
+    ".rc-del:disabled{opacity:.6;cursor:not-allowed;}",
     ".rc-avatar{width:42px;height:42px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;",
-    "color:#fff;font:600 18px/1 var(--font-sans);flex:none;box-shadow:0 2px 6px rgba(15,23,42,.15);}",
+    "color:#fff;font:600 18px/1 var(--font-sans);flex:none;box-shadow:0 2px 6px rgba(15,23,42,.15);overflow:hidden;}",
+    ".rc-avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%;}",
     ".rc-body{display:flex;flex-direction:column;min-width:0;margin-left:12px;justify-content:center;flex:1;}",
     ".rc-name{font:700 15px/22px var(--font-sans);color:var(--ink-soft);white-space:nowrap;}",
     ".rc-sub{font:400 12px/18px var(--font-sans);color:var(--muted);white-space:nowrap;}",
@@ -419,7 +429,8 @@
     var old = panel.querySelector(".d-roles");
     if (old) old.remove();
     var isSuper = boot && boot.user && boot.user.role === "supervisor";
-    var team = members.filter(function (m) { return m.department === node.department; });
+    /* 执行角色由服务端算好（部门成员 ∪ 显式添加 − 显式排除） */
+    var team = (node.executorList || members.filter(function (m) { return m.department === node.department; })).slice();
     var box = document.createElement("div");
     box.className = "d-roles";
     var head = document.createElement("div");
@@ -458,13 +469,17 @@
       chipNm.textContent = displayName(m);
       chip.appendChild(chipAv);
       chip.appendChild(chipNm);
-      /* hover 弹出的完整长方形卡片 */
+      /* hover 弹出的完整长方形卡片：头像点击 → 展开移出按钮（仅主管） */
       var card = document.createElement("span");
       card.className = "role-card";
       var av = document.createElement("span");
       av.className = "rc-avatar";
-      av.style.background = colorOf(m.email);
-      av.textContent = firstChar(m);
+      if (m.avatar) {
+        av.innerHTML = '<img src="/api/avatars/' + encodeURIComponent(m.avatar) + '" alt="">';
+      } else {
+        av.style.background = colorOf(m.email);
+        av.textContent = firstChar(m);
+      }
       var body = document.createElement("span");
       body.className = "rc-body";
       var nm = document.createElement("span");
@@ -481,27 +496,79 @@
       body.appendChild(em);
       card.appendChild(av);
       card.appendChild(body);
+      if (isSuper) {
+        var del = document.createElement("button");
+        del.type = "button";
+        del.className = "rc-del";
+        del.textContent = "移出执行角色";
+        del.title = "移出后该员工不再出现在本节点的执行角色里";
+        del.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!window.confirm("确定把 " + displayName(m) + " 移出本节点的执行角色？")) return;
+          del.disabled = true;
+          del.textContent = "移除中…";
+          fetch("/api/nodes/" + encodeURIComponent(node.id) + "/executors/" + encodeURIComponent(m.email), {
+            method: "DELETE"
+          }).then(function (res) {
+            if (res.status === 401) { location.href = "/login"; return null; }
+            return res.json().then(function (d) { return { ok: res.ok, data: d }; });
+          }).then(function (r) {
+            if (!r) return;
+            if (!r.ok) {
+              del.disabled = false;
+              del.textContent = "移出执行角色";
+              window.alert((r.data && r.data.error) || "移除失败");
+              return;
+            }
+            card.classList.remove("show", "pinned");
+            chip.remove();
+            refreshNodes();
+          }).catch(function () {
+            del.disabled = false;
+            del.textContent = "移出执行角色";
+            window.alert("网络异常");
+          });
+        });
+        card.appendChild(del);
+      }
       chip.appendChild(card);
 
-      /* hover 显隐：带 200ms 延迟，鼠标可从 chip 移到 card 上不消失 */
+      /* hover 显隐：即时显示，离开 120ms 收起（鼠标可从 chip 移到 card 上不消失） */
       var hideTimer = null;
+      var pinned = false;
       function showCard() {
         if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
         card.classList.add("show");
       }
       function hideCardSoon() {
+        if (pinned) return;
         if (hideTimer) clearTimeout(hideTimer);
         hideTimer = setTimeout(function () {
           card.classList.remove("show");
           hideTimer = null;
-        }, 200);
+        }, 120);
       }
       chip.addEventListener("mouseenter", showCard);
       chip.addEventListener("mouseleave", hideCardSoon);
       card.addEventListener("mouseenter", showCard);
       card.addEventListener("mouseleave", hideCardSoon);
 
-      /* 点击 chip 或卡片 → 跳转到个人主页 */
+      /* 点击头像 → 卡片侧边展开「移出执行角色」按钮（再点收起） */
+      chipAv.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!isSuper) {
+          goProfile(e);
+          return;
+        }
+        pinned = !pinned;
+        card.classList.toggle("pinned", pinned);
+        showCard();
+        if (!pinned) card.classList.remove("show");
+      });
+
+      /* 点击名字或卡片 → 跳转到个人主页 */
       function goProfile(e) {
         e.preventDefault();
         e.stopPropagation();
@@ -515,8 +582,15 @@
         } catch (e) {}
         window.open("/profile/" + encodeURIComponent(prefix), "_blank");
       }
-      chip.addEventListener("click", goProfile);
+      chipNm.addEventListener("click", goProfile);
       card.addEventListener("click", goProfile);
+      /* 点击页面其他地方取消固定态 */
+      document.addEventListener("click", function (e) {
+        if (!pinned) return;
+        if (chip.contains(e.target)) return;
+        pinned = false;
+        card.classList.remove("pinned", "show");
+      });
 
       list.appendChild(chip);
     });
