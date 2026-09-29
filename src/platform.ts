@@ -2365,14 +2365,14 @@ export async function startPlatformServer(
         sendJson(res, 401, { error: "未登录" });
         return;
       }
-      const type = u.searchParams.get("type") ?? "user";
+      const type = u.searchParams.get("type") ?? "all";
       const q = (u.searchParams.get("q") ?? "").trim().toLowerCase();
       if (type === "kb") {
         sendJson(res, 200, { results: [] });
         return;
       }
-      if (type === "user") {
-        const results = loadUsers()
+      const userResults = () =>
+        loadUsers()
           .filter(
             (x) =>
               !q ||
@@ -2382,6 +2382,7 @@ export async function startPlatformServer(
           )
           .slice(0, 50)
           .map((x) => ({
+            _type: "user",
             email: x.email,
             name: x.name,
             title: x.title,
@@ -2389,11 +2390,8 @@ export async function startPlatformServer(
             role: x.role,
             avatar: x.avatar,
           }));
-        sendJson(res, 200, { results });
-        return;
-      }
-      if (type === "ticket") {
-        const results = filterTicketsByUser(loadTickets(), user)
+      const ticketResults = () =>
+        filterTicketsByUser(loadTickets(), user)
           .filter(
             (t) =>
               !q ||
@@ -2403,8 +2401,22 @@ export async function startPlatformServer(
           )
           .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
           .slice(0, 50)
-          .map(toTicketListItem);
-        sendJson(res, 200, { results });
+          .map((t) => ({ ...toTicketListItem(t), _type: "ticket" }));
+      if (type === "user") {
+        sendJson(res, 200, { results: userResults() });
+        return;
+      }
+      if (type === "ticket") {
+        sendJson(res, 200, { results: ticketResults() });
+        return;
+      }
+      if (type === "all") {
+        // 混合：各取 30 条后按相关度/时间合并，总上限 60
+        const us = userResults().slice(0, 30);
+        const ts = ticketResults().slice(0, 30);
+        // 简单合并：有搜索词时用户优先（精准匹配），无搜索词时工单按时间排前面
+        const merged = q ? [...us, ...ts] : [...ts, ...us];
+        sendJson(res, 200, { results: merged.slice(0, 60) });
         return;
       }
       sendJson(res, 400, { error: "未知的搜索类型" });

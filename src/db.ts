@@ -366,7 +366,7 @@ function setSettingWith(c: Database.Database, key: string, value: string): void 
   ).run(key, value);
 }
 
-/** 取某表下一个 ord（追加用） */
+/** 取某表下一个 ord（追加用；跨 schema 表需带前缀） */
 function nextOrd(c: Database.Database, table: string): number {
   const row = c.prepare(`SELECT COALESCE(MAX(ord), -1) + 1 AS n FROM ${table}`).get() as { n: number };
   return row.n;
@@ -712,17 +712,17 @@ function modelParams(m: ChatModel, ord: number): Record<string, unknown> {
 
 function insertReviews(c: Database.Database, records: ReviewRecord[], startOrd: number): void {
   const ins = c.prepare(
-    "INSERT OR REPLACE INTO reviews (ord,id,source,actor,email,department,role,generated_at,passed,blockers,issues,report_url,repo) VALUES (@ord,@id,@source,@actor,@email,@department,@role,@generatedAt,@passed,@blockers,@issues,@reportUrl,@repo)"
+    "INSERT OR REPLACE INTO chat_reviews.reviews (ord,id,source,actor,email,department,role,generated_at,passed,blockers,issues,report_url,repo) VALUES (@ord,@id,@source,@actor,@email,@department,@role,@generatedAt,@passed,@blockers,@issues,@reportUrl,@repo)"
   );
   records.forEach((r, i) => ins.run(reviewParams(r, startOrd + i)));
 }
 
 function insertTickets(c: Database.Database, tickets: TicketRecord[], startOrd: number): void {
   const insT = c.prepare(
-    "INSERT OR REPLACE INTO tickets (ord,id,kind,title,content,status,department,author_name,author_email,created_at,updated_at,images,node_id,assignee_email) VALUES (@ord,@id,@kind,@title,@content,@status,@department,@authorName,@authorEmail,@createdAt,@updatedAt,@images,@nodeId,@assigneeEmail)"
+    "INSERT OR REPLACE INTO tickets.tickets (ord,id,kind,title,content,status,department,author_name,author_email,created_at,updated_at,images,node_id,assignee_email) VALUES (@ord,@id,@kind,@title,@content,@status,@department,@authorName,@authorEmail,@createdAt,@updatedAt,@images,@nodeId,@assigneeEmail)"
   );
   const insC = c.prepare(
-    "INSERT OR REPLACE INTO ticket_comments (ord,id,ticket_id,author,email,department,content,at) VALUES (@ord,@id,@ticketId,@author,@email,@department,@content,@at)"
+    "INSERT OR REPLACE INTO tickets.ticket_comments (ord,id,ticket_id,author,email,department,content,at) VALUES (@ord,@id,@ticketId,@author,@email,@department,@content,@at)"
   );
   tickets.forEach((t, i) => {
     insT.run(ticketParams(t, startOrd + i));
@@ -732,10 +732,10 @@ function insertTickets(c: Database.Database, tickets: TicketRecord[], startOrd: 
 
 function insertChats(c: Database.Database, sessions: ChatSession[], startOrd: number): void {
   const insS = c.prepare(
-    "INSERT OR REPLACE INTO chat_sessions (ord,id,owner_email,title,created_at,updated_at,summary,summary_upto) VALUES (@ord,@id,@ownerEmail,@title,@createdAt,@updatedAt,@summary,@summaryUpto)"
+    "INSERT OR REPLACE INTO chat_reviews.chat_sessions (ord,id,owner_email,title,created_at,updated_at,summary,summary_upto) VALUES (@ord,@id,@ownerEmail,@title,@createdAt,@updatedAt,@summary,@summaryUpto)"
   );
   const insM = c.prepare(
-    "INSERT OR REPLACE INTO chat_messages (ord,id,session_id,role,content,at,model_id,tokens) VALUES (@ord,@id,@sessionId,@role,@content,@at,@modelId,@tokens)"
+    "INSERT OR REPLACE INTO chat_reviews.chat_messages (ord,id,session_id,role,content,at,model_id,tokens) VALUES (@ord,@id,@sessionId,@role,@content,@at,@modelId,@tokens)"
   );
   sessions.forEach((s, i) => {
     insS.run(sessionParams(s, startOrd + i));
@@ -745,7 +745,7 @@ function insertChats(c: Database.Database, sessions: ChatSession[], startOrd: nu
 
 function insertModels(c: Database.Database, models: ChatModel[], startOrd: number): void {
   const ins = c.prepare(
-    "INSERT OR REPLACE INTO chat_models (ord,id,name,provider,model,base_url,api_key_env,is_active,category) VALUES (@ord,@id,@name,@provider,@model,@baseUrl,@apiKeyEnv,@isActive,@category)"
+    "INSERT OR REPLACE INTO chat_reviews.chat_models (ord,id,name,provider,model,base_url,api_key_env,is_active,category) VALUES (@ord,@id,@name,@provider,@model,@baseUrl,@apiKeyEnv,@isActive,@category)"
   );
   models.forEach((m, i) => ins.run(modelParams(m, startOrd + i)));
 }
@@ -948,21 +948,21 @@ export function saveNodes(nodes: NodeState[]): void {
 
 /** 读取平台执行历史 */
 export function loadReviews(): ReviewRecord[] {
-  const rows = db().prepare("SELECT * FROM reviews ORDER BY ord").all() as ReviewRow[];
+  const rows = db().prepare("SELECT * FROM chat_reviews.reviews ORDER BY ord").all() as ReviewRow[];
   return rows.map(rowToReview);
 }
 
 /** 写回平台执行历史（追加一条并持久化） */
 export function appendReview(record: ReviewRecord): void {
   const c = db();
-  insertReviews(c, [record], nextOrd(c, "reviews"));
+  insertReviews(c, [record], nextOrd(c, "chat_reviews.reviews"));
 }
 
 /** 批量追加评审历史（单事务写入） */
 export function appendReviews(newRecords: ReviewRecord[]): void {
   if (!newRecords.length) return;
   const c = db();
-  const start = nextOrd(c, "reviews");
+  const start = nextOrd(c, "chat_reviews.reviews");
   c.transaction(() => insertReviews(c, newRecords, start))();
 }
 
@@ -971,9 +971,9 @@ export function appendReviews(newRecords: ReviewRecord[]): void {
 /** 读取全部工单（含评论，按原顺序） */
 export function loadTickets(): TicketRecord[] {
   const c = db();
-  const rows = c.prepare("SELECT * FROM tickets ORDER BY ord").all() as TicketRow[];
+  const rows = c.prepare("SELECT * FROM tickets.tickets ORDER BY ord").all() as TicketRow[];
   const comments = c
-    .prepare("SELECT * FROM ticket_comments ORDER BY ord")
+    .prepare("SELECT * FROM tickets.ticket_comments ORDER BY ord")
     .all() as CommentRow[];
   const byTicket = new Map<string, TicketComment[]>();
   for (const cm of comments) {
@@ -1006,7 +1006,7 @@ export function loadTickets(): TicketRecord[] {
 export function saveTickets(tickets: TicketRecord[]): void {
   const c = db();
   c.transaction(() => {
-    c.prepare("DELETE FROM tickets").run();
+    c.prepare("DELETE FROM tickets.tickets").run();
     insertTickets(c, tickets, 0);
   })();
 }
@@ -1014,7 +1014,7 @@ export function saveTickets(tickets: TicketRecord[]): void {
 /** 追加一条工单 */
 export function appendTicket(record: TicketRecord): void {
   const c = db();
-  insertTickets(c, [record], nextOrd(c, "tickets"));
+  insertTickets(c, [record], nextOrd(c, "tickets.tickets"));
 }
 
 /** 按 id 更新工单（mutate 回调内修改字段）；工单不存在返回 null */
@@ -1035,8 +1035,8 @@ export function updateTicket(
 /** 读取全部聊天会话（含消息，按原顺序） */
 export function loadChats(): ChatStore {
   const c = db();
-  const rows = c.prepare("SELECT * FROM chat_sessions ORDER BY ord").all() as SessionRow[];
-  const messages = c.prepare("SELECT * FROM chat_messages ORDER BY ord").all() as MessageRow[];
+  const rows = c.prepare("SELECT * FROM chat_reviews.chat_sessions ORDER BY ord").all() as SessionRow[];
+  const messages = c.prepare("SELECT * FROM chat_reviews.chat_messages ORDER BY ord").all() as MessageRow[];
   const bySession = new Map<string, ChatMessage[]>();
   for (const m of messages) {
     const list = bySession.get(m.session_id) ?? [];
@@ -1064,7 +1064,7 @@ export function loadChats(): ChatStore {
 export function saveChats(store: ChatStore): void {
   const c = db();
   c.transaction(() => {
-    c.prepare("DELETE FROM chat_sessions").run();
+    c.prepare("DELETE FROM chat_reviews.chat_sessions").run();
     insertChats(c, store.sessions, 0);
   })();
 }
@@ -1072,7 +1072,7 @@ export function saveChats(store: ChatStore): void {
 /** 追加一条会话 */
 export function appendChat(session: ChatSession): void {
   const c = db();
-  insertChats(c, [session], nextOrd(c, "chat_sessions"));
+  insertChats(c, [session], nextOrd(c, "chat_reviews.chat_sessions"));
 }
 
 /** 按 id 更新会话（mutate 回调内修改字段）；会话不存在返回 null */
@@ -1091,7 +1091,7 @@ export function updateChat(
 /** 按 id 删除会话；不存在返回 false */
 export function deleteChat(id: string): boolean {
   const c = db();
-  const info = c.prepare("DELETE FROM chat_sessions WHERE id = ?").run(id);
+  const info = c.prepare("DELETE FROM chat_reviews.chat_sessions WHERE id = ?").run(id);
   return info.changes > 0;
 }
 
@@ -1100,7 +1100,7 @@ export function deleteChat(id: string): boolean {
 /** 读取全部模型配置（库中无模型时返回种子 DeepSeek 配置并落库一次） */
 export function loadChatModels(): ChatModelStore {
   const c = db();
-  const rows = c.prepare("SELECT * FROM chat_models ORDER BY ord").all() as ModelRow[];
+  const rows = c.prepare("SELECT * FROM chat_reviews.chat_models ORDER BY ord").all() as ModelRow[];
   const models = rows.map(rowToModel);
   if (models.length === 0) {
     const store: ChatModelStore = { activeId: CHAT_MODEL_SEED.id, models: [CHAT_MODEL_SEED] };
@@ -1116,7 +1116,7 @@ export function loadChatModels(): ChatModelStore {
 export function saveChatModels(store: ChatModelStore): void {
   const c = db();
   c.transaction(() => {
-    c.prepare("DELETE FROM chat_models").run();
+    c.prepare("DELETE FROM chat_reviews.chat_models").run();
     insertModels(c, store.models, 0);
     setSettingWith(c, "active_model_id", store.activeId);
   })();
@@ -1125,7 +1125,7 @@ export function saveChatModels(store: ChatModelStore): void {
 /** 追加一条模型配置 */
 export function appendChatModel(model: ChatModel): void {
   const c = db();
-  insertModels(c, [model], nextOrd(c, "chat_models"));
+  insertModels(c, [model], nextOrd(c, "chat_reviews.chat_models"));
 }
 
 /** 按 id 更新模型配置；不存在返回 null */
@@ -1144,7 +1144,7 @@ export function updateChatModel(
 /** 按 id 删除模型配置；不存在返回 false */
 export function deleteChatModel(id: string): boolean {
   const c = db();
-  const info = c.prepare("DELETE FROM chat_models WHERE id = ?").run(id);
+  const info = c.prepare("DELETE FROM chat_reviews.chat_models WHERE id = ?").run(id);
   return info.changes > 0;
 }
 

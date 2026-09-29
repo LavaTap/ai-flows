@@ -16,9 +16,9 @@
     .home-title { font: 300 30px/40px var(--font-sans); color: var(--ink-soft); margin: 0 0 8px; }
     .home-sub { font: 400 13px/20px var(--font-sans); color: var(--muted); margin: 0 0 26px; }
 
-    .type-seg { display: inline-flex; gap: 4px; background: var(--paper-2); border-radius: 999px; padding: 4px; margin-bottom: 16px; }
-    .type-seg button { border: 0; background: transparent; border-radius: 999px; cursor: pointer; padding: 7px 20px;
-      font: 500 12.5px/18px var(--font-sans); color: var(--muted); transition: background 150ms ease, color 150ms ease; }
+    .type-seg { display: inline-flex; gap: 4px; background: var(--paper-2); border-radius: 999px; padding: 3px; margin-top: 12px; }
+    .type-seg button { border: 0; background: transparent; border-radius: 999px; cursor: pointer; padding: 6px 16px;
+      font: 500 12px/18px var(--font-sans); color: var(--muted); transition: background 150ms ease, color 150ms ease; }
     .type-seg button:hover { color: var(--ink-soft); }
     .type-seg button.on { background: var(--glass-fill); color: var(--led); box-shadow: 0 1px 2px rgba(15,23,42,.08); }
 
@@ -35,6 +35,11 @@
     .home-results { display: flex; flex-direction: column; gap: 8px; margin-top: 24px; }
     .home-hint { text-align: center; font: 400 13px/22px var(--font-sans); color: var(--muted-2); padding: 40px 0; }
     .res-count { font: 400 12px/18px var(--font-sans); color: var(--muted); margin: 4px 2px 6px; text-align: left; }
+    .res-section-title { font: 600 12px/18px var(--font-sans); color: var(--muted); margin: 8px 2px 6px; text-transform: none;
+      display: flex; align-items: center; gap: 6px; }
+    .res-section-title .clear-hist { margin-left: auto; font: 400 11px/18px var(--font-sans); color: var(--muted);
+      cursor: pointer; background: none; border: none; padding: 0; }
+    .res-section-title .clear-hist:hover { color: var(--led); }
 
     .res-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--glass-line);
       border-radius: 12px; background: var(--glass-fill); text-decoration: none; transition: border-color 150ms ease; }
@@ -95,15 +100,16 @@
   <main class="home-wrap">
     <section class="home-hero">
       <h2 class="home-title">搜索平台内容</h2>
-      <p class="home-sub">查员工（姓名 / 邮箱 / 职位 / 部门）或工单；知识库暂未接入</p>
-      <div class="type-seg" id="typeSeg">
-        <button type="button" data-type="kb">知识库</button>
-        <button type="button" data-type="ticket">工单</button>
-        <button type="button" data-type="user" class="on">员工</button>
-      </div>
+      <p class="home-sub">查员工、工单或知识库内容</p>
       <div class="search-box">
         <input id="q" class="search-input" type="search" placeholder="输入关键词搜索…" autocomplete="off">
         <button id="go" class="search-btn" type="button">搜索</button>
+      </div>
+      <div class="type-seg" id="typeSeg">
+        <button type="button" data-type="all" class="on">全部</button>
+        <button type="button" data-type="user">员工</button>
+        <button type="button" data-type="ticket">工单</button>
+        <button type="button" data-type="kb">知识库</button>
       </div>
     </section>
     <section class="home-results" id="results"></section>

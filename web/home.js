@@ -1,10 +1,13 @@
-/* home.js · 首页全局搜索（知识库 / 工单 / 员工）
-   数据源：GET /api/search?type=user|ticket|kb&q=...（工单结果按当前用户视角过滤） */
+/* home.js · 首页全局搜索（全部 / 员工 / 工单 / 知识库）
+   数据源：GET /api/search?type=all|user|ticket|kb&q=...（工单结果按当前用户视角过滤）
+   浏览记录：localStorage 存最近 20 条，默认空搜索时展示 */
 (function () {
   var boot = window.__HOME__ || {};
   var user = boot.user || {};
-  var state = { type: "user", q: "" };
+  var state = { type: "all", q: "" };
   var timer = null;
+  var HIST_KEY = "home_recent";
+  var HIST_MAX = 20;
 
   var STATUS_LABEL = { open: "待处理", doing: "处理中", resolved: "已解决" };
   var ROLE_LABEL = { supervisor: "主管", staff: "员工" };
@@ -36,44 +39,130 @@
       esc(firstChar(u.name, u.email)) + "</span>";
   }
 
-  function renderHint(text) {
-    byId("results").innerHTML = '<div class="home-hint">' + esc(text) + "</div>";
+  /* ─── 浏览记录 ─── */
+
+  function getHistory() {
+    try {
+      return JSON.parse(localStorage.getItem(HIST_KEY) || "[]");
+    } catch (e) { return []; }
   }
 
-  function renderUsers(list) {
-    if (!list.length) { renderHint("未找到匹配的员工"); return; }
-    var html = '<div class="res-count">共 ' + list.length + " 个员工</div>";
-    html += list.map(function (u) {
-      var meta = [u.department || "无部门", u.title || ""].filter(Boolean).join(" · ");
-      return '<div class="res-row">' + avatarHtml(u) +
-        '<span class="res-body">' +
-        '<span class="res-title">' + esc(u.name || u.email) + "</span>" +
-        '<span class="res-meta">' + esc(meta) + ' · <span class="mono">' + esc(u.email) + "</span></span>" +
-        "</span>" +
-        '<span class="res-badge role">' + esc(ROLE_LABEL[u.role] || "员工") + "</span></div>";
-    }).join("");
-    byId("results").innerHTML = html;
+  function saveHistory(list) {
+    try { localStorage.setItem(HIST_KEY, JSON.stringify(list.slice(0, HIST_MAX))); } catch (e) {}
   }
 
-  function renderTickets(list) {
-    if (!list.length) { renderHint("未找到匹配的工单"); return; }
-    var html = '<div class="res-count">共 ' + list.length + " 个工单</div>";
-    html += list.map(function (t) {
-      var meta = [t.department, t.authorName, t.assigneeEmail ? "指派 " + t.assigneeEmail : ""]
-        .filter(Boolean).join(" · ");
-      return '<a class="res-row" href="/tickets?id=' + encodeURIComponent(t.id) + '">' +
-        '<span class="res-body">' +
-        '<span class="res-title">' + esc(t.title) + "</span>" +
-        '<span class="res-meta">' + esc(meta) + "</span>" +
-        "</span>" +
-        '<span class="res-badge ' + esc(t.status) + '">' + esc(STATUS_LABEL[t.status] || t.status) + "</span></a>";
-    }).join("");
+  function addHistory(item) {
+    var list = getHistory().filter(function (x) {
+      if (x._type !== item._type) return true;
+      return x._type === "user" ? x.email !== item.email : x.id !== item.id;
+    });
+    list.unshift(item);
+    saveHistory(list);
+  }
+
+  function clearHistory() {
+    saveHistory([]);
+    renderHistory();
+  }
+
+  /* ─── 渲染：单条结果 ─── */
+
+  function renderUserRow(u) {
+    var meta = [u.department || "无部门", u.title || ""].filter(Boolean).join(" · ");
+    var href = "#";
+    return '<a class="res-row" href="' + href + '" data-type="user" data-email="' + esc(u.email) + '">' +
+      avatarHtml(u) +
+      '<span class="res-body">' +
+      '<span class="res-title">' + esc(u.name || u.email) + "</span>" +
+      '<span class="res-meta">' + esc(meta) + ' · <span class="mono">' + esc(u.email) + "</span></span>" +
+      "</span>" +
+      '<span class="res-badge role">' + esc(ROLE_LABEL[u.role] || "员工") + "</span></a>";
+  }
+
+  function renderTicketRow(t) {
+    var meta = [t.department, t.authorName, t.assigneeEmail ? "指派 " + t.assigneeEmail : ""]
+      .filter(Boolean).join(" · ");
+    return '<a class="res-row" href="/tickets?id=' + encodeURIComponent(t.id) +
+      '" data-type="ticket" data-id="' + esc(t.id) + '">' +
+      '<span class="res-body">' +
+      '<span class="res-title">' + esc(t.title) + "</span>" +
+      '<span class="res-meta">' + esc(meta) + "</span>" +
+      "</span>" +
+      '<span class="res-badge ' + esc(t.status) + '">' + esc(STATUS_LABEL[t.status] || t.status) + "</span></a>";
+  }
+
+  function bindRowClicks(container) {
+    var rows = container.querySelectorAll(".res-row");
+    for (var i = 0; i < rows.length; i++) {
+      rows[i].addEventListener("click", function (e) {
+        var row = e.currentTarget;
+        var type = row.getAttribute("data-type");
+        if (type === "ticket") {
+          var id = row.getAttribute("data-id");
+          var title = row.querySelector(".res-title");
+          addHistory({ _type: "ticket", id: id, title: title ? title.textContent : id });
+        } else if (type === "user") {
+          // 员工点击先记历史，暂不跳转（未来可跳转到资料页）
+          var email = row.getAttribute("data-email");
+          var name = row.querySelector(".res-title");
+          addHistory({
+            _type: "user", email: email,
+            name: name ? name.textContent : email,
+          });
+          e.preventDefault();
+        }
+      });
+    }
+  }
+
+  /* ─── 渲染：混合结果 ─── */
+
+  function renderMixed(list, countLabel) {
+    if (!list.length) {
+      byId("results").innerHTML = '<div class="home-hint">未找到匹配的结果</div>';
+      return;
+    }
+    var html = '<div class="res-count">' + (countLabel || ("共 " + list.length + " 条结果")) + "</div>";
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i];
+      if (item._type === "user") html += renderUserRow(item);
+      else if (item._type === "ticket") html += renderTicketRow(item);
+    }
     byId("results").innerHTML = html;
+    bindRowClicks(byId("results"));
+  }
+
+  function renderHistory() {
+    var list = getHistory();
+    if (!list.length) {
+      byId("results").innerHTML = '<div class="home-hint">输入关键词开始搜索<br>或选择上方分类浏览</div>';
+      return;
+    }
+    var html = '<div class="res-section-title">最近浏览' +
+      '<button class="clear-hist" type="button" id="clearHist">清空</button>' +
+      "</div>";
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i];
+      if (item._type === "user") {
+        html += renderUserRow({ email: item.email, name: item.name, avatar: item.avatar, role: item.role, department: item.department, title: item.title });
+      } else if (item._type === "ticket") {
+        html += renderTicketRow({ id: item.id, title: item.title, status: item.status, department: item.department, authorName: item.authorName, assigneeEmail: item.assigneeEmail });
+      }
+    }
+    byId("results").innerHTML = html;
+    var btn = byId("clearHist");
+    if (btn) btn.addEventListener("click", function (e) { e.preventDefault(); clearHistory(); });
+    bindRowClicks(byId("results"));
   }
 
   function search() {
     var type = state.type;
-    if (type === "kb") { renderHint("知识库暂未接入"); return; }
+    if (type === "kb") {
+      byId("results").innerHTML = '<div class="home-hint">知识库暂未接入</div>';
+      return;
+    }
+    // 无搜索词 + 全部类型 → 展示浏览记录
+    if (!state.q && type === "all") { renderHistory(); return; }
     fetch("/api/search?type=" + encodeURIComponent(type) + "&q=" + encodeURIComponent(state.q))
       .then(function (r) {
         if (r.status === 401) { location.href = "/login"; return null; }
@@ -82,9 +171,17 @@
       .then(function (d) {
         if (!d) return;
         var list = d.results || [];
-        if (type === "user") renderUsers(list); else renderTickets(list);
+        if (type === "all") {
+          renderMixed(list, "共 " + list.length + " 条结果");
+        } else if (type === "user") {
+          renderMixed(list, "共 " + list.length + " 个员工");
+        } else {
+          renderMixed(list, "共 " + list.length + " 个工单");
+        }
       })
-      .catch(function () { renderHint("搜索失败，请重试"); });
+      .catch(function () {
+        byId("results").innerHTML = '<div class="home-hint">搜索失败，请重试</div>';
+      });
   }
 
   function schedule() {

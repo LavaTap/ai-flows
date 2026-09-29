@@ -1,7 +1,7 @@
 # ai-flows（ai-review CLI + AI 管线平台）
 
 > 平台无关的 AI 代码评审链 CLI + 公司 AI 管线平台。`run` 采集 git diff → 调 LLM（DeepSeek/OpenAI 兼容接口）评审 → 门禁判定 → 生成 Markdown 报告 + 评审数据；推送只走评审页面「确认提交」（或显式 `--push`）。`platform` 子命令提供登录 + 四部门管线页 + 节点执行/批准（节点 03 触发真实 AI 评审）；`install-hook` 让每次 `git push` 先被拦截去评审，再由页面确认提交放行。
-> 技术栈：TypeScript 5.6（strict）+ Node ≥22 ESM，**唯一运行时依赖 `better-sqlite3`**（原生 SQLite 绑定，其余能力用 `node:*` 内置模块 + 全局 `fetch` 自实现）；平台数据存 SQLite 单库 `db/ai-flows.sqlite`（`src/sqlite.ts` 建库建表，`src/db.ts` 数据访问；旧 `db/*.json` 仅作首次启动的一次性导入源），前端静态页在 `web/`，不引前端框架。
+> 技术栈：TypeScript 5.6（strict）+ Node ≥22 ESM，**唯一运行时依赖 `better-sqlite3`**（原生 SQLite 绑定，其余能力用 `node:*` 内置模块 + 全局 `fetch` 自实现）；平台数据存 **三个 SQLite 库**：主库 `db/ai-flows.sqlite`（账号/节点/配置）+ AI 对话评审库 `db/ai-chat-reviews.sqlite`（ATTACH 为 schema `chat_reviews`）+ 工单库 `db/ai-tickets.sqlite`（ATTACH 为 schema `tickets`），`src/sqlite.ts` 建库建表并挂载，`src/db.ts` 数据访问（子库 SQL 带 schema 前缀，主库账号表可跨库 JOIN）；旧 `db/*.json` 仅作首次启动的一次性导入源。前端静态页在 `web/`，不引前端框架。
 > 完整链路、报告页面架构、目标仓库接入步骤见 `评审链路与说明.md`；整体数据流图见 `架构与数据流.md`；平台目标、账号清单与权限模型见 `plan.md`，本文件不重复。
 > 本文件是仓库 AI 指令的**唯一来源**（`CLAUDE.md` 已删除，不再维护双镜像）。
 
@@ -49,8 +49,8 @@
 | `richtext.ts` | 富文本白名单净化 `sanitizeRichHtml()` / `isEmptyRichHtml()`：工单正文与评论来自 contenteditable，属不可信输入，落库与回显前必须过白名单（去 `<script>`/事件处理器/`javascript:`/外链图片），零依赖手写标签扫描器 |
 | `skill.ts` | skill 执行器：SKILL.md（剥 frontmatter）作系统提示 + 需求/附件组装 prompt → `callModel` 生成 Markdown 产物写入输出目录，进度经回调回写 db；不感知节点/权限 |
 | `crawler.ts` | 节点 01 调研 agent 执行器：需求文本经 stdin 作 agent（`crawler.root` 项目内，命令 `crawler.command`）prompt → 跑完把 agent `output/` 目录打包 zip（零依赖 CRC32 + `zlib.deflateRawSync`，含 `collectFiles`）；不感知节点/权限 |
-| `db.ts` | **数据访问唯一入口**（SQLite 实现，导出 API 与旧 JSON 版逐字兼容，调用方零改动）：`loadUsers` / `saveUsers`、`authenticate` 邮箱+密码校验、GitHub 绑定/待审核/资料修改（`setUserGithub` / `setUserGithubPending` / `clearUserGithubPending` / `approveUserGithub` / `setUserProfile`，`UserAccount` 含 `avatar` 字段）、管线（`loadPipelineName` / `savePipelineName` / `loadNodes` / `saveNodes`）、评审历史（`loadReviews` / `appendReview` / `appendReviews`）、工单（`loadTickets` / `saveTickets` / `appendTicket` / `updateTicket`）、AI 对话（`loadChats` / `saveChats` / `appendChat` / `updateChat` / `deleteChat`；`loadChatModels` / `saveChatModels` / `appendChatModel` / `updateChatModel` / `deleteChatModel` / `setActiveModel`）、账号投影表（`syncUserAccounts` / `loadChatAccounts` / `loadReviewAccounts`）；图片目录 `TICKET_IMAGES_DIR`、头像目录 `AVATARS_DIR`（二进制仍落盘，不入库）；首次取连接时把旧 `db/*.json` 一次性导入（`settings.migrated_from_json` 置位后不再执行） |
-| `sqlite.ts` | SQLite 连接与建表：`getDb()` 单例（建目录 → 开库 → `journal_mode=WAL` → `foreign_keys=ON` → 幂等 DDL）、`closeDb()`；导出 `DB_DIR` / `DB_FILE`（`db/ai-flows.sqlite`，已 gitignore）。**唯一**开库入口，其余模块不得自行 `new Database()`。账号投影表 `chat_accounts`（email+name）/ `review_accounts`（email+name+department）以 `email` 外键级联 `users`，由 `db.ts` 的 `syncUserAccounts()` 从 users 主表统一同步 |
+| `db.ts` | **数据访问唯一入口**（SQLite 实现，导出 API 与旧 JSON 版逐字兼容，调用方零改动）：`loadUsers` / `saveUsers`、`authenticate` 邮箱+密码校验、GitHub 绑定/待审核/资料修改（`setUserGithub` / `setUserGithubPending` / `clearUserGithubPending` / `approveUserGithub` / `setUserProfile`，`UserAccount` 含 `avatar` 字段）、管线（`loadPipelineName` / `savePipelineName` / `loadNodes` / `saveNodes`）、评审历史（`loadReviews` / `appendReview` / `appendReviews`）、工单（`loadTickets` / `saveTickets` / `appendTicket` / `updateTicket`）、AI 对话（`loadChats` / `saveChats` / `appendChat` / `updateChat` / `deleteChat`；`loadChatModels` / `saveChatModels` / `appendChatModel` / `updateChatModel` / `deleteChatModel` / `setActiveModel`）、账号投影表（`syncUserAccounts` / `loadChatAccounts` / `loadReviewAccounts`）；图片目录 `TICKET_IMAGES_DIR`、头像目录 `AVATARS_DIR`（二进制仍落盘，不入库）；首次取连接时把旧 `db/*.json` 一次性导入（按表分别写入主库 / `chat_reviews` / `tickets` 三库，`settings.migrated_from_json` 置位后不再执行）。**所有子库表 SQL 均带 schema 前缀**（如 `chat_reviews.reviews`、`tickets.tickets`、`nextOrd(c, "chat_reviews.chat_sessions")`） |
+| `sqlite.ts` | SQLite 多库连接与建表：`getDb()` 单例（建目录 → 开主库 → `journal_mode=WAL` → `foreign_keys=ON` → `ATTACH` 两个子库 → 各库幂等 DDL）、`closeDb()`（子库随主连接一起关）；导出 `DB_DIR` / `DB_FILE`（`db/ai-flows.sqlite`）/ `CHAT_REVIEWS_DB_FILE` / `TICKETS_DB_FILE` 与 schema 名常量。建表分三份 DDL：主库 `settings` / `users` / `nodes` / `chat_accounts` / `review_accounts`，子库 `chat_reviews.*` 与 `tickets.*`。另含单库→多库一次性迁移 `migrateLegacyTables()`（主库里遗留的子库表整表搬到子库后 DROP，按主键 `OR REPLACE` 幂等）。**唯一**开库入口，其余模块不得自行 `new Database()`。账号投影表 `chat_accounts`（email+name）/ `review_accounts`（email+name+department）留在主库（跨库外键不可用），以 `email` 外键级联 `users`，由 `db.ts` 的 `syncUserAccounts()` 从 users 主表统一同步 |
 | `auth.ts` | 内存会话 + cookie 签发/解析（`HttpOnly` `SameSite=Lax`，24h，重启即失效） |
 | `redact.ts` | `maskSecrets()`：评审产出前对 `summary` / `message` / `suggestion` 打码（密钥只留首尾各 4 位） |
 
@@ -61,6 +61,7 @@
 | 相对导入必须带 `.js` 后缀 | `module: NodeNext` 的硬要求：源码文件是 `.ts`，导入路径写 `.js` |
 | 运行时依赖仅 `better-sqlite3` | 唯一允许的运行时依赖是 `better-sqlite3`（原生 SQLite 绑定，要求 Node ≥22）；除它之外禁止新增 `dependencies`，能力用 `node:*` 与全局 `fetch` 自实现，不要引入 commander / zod / express / axios |
 | 数据库唯一入口 | 开库建表只走 `src/sqlite.ts` 的 `getDb()`，数据读写只走 `src/db.ts` 的导出函数；禁止在其他模块 `new Database()` 或裸写 SQL。表结构变更须同步 `sqlite.ts` 的 DDL 与本文档 |
+| 三个库 + ATTACH 跨库查询 | 主库 `db/ai-flows.sqlite` 开连接后 `ATTACH` 两个子库：`db/ai-chat-reviews.sqlite`（schema `chat_reviews`，放 `chat_sessions` / `chat_messages` / `chat_models` / `reviews`）与 `db/ai-tickets.sqlite`（schema `tickets`，放 `tickets` / `ticket_comments`）。`db.ts` 里凡涉及子库表的 SQL **必须带 schema 前缀**（含 `nextOrd()` 传的表名），主库表（`users` / `nodes` / `settings` / 两张投影表）不加前缀；跨库 JOIN 直接写全限定名即可。外键只在同库内生效，且 `REFERENCES` 的父表名**不能**带 schema 前缀（SQLite 不支持），省略后自动绑定同库同名父表 |
 | 数据落库只走 db.ts | `platform.ts` 等调用方**不得**直接读 `db/*.json`；旧 JSON 只在 `db.ts` 首次导入时被读取一次，之后为只读种子 |
 | users 是账号唯一主表 | 账号信息只在 `users` 表维护；`chat_accounts` / `review_accounts` 是它的投影表（`email` 主键 + 外键级联 `users.email`），由 `syncUserAccounts()` 统一同步。凡改动 `users` 的写入路径（`saveUsers` / `setUserProfile`）必须在写完后调用 `syncUserAccounts()`，不得只改一处导致投影表与主表漂移；投影表不得自持密码等敏感字段 |
 | 退出码契约 | `0` 通过 / `1` 存在 blocker（拦截）/ `2` 推送失败。pre-push hook 依赖它拦截，改动会静默废掉门禁 |
@@ -185,7 +186,7 @@ export default function main() {}
 | `crawler.ts` | `crc32` / `buildZip` / `collectFiles` | CRC32 标准校验值；zip 经 `inflateRawSync` 往返一致、空条目归档合法；目录递归条目名为 posix 相对路径 |
 
 不要求覆盖：`index.ts` 的 CLI 编排、HTTP 服务生命周期、真实模型调用（涉及网络与凭据）。
-SQLite 数据层（`sqlite.ts` / `db.ts`）也不写自动化单测——依赖真实库文件；用手工往返验证：删掉 `db/ai-flows.sqlite` → 调 `getDb()` 建库并导入旧 JSON → 增删改查各域 → `closeDb()`，并核对表行数与 `db/*.json` 源数据一致。
+SQLite 数据层（`sqlite.ts` / `db.ts`）也不写自动化单测——依赖真实库文件；用手工往返验证：删掉三个 `db/*.sqlite`（含 `-wal` / `-shm`）→ 调 `getDb()` 建三库并导入旧 JSON → 增删改查各域（含跨库 JOIN）→ `closeDb()`，并核对各库表行数与 `db/*.json` 源数据一致；已有单库升级场景则保留旧 `db/ai-flows.sqlite` 直接启动，核对 `migrateLegacyTables()` 把子库表搬走且主库不再残留。
 端到端回归用手工三档用例（info / warning / blocker）验证，方法见 `评审链路与说明.md` §3。
 
 ## 配置层级

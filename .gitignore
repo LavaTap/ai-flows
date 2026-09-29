@@ -18,10 +18,16 @@ db/avatars/
 # AI 对话历史（用户私有数据，不入库）
 db/chats.json
 
-# SQLite 单库文件（运行时生成，随 db/*.json 首次启动导入）
+# SQLite 库文件（运行时生成，随 db/*.json 首次启动导入）
 db/ai-flows.sqlite
 db/ai-flows.sqlite-wal
 db/ai-flows.sqlite-shm
+db/ai-chat-reviews.sqlite
+db/ai-chat-reviews.sqlite-wal
+db/ai-chat-reviews.sqlite-shm
+db/ai-tickets.sqlite
+db/ai-tickets.sqlite-wal
+db/ai-tickets.sqlite-shm
 
 # 其他借用的非原创agents
 .agents/skills/writing-claude-md/
