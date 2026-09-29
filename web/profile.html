@@ -1,0 +1,143 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>员工主页 · AI-FLOWS 平台</title>
+  <link rel="stylesheet" href="../ai-pipeline.css">
+  <script src="/user-menu.js" defer></script>
+  <style>
+    .page-wrap{max-width:860px;margin:0 auto;padding:32px 36px 80px;}
+    .breadcrumb{display:flex;align-items:center;gap:8px;font:400 12px/18px var(--font-sans);color:var(--muted);margin-bottom:20px;}
+    .breadcrumb a{color:var(--muted);text-decoration:none;}
+    .breadcrumb a:hover{color:var(--led);}
+    .breadcrumb .sep{opacity:.5;}
+    .breadcrumb .current{color:var(--ink-soft);font-weight:500;}
+
+    /* 员工资料卡 */
+    .profile-card{display:flex;gap:32px;padding:32px;border:1px solid var(--glass-line);
+      border-radius:16px;background:var(--glass-fill);box-shadow:0 1px 2px rgba(15,23,42,.04), 0 1px 3px rgba(15,23,42,.06);}
+    .profile-left{display:flex;flex-direction:column;align-items:center;gap:16px;flex:none;width:140px;}
+    .profile-avatar{width:120px;height:120px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+      color:#fff;font:600 44px/1 var(--font-sans);box-shadow:0 4px 14px rgba(20,20,20,.2);overflow:hidden;}
+    .profile-avatar img{width:100%;height:100%;object-fit:cover;}
+    .role-tag{padding:4px 14px;border-radius:999px;font:500 12px/18px var(--font-sans);}
+    .role-tag.supervisor{background:var(--led-soft);color:var(--led);}
+    .role-tag.staff{background:var(--teal-soft);color:var(--teal);}
+
+    .profile-right{flex:1;min-width:0;display:flex;flex-direction:column;gap:18px;}
+    .profile-name-row{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;}
+    .profile-name{font:700 26px/34px var(--font-sans);color:var(--ink-soft);margin:0;}
+    .profile-title{font:500 14px/22px var(--font-sans);color:var(--muted);}
+
+    .info-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px 24px;}
+    .info-item{display:flex;flex-direction:column;gap:4px;}
+    .info-label{font:400 11px/16px var(--font-sans);color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+    .info-value{font:500 13.5px/20px var(--font-sans);color:var(--ink-soft);word-break:break-all;}
+    .info-value.mono{font-family:var(--font-mono);font-size:13px;}
+    .info-value .gh-link{color:var(--teal);text-decoration:none;font-family:var(--font-mono);font-size:13px;}
+    .info-value .gh-link:hover{text-decoration:underline;}
+    .gh-pending{display:inline-block;padding:2px 8px;border-radius:6px;
+      background:var(--amber-soft);color:var(--amber);font:500 11px/16px var(--font-sans);
+      border:1px solid var(--amber-line);}
+
+    .divider{height:1px;background:var(--glass-line);margin:4px 0;}
+
+    .profile-dept{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:8px;
+      background:var(--led-soft);color:var(--led);font:500 12px/18px var(--font-sans);}
+    .profile-dept::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--led);
+      box-shadow:0 0 6px var(--led-glow);}
+
+    @media (max-width: 640px) {
+      .profile-card{flex-direction:column;align-items:center;text-align:center;}
+      .profile-left{width:100%;}
+      .info-grid{grid-template-columns:1fr;}
+      .profile-name-row{justify-content:center;}
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot" aria-hidden="true"></span>
+      <h1 class="brand-title">
+        <span class="tt-pipeline">AI-FLOWS</span>
+        <span class="tt-sep">/</span>
+        <span>员工主页</span>
+      </h1>
+    </div>
+    <div class="top-right">
+      <a href="/home" class="nav-link">首页</a>
+      <a href="/pipeline" class="nav-link" target="_blank" rel="noopener">AI 管线</a>
+      <a href="/tickets" class="nav-link" target="_blank" rel="noopener">工单</a>
+      <a href="/github-audit" class="nav-link">GitHub</a>
+      <a href="/team" id="teamLink" class="nav-link" style="display:none;">团队管理</a>
+      <a href="/chat" class="nav-link" target="_blank" rel="noopener">AI 对话</a>
+      <div class="user-menu">
+        <span class="user-chip" id="userChip" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"><span class="avatar" aria-hidden="true"></span><span id="userName">未登录</span></span>
+        <div class="user-panel" id="userPanel" hidden>
+          <div class="user-panel-head">
+            <span class="avatar" aria-hidden="true"></span>
+            <div class="user-panel-meta">
+              <strong id="userPanelName">未登录</strong>
+              <span class="user-panel-email" id="userPanelEmail"></span>
+            </div>
+          </div>
+          <div class="user-panel-sep"></div>
+          <a class="user-panel-item" href="/account"><span class="user-panel-ico" aria-hidden="true">⚙</span>设置</a>
+          <div class="user-panel-sep"></div>
+          <button class="user-panel-item user-panel-logout" type="button"><span class="user-panel-ico" aria-hidden="true">⏻</span>退出登录</button>
+    </div>
+  </header>
+
+  <main class="page-wrap" id="profileWrap">
+    <div class="breadcrumb">
+      <a href="/home">首页</a>
+      <span class="sep">›</span>
+      <a href="/team" id="teamCrumb">团队</a>
+      <span class="sep">›</span>
+      <span class="current" id="crumbName">员工</span>
+    </div>
+
+    <div class="profile-card">
+      <!-- 左侧：大头像 + 角色标签 -->
+      <div class="profile-left">
+        <div class="profile-avatar" id="profileAvatar">?</div>
+        <span class="role-tag" id="roleTag">员工</span>
+      </div>
+
+      <!-- 右侧：信息区 -->
+      <div class="profile-right">
+        <div>
+          <div class="profile-name-row">
+            <h1 class="profile-name" id="profileName">加载中…</h1>
+            <span class="profile-dept" id="profileDept">部门</span>
+          </div>
+          <div class="profile-title" id="profileTitle">职位</div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="info-grid">
+          <div class="info-item">
+            <span class="info-label">邮箱</span>
+            <span class="info-value mono" id="profileEmail">—</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">部门</span>
+            <span class="info-value" id="infoDept">—</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">职位</span>
+            <span class="info-value" id="infoTitle">—</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">GitHub</span>
+            <span class="info-value mono" id="infoGithub">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

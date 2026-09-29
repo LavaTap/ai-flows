@@ -1,0 +1,137 @@
+﻿TAP version 13
+# Subtest: should return all records when user is supervisor
+ok 1 - should return all records when user is supervisor
+  ---
+  duration_ms: 1.8328
+  type: 'test'
+  ...
+# Subtest: should return only own-department records for staff
+ok 2 - should return only own-department records for staff
+  ---
+  duration_ms: 0.3785
+  type: 'test'
+  ...
+# Subtest: should keep external records assigned to 程序中台 visible to that department staff
+ok 3 - should keep external records assigned to 程序中台 visible to that department staff
+  ---
+  duration_ms: 0.2315
+  type: 'test'
+  ...
+# Subtest: should return empty for staff of department with no records
+ok 4 - should return empty for staff of department with no records
+  ---
+  duration_ms: 0.2132
+  type: 'test'
+  ...
+# Subtest: should allow requirement edit for own-department staff and supervisor only
+ok 5 - should allow requirement edit for own-department staff and supervisor only
+  ---
+  duration_ms: 0.5708
+  type: 'test'
+  ...
+# Subtest: should resolve paths inside repo root and reject traversal outside
+ok 6 - should resolve paths inside repo root and reject traversal outside
+  ---
+  duration_ms: 0.3675
+  type: 'test'
+  ...
+# Subtest: should reject sibling-prefix paths that do not live inside repo root
+ok 7 - should reject sibling-prefix paths that do not live inside repo root
+  ---
+  duration_ms: 0.3123
+  type: 'test'
+  ...
+# Subtest: should return empty array when diff text is empty
+ok 8 - should return empty array when diff text is empty
+  ---
+  duration_ms: 3.849
+  type: 'test'
+  ...
+# Subtest: should skip file header and return empty when no hunk present
+ok 9 - should skip file header and return empty when no hunk present
+  ---
+  duration_ms: 0.5757
+  type: 'test'
+  ...
+# Subtest: should parse standard hunk and advance old/new line numbers correctly
+ok 10 - should parse standard hunk and advance old/new line numbers correctly
+  ---
+  duration_ms: 1.1837
+  type: 'test'
+  ...
+# Subtest: should treat omitted hunk count as 1
+ok 11 - should treat omitted hunk count as 1
+  ---
+  duration_ms: 0.4458
+  type: 'test'
+  ...
+# Subtest: should skip 'No newline at end of file' marker lines
+ok 12 - should skip 'No newline at end of file' marker lines
+  ---
+  duration_ms: 0.4739
+  type: 'test'
+  ...
+# Subtest: should parse multiple hunks in one file
+ok 13 - should parse multiple hunks in one file
+  ---
+  duration_ms: 0.3248
+  type: 'test'
+  ...
+# Subtest: should keep basename and replace illegal chars when sanitizing filename
+ok 14 - should keep basename and replace illegal chars when sanitizing filename
+  ---
+  duration_ms: 2.5241
+  type: 'test'
+  ...
+# Subtest: should include requirement and delivery rules in prompt
+ok 15 - should include requirement and delivery rules in prompt
+  ---
+  duration_ms: 0.7957
+  type: 'test'
+  ...
+# Subtest: should append upload names and contents when uploads given
+ok 16 - should append upload names and contents when uploads given
+  ---
+  duration_ms: 0.5894
+  type: 'test'
+  ...
+# Subtest: should fall back to hint text when requirement is empty
+ok 17 - should fall back to hint text when requirement is empty
+  ---
+  duration_ms: 0.2844
+  type: 'test'
+  ...
+# Subtest: should throw when skill is unknown
+ok 18 - should throw when skill is unknown
+  ---
+  duration_ms: 1.144
+  type: 'test'
+  ...
+# Subtest: should load installed skill doc without frontmatter
+not ok 19 - should load installed skill doc without frontmatter
+  ---
+  duration_ms: 0.4238
+  type: 'test'
+  location: 'D:\\code\\ai-flows\\src\\skill.test.ts:42:1'
+  failureType: 'testCodeFailure'
+  error: 'skill 未安装：D:\\code\\ai-flows\\.agents\\product-manager-skill\\SKILL.md'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    resolveSkillDoc (D:\code\ai-flows\src\skill.ts:47:32)
+    TestContext.<anonymous> (D:\code\ai-flows\src\skill.test.ts:43:15)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..19
+# tests 19
+# suites 0
+# pass 18
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 672.2569

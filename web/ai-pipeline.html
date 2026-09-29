@@ -1,120 +1,153 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI 管线 · AI-FLOWS 平台</title>
   <link rel="stylesheet" href="./ai-pipeline.css">
+  <script src="/user-menu.js" defer></script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
       <span class="dot" aria-hidden="true"></span>
-      <span class="name">AI-FLOWS · AI 管线平台</span>
+      <h1 class="brand-title" id="topbarTitle">
+        <span class="tt-pipeline">管线</span>
+        <span class="tt-sep">/</span>
+        <span class="tt-repo">仓库</span>
+        <span class="tt-sep">/</span>
+        <span class="tt-page">report</span>
+      </h1>
     </div>
     <div class="top-right">
-      <span class="tab on">AI 管线</span>
-      <span class="tab">团队</span>
-      <span class="tab">运营</span>
-      <span class="user-chip"><span class="avatar" aria-hidden="true"></span>未登录</span>
+      <a class="nav-link" href="/home">首页</a>
+      <a class="nav-link active" href="/pipeline">AI 管线</a>
+      <a class="nav-link" href="/tickets" target="_blank" rel="noopener">工单</a>
+      <a class="nav-link" href="/github-audit">GitHub</a>
+      <a class="nav-link" href="/team" id="teamLink" style="display:none;">团队管理</a>
+      <a class="nav-link" href="/chat" target="_blank" rel="noopener">AI 对话</a>
+      <div class="user-menu">
+        <span class="user-chip" id="userChip" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"><span class="avatar" aria-hidden="true"></span><span id="userName">未登录</span></span>
+        <div class="user-panel" id="userPanel" hidden>
+          <div class="user-panel-head">
+            <span class="avatar" aria-hidden="true"></span>
+            <div class="user-panel-meta">
+              <strong id="userPanelName">未登录</strong>
+              <span class="user-panel-email" id="userPanelEmail"></span>
+            </div>
+          </div>
+          <div class="user-panel-sep"></div>
+          <a class="user-panel-item" href="/account"><span class="user-panel-ico" aria-hidden="true">⚙</span>设置</a>
+          <div class="user-panel-sep"></div>
+          <button class="user-panel-item user-panel-logout" type="button"><span class="user-panel-ico" aria-hidden="true">⏻</span>退出登录</button>
     </div>
   </header>
 
-  <main class="shell">
-    <section class="head">
-      <div>
-        <h1 class="page-title">
-          <span>研产</span><span class="led-word">AI</span><span>管线</span>
-        </h1>
-        <p class="page-sub">产品调研 → 产品策划 → AI 代码评审 → 运营</p>
+  <div class="layout">
+    <!-- 左侧管线列表侧栏 -->
+    <aside class="pipeline-sidebar" id="pipelineSidebar">
+      <div class="sidebar-head">
+        <span class="sidebar-title">管线列表</span>
       </div>
-      <span class="hint">悬停节点查看流程详情</span>
-    </section>
+      <ul class="pipeline-list" id="pipelineList">
+        <li class="pipeline-item active" data-name="text-flow">
+          <span class="pi-name">text-flow</span>
+        </li>
+      </ul>
+      <div class="sidebar-add">
+        <input type="text" id="newPipelineInput" placeholder="新管线名…" maxlength="40" />
+        <button type="button" id="addPipelineBtn" title="添加管线" aria-label="添加管线">+</button>
+      </div>
+      <div class="sidebar-foot">
+        <span class="sf-label">当前仓库</span>
+        <span class="sf-repo" id="sidebarRepo">—</span>
+      </div>
+    </aside>
 
-    <section class="detail" id="detail" aria-live="polite"></section>
+    <!-- 管线主体 -->
+    <main class="shell">
+      <section class="pipeline" id="pipeline">
+        <div class="rail" aria-hidden="true"></div>
 
-    <section class="pipeline" id="pipeline">
-      <div class="rail" aria-hidden="true"></div>
+        <span class="cell" data-idx="0">
+          <div class="tip" role="dialog" aria-label="产品调研详情"></div>
+          <button type="button" class="node" data-idx="0" aria-pressed="false">
+            <span class="n-title">产品调研</span>
+          </button>
+        </span>
 
-      <button type="button" class="node" data-idx="0" aria-pressed="false">
-        <span class="n-num">01</span>
-        <span class="n-title">产品调研</span>
-        <span class="n-step">环节 · 产品调研</span>
-        <span class="tag muted">待接入</span>
-      </button>
+        <span class="arrow" aria-hidden="true">
+          <svg viewBox="0 0 40 10">
+            <defs>
+              <marker id="am0" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+                <path d="M1 1 L7 4 L1 7 Z" fill="rgba(0,0,0,0.32)"></path>
+              </marker>
+            </defs>
+            <path d="M0 5 H33" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1.5" marker-end="url(#am0)"></path>
+          </svg>
+        </span>
 
-      <span class="arrow" aria-hidden="true">
-        <svg viewBox="0 0 40 10">
-          <defs>
-            <marker id="am0" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
-              <path d="M1 1 L7 4 L1 7 Z" fill="rgba(0,0,0,0.32)"></path>
-            </marker>
-          </defs>
-          <path d="M0 5 H33" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1.5" marker-end="url(#am0)"></path>
-        </svg>
-      </span>
+        <span class="cell" data-idx="1">
+          <div class="tip" role="dialog" aria-label="产品规划详情"></div>
+          <button type="button" class="node" data-idx="1" aria-pressed="false">
+            <span class="n-title">产品规划</span>
+          </button>
+        </span>
 
-      <button type="button" class="node" data-idx="1" aria-pressed="false">
-        <span class="n-num">02</span>
-        <span class="n-title">AI产品</span>
-        <span class="n-step">环节 · 产品策划案</span>
-        <span class="tag muted">待接入</span>
-      </button>
+        <span class="arrow" aria-hidden="true">
+          <svg viewBox="0 0 40 10">
+            <defs>
+              <marker id="am1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+                <path d="M1 1 L7 4 L1 7 Z" fill="rgba(0,0,0,0.32)"></path>
+              </marker>
+            </defs>
+            <path d="M0 5 H33" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1.5" marker-end="url(#am0)"></path>
+          </svg>
+        </span>
 
-      <span class="arrow" aria-hidden="true">
-        <svg viewBox="0 0 40 10">
-          <defs>
-            <marker id="am1" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
-              <path d="M1 1 L7 4 L1 7 Z" fill="rgba(0,0,0,0.32)"></path>
-            </marker>
-          </defs>
-          <path d="M0 5 H33" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1.5" marker-end="url(#am1)"></path>
-        </svg>
-      </span>
+        <span class="cell" data-idx="2">
+          <div class="tip" role="dialog" aria-label="程序执行详情"></div>
+          <button type="button" class="node" data-idx="2" aria-pressed="false">
+            <span class="n-title">程序执行</span>
+          </button>
+        </span>
 
-      <button type="button" class="node on" data-idx="2" aria-pressed="true">
-        <span class="n-num">03</span>
-        <span class="n-title">程序中台</span>
-        <span class="n-step">环节 · AI 代码评审</span>
-        <span class="tag ok">已就绪</span>
-      </button>
+        <span class="arrow" aria-hidden="true">
+          <svg viewBox="0 0 40 10">
+            <defs>
+              <marker id="am2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+                <path d="M1 1 L7 4 L1 7 Z" fill="rgba(0,0,0,0.32)"></path>
+              </marker>
+            </defs>
+            <path d="M0 5 H33" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1.5" marker-end="url(#am0)"></path>
+          </svg>
+        </span>
 
-      <span class="arrow" aria-hidden="true">
-        <svg viewBox="0 0 40 10">
-          <defs>
-            <marker id="am2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
-              <path d="M1 1 L7 4 L1 7 Z" fill="rgba(0,0,0,0.32)"></path>
-            </marker>
-          </defs>
-          <path d="M0 5 H33" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1.5" marker-end="url(#am2)"></path>
-        </svg>
-      </span>
+        <span class="cell" data-idx="3">
+          <div class="tip" role="dialog" aria-label="产品运营详情"></div>
+          <button type="button" class="node" data-idx="3" aria-pressed="false">
+            <span class="n-title">产品运营</span>
+          </button>
+        </span>
+      </section>
 
-      <button type="button" class="node" data-idx="3" aria-pressed="false">
-        <span class="n-num">04</span>
-        <span class="n-title">产品运营</span>
-        <span class="n-step">环节 · 运营</span>
-        <span class="tag muted">待接入</span>
-      </button>
-    </section>
-
-    <footer class="foot">
-      <span class="legend"><span class="ldot brand"></span>已就绪</span>
-      <span class="legend"><span class="ldot muted"></span>待接入（先留空）</span>
-      <span class="foot-rule">权限：员工可执行 / 查看工作流 · 部门主管可操控并批准所有节点</span>
-    </footer>
-  </main>
+      <footer class="foot">
+        <span class="foot-hint">悬停看详情 · 滚轮缩放 · 左键拖拽移动 · 双击复位</span>
+        <span class="foot-rule">权限：员工可执行 / 查看工作流 · 部门主管可操控并批准所有节点</span>
+      </footer>
+    </main>
+  </div>
 
   <!-- 各节点悬停详情模板 -->
   <template data-idx="0">
     <div class="d-head">
       <span class="d-title">产品调研</span>
-      <span class="tag muted">待接入</span>
+      <span class="tag muted">待执行</span>
     </div>
-    <div class="d-desc">调用自研调研 Skill，对需求与市场先行摸底；能力位先留空，待接入。</div>
+    <div class="d-desc">填写调研需求内容（或上传附件），「直接执行」调用调研 Skill 生成调研方案；「需求分析」上传材料后生成需求分析报告。</div>
     <div class="d-meta">
-      <span class="d-item"><b>负责部门</b>产品调研</span>
-      <span class="d-item"><b>执行角色</b>用户调研实习生（员工）</span>
+      <span class="d-item"><b>负责部门</b>用户研究部</span>
+      <span class="d-item"><b>执行角色</b>用户研究实习生（员工）</span>
       <span class="d-item"><b>权限</b>可执行 / 查看</span>
     </div>
   </template>
@@ -122,12 +155,12 @@
   <template data-idx="1">
     <div class="d-head">
       <span class="d-title">产品策划案</span>
-      <span class="tag muted">待接入</span>
+      <span class="tag muted">待执行</span>
     </div>
-    <div class="d-desc">基于调研结论产出产品策划案；生成环节先留空，待接入。</div>
+    <div class="d-desc">输入需求文字描述（或上传附件），点击执行调用产品经理 Skill 产出 MVP / PRD / Roadmap 等策划案。</div>
     <div class="d-meta">
-      <span class="d-item"><b>负责部门</b>AI产品</span>
-      <span class="d-item"><b>执行角色</b>AI 产品实习生（员工）</span>
+      <span class="d-item"><b>负责部门</b>用户研究部</span>
+      <span class="d-item"><b>执行角色</b>用户研究实习生（员工）</span>
       <span class="d-item"><b>权限</b>可执行 / 查看</span>
     </div>
   </template>
@@ -135,13 +168,13 @@
   <template data-idx="2">
     <div class="d-head">
       <span class="d-title">AI 代码评审</span>
-      <span class="tag ok">已就绪</span>
+      <span class="tag ok">待执行</span>
     </div>
-    <div class="d-desc">基于现有 ai-review 管线：git diff 采集 → LLM 评审 → 门禁判定 → 生成报告并推送。</div>
+    <div class="d-desc">基于现有 ai-review 管线：git diff 采集 → LLM 评审 → 门禁判定 → 生成报告；评审完成后由执行人提交验收，主管审核。</div>
     <div class="d-meta">
       <span class="d-item"><b>负责部门</b>程序中台</span>
-      <span class="d-item"><b>执行角色</b>前端开发设计师（员工）</span>
-      <span class="d-item"><b>审批</b>产品部门主管（可批准全部节点）</span>
+      <span class="d-item"><b>执行角色</b>平台开发工程师（员工）</span>
+      <span class="d-item"><b>审批</b>部门主管（可批准全部节点）</span>
     </div>
   </template>
 
@@ -152,45 +185,163 @@
     </div>
     <div class="d-desc">上线后的产品运营动作；能力位先留空，待接入。</div>
     <div class="d-meta">
-      <span class="d-item"><b>负责部门</b>产品运营</span>
-      <span class="d-item"><b>执行角色</b>初级产品运营（员工）</span>
+      <span class="d-item"><b>负责部门</b>平台运营部</span>
+      <span class="d-item"><b>执行角色</b>运营专员（员工）</span>
       <span class="d-item"><b>权限</b>可执行 / 查看</span>
     </div>
   </template>
 
   <script>
     (function () {
-      var detail = document.getElementById("detail");
       var pipeline = document.getElementById("pipeline");
+      var cells = Array.prototype.slice.call(document.querySelectorAll(".cell"));
       var nodes = Array.prototype.slice.call(document.querySelectorAll(".node"));
       var tpls = Array.prototype.slice.call(document.querySelectorAll("template"));
-      var DEFAULT_IDX = 2; /* 默认展示已就绪的 AI 代码评审节点 */
-      var current = DEFAULT_IDX;
+      var current = -1; /* -1 表示当前无选中节点 */
+
+      /* 缩放（中心锚点）+ 左键拖拽平移，双击复位 */
+      var scale = 1;
+      var tx = 0;
+      var ty = 0;
+      var MIN_SCALE = 0.5;
+      var MAX_SCALE = 3; /* 放大上限 3× */
+      var dragging = false; /* 是否处于拖拽中 */
+      var dragMoved = false; /* 本次按下是否已产生位移（用于吞掉误触的 click） */
+      var startX = 0;
+      var startY = 0;
+      var baseX = 0;
+      var baseY = 0;
+
+      function applyTransform() {
+        pipeline.style.transform =
+          "translate(" + tx + "px, " + ty + "px) scale(" + scale + ")";
+      }
+
+      pipeline.addEventListener("wheel", function (e) {
+        if (e.ctrlKey) return; /* 保留浏览器自身的 Ctrl+滚轮缩放 */
+        /* 评审记录列表内：让滚轮上下滚动列表，而不是缩放管线 */
+        if (e.target && e.target.closest && e.target.closest(".d-reviews-list")) return;
+        e.preventDefault();
+        var k = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+        scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, +(scale * k).toFixed(3)));
+        applyTransform();
+      }, { passive: false });
+
+      /* 左键按下开始拖拽；tooltip 内（按钮/记录）不触发拖拽 */
+      pipeline.addEventListener("mousedown", function (e) {
+        if (e.button !== 0) return;
+        if (e.target && e.target.closest && e.target.closest(".tip")) return;
+        dragging = true;
+        dragMoved = false;
+        startX = e.clientX;
+        startY = e.clientY;
+        baseX = tx;
+        baseY = ty;
+        pipeline.classList.add("dragging");
+        e.preventDefault(); /* 阻止拖拽时选中文字/拖出按钮 */
+      });
+
+      window.addEventListener("mousemove", function (e) {
+        if (!dragging) return;
+        var dx = e.clientX - startX;
+        var dy = e.clientY - startY;
+        if (!dragMoved && Math.abs(dx) + Math.abs(dy) < 4) return; /* 4px 内视为点击 */
+        if (!dragMoved) hide(); /* 开始拖动即收起详情 */
+        dragMoved = true;
+        tx = baseX + dx;
+        ty = baseY + dy;
+        applyTransform();
+      });
+
+      window.addEventListener("mouseup", function () {
+        if (!dragging) return;
+        dragging = false;
+        pipeline.classList.remove("dragging");
+      });
+
+      /* 拖拽结束时吞掉随后的 click，避免误触发节点 */
+      pipeline.addEventListener("click", function (e) {
+        if (!dragMoved) return;
+        dragMoved = false;
+        e.stopPropagation();
+        e.preventDefault();
+      }, true);
+
+      pipeline.addEventListener("dblclick", function () {
+        scale = 1;
+        tx = 0;
+        ty = 0;
+        pipeline.style.transform = "";
+      });
+
+      function tipOf(i) {
+        var cell = cells[i];
+        return cell ? cell.querySelector(".tip") : null;
+      }
+
+      var hideTimer = null;
+      function cancelHide() {
+        if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+      }
+      function scheduleHide() {
+        cancelHide();
+        hideTimer = setTimeout(hide, 160);
+      }
+
+      /* 收起当前 tooltip，并把节点移出选中态 */
+      function hide() {
+        cancelHide();
+        if (current === -1) return;
+        current = -1;
+        nodes.forEach(function (n, i) {
+          n.classList.remove("on");
+          n.setAttribute("aria-pressed", "false");
+          cells[i].classList.remove("on");
+          var t = tipOf(i);
+          if (t) { t.classList.remove("open"); t.innerHTML = ""; }
+        });
+        window.dispatchEvent(new CustomEvent("pipeline-show", { detail: -1 }));
+      }
 
       function show(idx) {
+        cancelHide();
+        if (dragging) return; /* 拖拽平移过程中不响应悬停 */
         if (idx === current) return;
-        current = idx;
-        var tpl = tpls[idx];
-        if (tpl) detail.innerHTML = tpl.innerHTML;
+        /* 收起上一个 tooltip */
+        if (current !== -1) {
+          var old = tipOf(current);
+          if (old) { old.classList.remove("open"); old.innerHTML = ""; }
+        }
         nodes.forEach(function (n, i) {
           var on = i === idx;
           n.classList.toggle("on", on);
           n.setAttribute("aria-pressed", on ? "true" : "false");
+          cells[i].classList.toggle("on", on);
         });
+        var tpl = tpls[idx];
+        var t = tipOf(idx);
+        if (tpl && t) t.innerHTML = tpl.innerHTML;
+        if (t) t.classList.add("open");
+        current = idx;
+        /* 广播给平台增强脚本（静态预览无监听者，无副作用） */
+        window.dispatchEvent(new CustomEvent("pipeline-show", { detail: idx }));
       }
 
-      nodes.forEach(function (n) {
-        n.addEventListener("mouseenter", function () { show(Number(n.getAttribute("data-idx"))); });
-        n.addEventListener("focus", function () { show(Number(n.getAttribute("data-idx"))); });
+      cells.forEach(function (cell, i) {
+        cell.addEventListener("mouseenter", function () { show(i); });
+        cell.addEventListener("mouseleave", scheduleHide);
+        /* 从节点移入 tooltip 继续停留：悬停 tooltip 期间暂缓收起 */
+        var t = tipOf(i);
+        if (t) {
+          t.addEventListener("mouseenter", cancelHide);
+          t.addEventListener("mouseleave", scheduleHide);
+        }
       });
 
-      pipeline.addEventListener("mouseleave", function () {
-        var f = document.activeElement;
-        if (f && f.classList && f.classList.contains("node")) return;
-        show(DEFAULT_IDX);
+      nodes.forEach(function (n, i) {
+        n.addEventListener("focus", function () { show(i); });
+        n.addEventListener("blur", scheduleHide);
       });
-
-      show(DEFAULT_IDX);
     })();
   </script>
 </body>

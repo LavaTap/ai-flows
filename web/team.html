@@ -1,0 +1,172 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>团队管理 · AI-FLOWS 平台</title>
+  <link rel="stylesheet" href="./ai-pipeline.css">
+  <script src="/user-menu.js" defer></script>
+  <style>
+    /* 页面壳：左侧栏 + 主内容 */
+    .page-shell{display:grid;grid-template-columns:220px 1fr;min-height:calc(100vh - 56px);}
+    .sidebar{position:sticky;top:56px;height:calc(100vh - 56px);overflow-y:auto;
+      border-right:1px solid var(--glass-line);background:var(--paper-1);padding:20px 12px;box-sizing:border-box;}
+    .side-title{font:700 11px/18px var(--font-sans);color:var(--muted);letter-spacing:1px;
+      text-transform:uppercase;padding:0 10px 8px;}
+    .side-nav{display:flex;flex-direction:column;gap:2px;}
+    .side-nav a{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;
+      font:500 13px/20px var(--font-sans);color:var(--copy);text-decoration:none;transition:all 120ms ease;}
+    .side-nav a:hover{background:var(--paper-2);color:var(--ink-soft);}
+    .side-nav a.active{background:var(--led-soft);color:var(--led);}
+    .main-content{padding:24px 36px 80px;min-width:0;}
+    .breadcrumb{display:flex;align-items:center;gap:8px;font:400 12px/18px var(--font-sans);color:var(--muted);margin-bottom:20px;}
+    .breadcrumb a{color:var(--muted);text-decoration:none;}
+    .breadcrumb a:hover{color:var(--led);}
+    .breadcrumb .sep{opacity:.5;}
+    .breadcrumb .current{color:var(--ink-soft);font-weight:500;}
+
+    /* 去卡片化：分区用分隔线 + 标题 */
+    .section{padding:20px 0;border-bottom:1px solid var(--glass-line);}
+    .section:first-of-type{padding-top:4px;}
+    .section:last-of-type{border-bottom:none;}
+    .section h2{margin:0 0 16px;font:600 14px/22px var(--font-sans);color:var(--ink-soft);
+      display:flex;align-items:center;gap:8px;}
+    .section h2 .count{margin-left:auto;font:400 12px/18px var(--font-sans);color:var(--muted);font-weight:400;}
+
+    /* 待审核列表 */
+    .pending-list{display:flex;flex-direction:column;gap:10px;}
+    .pending-item{display:flex;align-items:center;gap:14px;padding:12px 16px;
+      border:1px solid var(--amber-line);border-radius:12px;background:var(--amber-soft);}
+    .pending-avatar{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+      color:#fff;font:600 16px/1 var(--font-sans);flex:none;box-shadow:0 2px 6px rgba(20,20,20,.15);overflow:hidden;}
+    .pending-avatar img{width:100%;height:100%;object-fit:cover;}
+    .pending-info{flex:1;min-width:0;}
+    .pending-name{font:600 13px/20px var(--font-sans);color:var(--ink-soft);}
+    .pending-meta{font:400 12px/18px var(--font-sans);color:var(--muted);}
+    .pending-gh{font-family:var(--font-mono);color:var(--amber);font-weight:600;}
+    .pending-actions{display:flex;gap:8px;}
+    .btn{padding:6px 14px;border-radius:8px;font:500 12px/18px var(--font-sans);cursor:pointer;
+      border:1px solid var(--glass-line);background:var(--glass-fill);color:var(--ink-soft);white-space:nowrap;}
+    .btn:hover{background:var(--paper-2);}
+    .btn.primary{background:var(--teal);color:#fff;border-color:var(--teal);}
+    .btn.primary:hover{background:#059669;}
+    .btn.danger{background:var(--block-soft);color:var(--block);border-color:rgba(239,68,68,.2);}
+    .btn.danger:hover{background:rgba(239,68,68,.18);}
+    .btn:disabled{opacity:.5;cursor:not-allowed;}
+
+    /* 成员表格 */
+    .member-table{width:100%;border-collapse:separate;border-spacing:0;}
+    .member-table th{text-align:left;font:600 12px/18px var(--font-sans);color:var(--muted);
+      padding:8px 12px;border-bottom:1px solid var(--glass-line);font-weight:600;}
+    .member-table td{padding:10px 12px;border-bottom:1px solid var(--glass-line);
+      font:400 13px/20px var(--font-sans);color:var(--copy);vertical-align:middle;}
+    .member-table tr:last-child td{border-bottom:none;}
+    .member-row:hover{background:var(--paper-2);}
+    .m-cell-avatar{display:flex;align-items:center;gap:10px;}
+    .m-avatar-sm{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+      color:#fff;font:600 13px/1 var(--font-sans);flex:none;box-shadow:0 1px 4px rgba(20,20,20,.15);overflow:hidden;}
+    .m-avatar-sm img{width:100%;height:100%;object-fit:cover;}
+    .m-name{font:600 13px/20px var(--font-sans);color:var(--ink-soft);}
+    .m-email{font:400 11px/16px var(--font-sans);color:var(--muted);}
+    .badge{display:inline-block;padding:2px 8px;border-radius:999px;font:500 11px/16px var(--font-sans);}
+    .badge.supervisor{background:var(--led-soft);color:var(--led);}
+    .badge.staff{background:var(--teal-soft);color:var(--teal);}
+    .dept-tag{display:inline-block;padding:2px 8px;border-radius:6px;font:500 11px/16px var(--font-sans);
+      background:var(--glass-fill);color:var(--ink-soft);border:1px solid var(--glass-line);}
+    .edit-input{padding:5px 8px;border:1px solid var(--glass-line);border-radius:8px;
+      background:#ffffff;font:400 12px/18px var(--font-sans);color:var(--ink);width:100%;
+      font-family:var(--font-sans);}
+    .edit-input:focus{outline:none;border-color:var(--led);box-shadow:0 0 0 3px var(--led-soft);}
+    .edit-select{padding:5px 28px 5px 8px;border:1px solid var(--glass-line);border-radius:8px;
+      background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2 4l3 3 3-3' fill='none' stroke='%2394a3b8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 8px center;
+      font:400 12px/18px var(--font-sans);color:var(--ink);width:100%;
+      font-family:var(--font-sans);appearance:none;-webkit-appearance:none;cursor:pointer;}
+    .edit-select:focus{outline:none;border-color:var(--led);box-shadow:0 0 0 3px var(--led-soft);}
+    .row-actions{display:flex;gap:6px;}
+    .gh-link{color:var(--teal);text-decoration:none;font-family:var(--font-mono);font-size:12px;}
+    .gh-link:hover{text-decoration:underline;}
+    .gh-pending-tag{display:inline-block;padding:2px 6px;border-radius:6px;
+      background:var(--amber-soft);color:var(--amber);font:500 11px/16px var(--font-sans);
+      border:1px solid var(--amber-line);}
+    .empty-tip{padding:24px;text-align:center;color:var(--muted);font:400 13px/20px var(--font-sans);}
+  </style>
+</head>
+<body>
+  <!-- 顶栏 -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot" aria-hidden="true"></span>
+      <h1 class="brand-title">
+        <span class="tt-pipeline">AI-FLOWS</span>
+        <span class="tt-sep">/</span>
+        <span>团队管理</span>
+      </h1>
+    </div>
+    <div class="top-right">
+      <a href="/home" class="nav-link">首页</a>
+      <a href="/pipeline" class="nav-link" target="_blank" rel="noopener">AI 管线</a>
+      <a href="/tickets" class="nav-link" target="_blank" rel="noopener">工单</a>
+      <a href="/github-audit" class="nav-link">GitHub</a>
+      <a href="/team" class="nav-link active">团队管理</a>
+      <a href="/chat" class="nav-link" target="_blank" rel="noopener">AI 对话</a>
+      <div class="user-menu">
+        <span class="user-chip" id="userChip" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"><span class="avatar" aria-hidden="true"></span><span id="userName">未登录</span></span>
+        <div class="user-panel" id="userPanel" hidden>
+          <div class="user-panel-head">
+            <span class="avatar" aria-hidden="true"></span>
+            <div class="user-panel-meta">
+              <strong id="userPanelName">未登录</strong>
+              <span class="user-panel-email" id="userPanelEmail"></span>
+            </div>
+          </div>
+          <div class="user-panel-sep"></div>
+          <a class="user-panel-item" href="/account"><span class="user-panel-ico" aria-hidden="true">⚙</span>设置</a>
+          <div class="user-panel-sep"></div>
+          <button class="user-panel-item user-panel-logout" type="button"><span class="user-panel-ico" aria-hidden="true">⏻</span>退出登录</button>
+    </div>
+  </header>
+
+  <div class="page-shell">
+    <!-- 左侧团队栏 -->
+    <aside class="sidebar">
+      <div class="side-title">团队</div>
+      <nav class="side-nav">
+        <a href="/team" class="active">团队管理</a>
+        <a href="/github-audit">GitHub 绑定</a>
+      </nav>
+    </aside>
+
+    <!-- 主内容 -->
+    <div class="main-content">
+      <div class="breadcrumb">
+        <a href="/pipeline">管线</a>
+        <span class="sep">›</span>
+        <span class="current">团队管理</span>
+      </div>
+
+      <h1 class="page-title"><em>团队与部门</em></h1>
+      <p class="page-sub">管理成员资料与部门归属；<a href="/github-audit" style="color:var(--led);text-decoration:none;">GitHub 绑定审核 →</a></p>
+
+      <!-- 成员列表 -->
+      <div class="section">
+        <h2>
+          全部成员
+          <span class="count" id="memberCount"></span>
+        </h2>
+        <table class="member-table">
+          <thead>
+            <tr>
+              <th style="width:30%;">成员</th>
+              <th style="width:18%;">部门</th>
+              <th style="width:22%;">职位</th>
+              <th style="width:18%;">GitHub</th>
+              <th style="width:12%;text-align:right;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="memberTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

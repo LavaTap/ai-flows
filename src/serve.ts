@@ -1,12 +1,17 @@
 import { createServer, type Server, type IncomingMessage } from "node:http";
 import { readdirSync, readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { renderTemplate, type ReportView } from "./reporter.js";
 import { pushToTargets } from "./publisher.js";
 import { stagedFiles, commitStaged, headCommit, amendCommitMessage } from "./git.js";
 
 /** 存放评审报告数据（JSON）的目录名（在该 git 仓库根下） */
 export const REPORTS_DIR = ".ai-review-reports";
+
+/** 报告服务默认端口（与平台服务 4311 错开） */
+export const DEFAULT_REPORT_PORT = 4310;
 
 function esc(s: string): string {
   return String(s)
@@ -299,4 +304,56 @@ export async function startReportServer(
     url: `http://${host}:${port}`,
     close: () => new Promise<void>((r) => server.close(() => r())),
   };
+}
+
+/** CLI 入口路径（src/index.ts 或 dist/index.js，与本文件同目录），后台拉起 serve 守护进程用 */
+const CLI_ENTRY = (() => {
+  const here = fileURLToPath(import.meta.url);
+  return join(dirname(here), here.endsWith(".ts") ? "index.ts" : "index.js");
+})();
+
+/** 确保某仓库的报告服务在跑，返回其 base URL（不阻塞调用方进程）。
+ *  用 .server 握手文件取得真实（可用）端口。 */
+export async function ensureReportServer(repo: string): Promise<string> {
+  const dir = join(repo, REPORTS_DIR);
+  const serverFile = join(dir, ".server");
+  const fallbackPort = Number(process.env.AI_REVIEW_PORT || DEFAULT_REPORT_PORT);
+
+  // 已有可用的服务？(同时校验 dir 一致 + /health 返回 ok，防止同端口别的 ai-review 实例被误信)
+  if (existsSync(serverFile)) {
+    try {
+      const m = JSON.parse(readFileSync(serverFile, "utf8"));
+      if (m.dir === dir) {
+        const r = await fetch(`${m.url}/health`, { signal: AbortSignal.timeout(700) });
+        if (r.ok && (await r.text()).trim() === "ok") return m.url;
+      }
+    } catch {
+      /* 失效，重新拉起 */
+    }
+  }
+
+  // 后台拉起 serve 守护进程（detached），落位改端口会自动写入 .server。
+  // 关键：复用 process.execArgv，让 tsx 的 ESM loader 一并传给子进程；
+  // 否则裸 node 无法解析 .ts 源文件，子进程立即崩溃，.server 永远写不出。
+  // dist 构建产物（.js）场景下 execArgv 为空，不影响。
+  spawn(
+    process.execPath,
+    [...process.execArgv, CLI_ENTRY, "serve", "--port", String(fallbackPort)],
+    { detached: true, stdio: "ignore", cwd: repo }
+  ).unref();
+
+  for (let i = 0; i < 40; i++) {
+    await new Promise((r) => setTimeout(r, 150));
+    if (!existsSync(serverFile)) continue;
+    try {
+      const m = JSON.parse(readFileSync(serverFile, "utf8"));
+      if (m.dir === dir) {
+        const r = await fetch(`${m.url}/health`, { signal: AbortSignal.timeout(600) });
+        if (r.ok && (await r.text()).trim() === "ok") return m.url;
+      }
+    } catch {
+      /* keep waiting */
+    }
+  }
+  return `http://127.0.0.1:${fallbackPort}`;
 }
