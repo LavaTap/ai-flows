@@ -1,9 +1,10 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname, basename, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, loadTickets, appendTicket, updateTicket, TICKET_IMAGES_DIR, AVATARS_DIR, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment } from "./db.js";
+import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, loadTickets, appendTicket, updateTicket, TICKET_IMAGES_DIR, AVATARS_DIR, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel } from "./db.js";
+import { callModelStream, buildChatMessages, truncateTitle, esc, PROVIDER_DEFAULT_ENDPOINTS } from "./chat.js";
 import { createSession, destroySession, currentUser, sessionCookie, clearCookie, SESSION_COOKIE, parseCookies } from "./auth.js";
 import { loadConfig, type CrawlerConfig, type ReviewConfig } from "./config.js";
 import { collectDiff } from "./collector.js";
@@ -287,6 +288,7 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   "/team.js": { file: "team.js", type: "text/javascript; charset=utf-8" },
   "/tickets.js": { file: "tickets.js", type: "text/javascript; charset=utf-8" },
   "/github-audit.js": { file: "github-audit.js", type: "text/javascript; charset=utf-8" },
+  "/chat.js": { file: "chat.js", type: "text/javascript; charset=utf-8" },
 };
 
 /** 读 web/ 下静态文件并响应，不存在返回 false */
@@ -371,6 +373,52 @@ function ticketsHtml(user: UserAccount): string {
   };
   const inject = `<script>window.__TICKETS__ = ${jsonForScript(boot)};</script>\n<script src="/tickets.js" defer></script>`;
   return raw.replace("</body>", `${inject}\n</body>`);
+}
+
+/** 把 ChatModel 转成前端视图（不暴露 apiKeyEnv，前端永远拿不到 key） */
+function toChatModelView(m: ChatModel): { id: string; name: string; provider: string; model: string; baseUrl: string; category?: string; isActive: boolean } {
+  return { id: m.id, name: m.name, provider: m.provider, model: m.model, baseUrl: m.baseUrl, category: m.category, isActive: !!m.isActive };
+}
+
+/** 聊天消息视图（落库原文，前端渲染时再转义） */
+function toChatMessageView(m: ChatMessage): { id: string; role: ChatMessage["role"]; content: string; at: string; modelId?: string; tokens?: number } {
+  return { id: m.id, role: m.role, content: m.content, at: m.at, modelId: m.modelId, tokens: m.tokens };
+}
+
+/** 渲染 AI 对话页：读静态 chat.html，注入登录用户 + 模型列表 + 激活模型 bootstrap */
+function chatHtml(user: UserAccount): string {
+  const raw = readFileSync(join(WEB_DIR, "chat.html"), "utf8");
+  const { activeId, models } = loadChatModels();
+  const boot = {
+    user: toUserView(user),
+    models: models.map(toChatModelView),
+    activeModelId: activeId,
+    isSupervisor: user.role === "supervisor",
+  };
+  const inject = `<script>window.__CHAT__ = ${jsonForScript(boot)};</script>\n<script src="/chat.js" defer></script>`;
+  return raw.replace("</body>", `${inject}\n</body>`);
+}
+
+/** 加载 chat 配置（缺省回退平台启动目录配置） */
+function loadChatConfig(): { systemPrompt: string; maxHistory: number; maxTokens: number; temperature: number } {
+  try {
+    const cfg = loadConfig(undefined);
+    const c = cfg.chat ?? {};
+    return {
+      systemPrompt: c.systemPrompt ?? "你是 ai-flows 平台的 AI 助手。",
+      maxHistory: c.maxHistory ?? 50,
+      maxTokens: c.maxTokens ?? 2000,
+      temperature: c.temperature ?? 0.7,
+    };
+  } catch {
+    return { systemPrompt: "你是 ai-flows 平台的 AI 助手。", maxHistory: 50, maxTokens: 2000, temperature: 0.7 };
+  }
+}
+
+/** 把 ChatModel 转成 reviewer 的 ModelConfig（共用 resolveApiKey） */
+function chatModelToModelConfig(m: ChatModel): { baseUrl: string; apiKeyEnv: string; model: string; timeoutMs?: number } {
+  const baseUrl = m.baseUrl || PROVIDER_DEFAULT_ENDPOINTS[m.provider] || "";
+  return { baseUrl, apiKeyEnv: m.apiKeyEnv, model: m.model, timeoutMs: 120000 };
 }
 
 /** skill 执行用的模型配置：优先目标仓库的 ai-review.config.json，缺省回退平台启动目录配置 */
@@ -1502,6 +1550,20 @@ export async function startPlatformServer(
       return;
     }
 
+    // AI 对话页（未登录重定向到登录页）
+    if (path === "/chat" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        res.statusCode = 302;
+        res.setHeader("Location", "/login");
+        res.end();
+        return;
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(chatHtml(user));
+      return;
+    }
+
     // 工单列表：按视角过滤（主管全量 / 员工本部门），按更新时间倒序
     if (path === "/api/tickets" && req.method === "GET") {
       const user = currentUser(req);
@@ -1727,6 +1789,328 @@ export async function startPlatformServer(
         return;
       }
       sendJson(res, 200, { ticket: toTicketView(ticket, user) });
+      return;
+    }
+
+    // ============ AI 对话 API ============
+
+    // 会话列表：按 ownerEmail 私有过滤，按 updatedAt 倒序，只返列表项（不含 messages 全量）
+    if (path === "/api/chat/sessions" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const list = loadChats().sessions
+        .filter((s) => s.ownerEmail === user.email)
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .map((s) => ({ id: s.id, title: s.title, updatedAt: s.updatedAt, messageCount: s.messages.length }));
+      sendJson(res, 200, { sessions: list });
+      return;
+    }
+
+    // 新建会话（空消息，标题用「新对话」）
+    if (path === "/api/chat/sessions" && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const now = new Date().toISOString();
+      const session: ChatSession = {
+        id: randomUUID(),
+        ownerEmail: user.email,
+        title: "新对话",
+        createdAt: now,
+        updatedAt: now,
+        messages: [],
+      };
+      appendChat(session);
+      sendJson(res, 201, { session });
+      return;
+    }
+
+    // 会话详情（含 messages 全量；仅 owner 可访问）
+    const csm = path.match(/^\/api\/chat\/sessions\/([^/\\]+)$/);
+    if (csm && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const session = loadChats().sessions.find((s) => s.id === csm[1]);
+      if (!session) {
+        sendJson(res, 404, { error: "会话不存在" });
+        return;
+      }
+      if (session.ownerEmail !== user.email) {
+        sendJson(res, 403, { error: "无权访问该会话" });
+        return;
+      }
+      sendJson(res, 200, { session: { ...session, messages: session.messages.map(toChatMessageView) } });
+      return;
+    }
+
+    // 删除会话（仅 owner）
+    if (csm && req.method === "DELETE") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const session = loadChats().sessions.find((s) => s.id === csm[1]);
+      if (!session) {
+        sendJson(res, 404, { error: "会话不存在" });
+        return;
+      }
+      if (session.ownerEmail !== user.email) {
+        sendJson(res, 403, { error: "无权删除该会话" });
+        return;
+      }
+      deleteChat(csm[1]);
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    // 发送消息（SSE 流式入口）：写入 user message → 调模型流式生成 → 写入 assistant message
+    const cmm = path.match(/^\/api\/chat\/sessions\/([^/\\]+)\/messages$/);
+    if (cmm && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const session = loadChats().sessions.find((s) => s.id === cmm[1]);
+      if (!session) {
+        sendJson(res, 404, { error: "会话不存在" });
+        return;
+      }
+      if (session.ownerEmail !== user.email) {
+        sendJson(res, 403, { error: "无权访问该会话" });
+        return;
+      }
+
+      let content = "";
+      let modelId = "";
+      try {
+        const body = JSON.parse(await readBody(req, 64 * 1024)) as { content?: unknown; modelId?: unknown };
+        if (typeof body.content === "string") content = body.content.trim();
+        if (typeof body.modelId === "string") modelId = body.modelId;
+      } catch {
+        sendJson(res, 400, { error: "请求体过大或不是合法 JSON" });
+        return;
+      }
+      if (!content) {
+        sendJson(res, 400, { error: "消息内容不能为空" });
+        return;
+      }
+
+      // 确定模型：优先用前端传的 modelId，否则用激活模型
+      const { models } = loadChatModels();
+      let chatModel = modelId ? models.find((m) => m.id === modelId) : models.find((m) => m.isActive);
+      if (!chatModel) chatModel = models[0];
+      if (!chatModel) {
+        sendJson(res, 500, { error: "没有可用的模型配置" });
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const userMsg: ChatMessage = { id: randomUUID(), role: "user", content, at: now };
+
+      // 写入 user message（首条消息时更新会话标题）
+      const updated = updateChat(session.id, (s) => {
+        s.messages.push(userMsg);
+        s.updatedAt = now;
+        if (s.messages.filter((m) => m.role === "user").length === 1) {
+          s.title = truncateTitle(content);
+        }
+      });
+      if (!updated) {
+        sendJson(res, 500, { error: "写入消息失败" });
+        return;
+      }
+
+      const chatCfg = loadChatConfig();
+      // user 消息已写入 history，把除最后一条外的历史 + 当前 user 内容拼成 prompt
+      const promptMessages = buildChatMessages(chatCfg.systemPrompt, updated.messages.slice(0, -1), content, chatCfg.maxHistory);
+
+      // 设置 SSE 响应头
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      });
+      res.write(`event: thinking\ndata: ${JSON.stringify({ status: "thinking", message: "AI 思考中…" })}\n\n`);
+
+      const ac = new AbortController();
+      req.on("close", () => ac.abort());
+
+      let fullContent = "";
+      let totalTokens = 0;
+      try {
+        for await (const chunk of callModelStream(chatModelToModelConfig(chatModel), promptMessages, {
+          maxTokens: chatCfg.maxTokens,
+          temperature: chatCfg.temperature,
+          signal: ac.signal,
+        })) {
+          if (chunk.type === "delta" && chunk.delta) {
+            fullContent += chunk.delta;
+            res.write(`event: delta\ndata: ${JSON.stringify({ content: chunk.delta })}\n\n`);
+          } else if (chunk.type === "usage" && chunk.usage) {
+            totalTokens = chunk.usage.totalTokens;
+            res.write(`event: usage\ndata: ${JSON.stringify({ totalTokens })}\n\n`);
+          }
+        }
+      } catch (err: any) {
+        const aborted = err?.name === "AbortError" || String(err?.message ?? "").includes("aborted");
+        if (!aborted) {
+          res.write(`event: error\ndata: ${JSON.stringify({ error: String(err?.message ?? err) })}\n\n`);
+        }
+        res.end();
+        return;
+      }
+
+      // 写入 assistant message
+      const asstMsg: ChatMessage = {
+        id: randomUUID(),
+        role: "assistant",
+        content: fullContent,
+        at: new Date().toISOString(),
+        modelId: chatModel.id,
+        tokens: totalTokens,
+      };
+      updateChat(session.id, (s) => {
+        s.messages.push(asstMsg);
+        s.updatedAt = asstMsg.at;
+      });
+
+      res.write(`event: message_end\ndata: ${JSON.stringify({ messageId: asstMsg.id, tokenUsage: totalTokens })}\n\n`);
+      res.end();
+      return;
+    }
+
+    // 模型列表（不暴露 apiKeyEnv）
+    if (path === "/api/chat/models" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const { activeId, models } = loadChatModels();
+      sendJson(res, 200, { models: models.map(toChatModelView), activeModelId: activeId });
+      return;
+    }
+
+    // 新增模型配置（仅主管）
+    if (path === "/api/chat/models" && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      if (!canApprove(user)) {
+        sendJson(res, 403, { error: "仅主管可新增模型配置" });
+        return;
+      }
+      let name = "", provider = "", model = "", baseUrl = "", apiKeyEnv = "", category = "text";
+      try {
+        const body = JSON.parse(await readBody(req)) as Record<string, unknown>;
+        if (typeof body.name === "string") name = body.name.trim();
+        if (typeof body.provider === "string") provider = body.provider.trim();
+        if (typeof body.model === "string") model = body.model.trim();
+        if (typeof body.baseUrl === "string") baseUrl = body.baseUrl.trim();
+        if (typeof body.apiKeyEnv === "string") apiKeyEnv = body.apiKeyEnv.trim();
+        if (typeof body.category === "string") category = body.category.trim() || "text";
+      } catch {
+        sendJson(res, 400, { error: "请求体不是合法 JSON" });
+        return;
+      }
+      if (!name || !provider || !model || !apiKeyEnv) {
+        sendJson(res, 400, { error: "name / provider / model / apiKeyEnv 必填" });
+        return;
+      }
+      const m: ChatModel = {
+        id: randomUUID(),
+        name,
+        provider,
+        model,
+        baseUrl: baseUrl || PROVIDER_DEFAULT_ENDPOINTS[provider] || "",
+        apiKeyEnv,
+        category,
+      };
+      appendChatModel(m);
+      sendJson(res, 201, { model: toChatModelView(m) });
+      return;
+    }
+
+    // 更新模型配置（仅主管）
+    const cmod = path.match(/^\/api\/chat\/models\/([^/\\]+)$/);
+    if (cmod && req.method === "PUT") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      if (!canApprove(user)) {
+        sendJson(res, 403, { error: "仅主管可修改模型配置" });
+        return;
+      }
+      try {
+        const body = JSON.parse(await readBody(req)) as Record<string, unknown>;
+        const updated = updateChatModel(cmod[1], (m) => {
+          if (typeof body.name === "string") m.name = body.name.trim();
+          if (typeof body.provider === "string") m.provider = body.provider.trim();
+          if (typeof body.model === "string") m.model = body.model.trim();
+          if (typeof body.baseUrl === "string") m.baseUrl = body.baseUrl.trim();
+          if (typeof body.apiKeyEnv === "string") m.apiKeyEnv = body.apiKeyEnv.trim();
+          if (typeof body.category === "string") m.category = body.category.trim() || "text";
+        });
+        if (!updated) {
+          sendJson(res, 404, { error: "模型配置不存在" });
+          return;
+        }
+        sendJson(res, 200, { model: toChatModelView(updated) });
+      } catch {
+        sendJson(res, 400, { error: "请求体不是合法 JSON" });
+      }
+      return;
+    }
+
+    // 删除模型配置（仅主管）
+    if (cmod && req.method === "DELETE") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      if (!canApprove(user)) {
+        sendJson(res, 403, { error: "仅主管可删除模型配置" });
+        return;
+      }
+      const ok = deleteChatModel(cmod[1]);
+      if (!ok) {
+        sendJson(res, 404, { error: "模型配置不存在" });
+        return;
+      }
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    // 切换激活模型（任何登录用户可调）
+    const cma = path.match(/^\/api\/chat\/models\/([^/\\]+)\/activate$/);
+    if (cma && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const target = setActiveModel(cma[1]);
+      if (!target) {
+        sendJson(res, 404, { error: "模型配置不存在" });
+        return;
+      }
+      sendJson(res, 200, { model: toChatModelView(target) });
       return;
     }
 

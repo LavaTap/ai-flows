@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 对话 · AI-FLOWS 平台</title>
+  <link rel="stylesheet" href="./ai-pipeline.css">
+  <style>
+    /* AI 对话页专属样式（沿用 ai-pipeline.css 变量体系） */
+    .chat-layout {
+      display: flex;
+      height: calc(100vh - 56px);
+      overflow: hidden;
+    }
+    .chat-sidebar {
+      width: var(--sidebar-w);
+      background: var(--glass-fill-soft);
+      border-right: 1px solid var(--glass-line);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    .chat-sidebar .sidebar-head {
+      padding: var(--s-16);
+      border-bottom: 1px solid var(--glass-line);
+    }
+    .chat-sidebar .sidebar-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .chat-sidebar .new-chat-btn {
+      margin: var(--s-12) var(--s-16);
+      padding: 10px var(--s-16);
+      background: var(--led);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font: 500 13px/1 var(--font-sans);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .chat-sidebar .new-chat-btn:hover { background: #4338ca; }
+    .session-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: var(--s-8) 0;
+    }
+    .session-item {
+      padding: 10px var(--s-16);
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      transition: background 0.12s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .session-item:hover { background: var(--paper-2); }
+    .session-item.active {
+      border-left-color: var(--led);
+      background: var(--led-soft);
+    }
+    .session-item .si-title {
+      flex: 1;
+      font-size: 13px;
+      color: var(--ink);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .session-item.active .si-title { color: var(--led); font-weight: 500; }
+    .session-item .si-del {
+      opacity: 0;
+      background: none;
+      border: none;
+      color: var(--muted-2);
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    .session-item:hover .si-del { opacity: 1; }
+    .session-item .si-del:hover { color: var(--block); background: rgba(239,68,68,0.1); }
+    .chat-sidebar .model-bar {
+      padding: var(--s-12) var(--s-16);
+      border-top: 1px solid var(--glass-line);
+    }
+    .model-bar label {
+      display: block;
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+    .model-bar select {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--glass-line-strong);
+      border-radius: 8px;
+      background: var(--glass-fill);
+      color: var(--ink);
+      font: 400 13px/1.4 var(--font-sans);
+      cursor: pointer;
+      outline: none;
+    }
+    .model-bar select:focus { border-color: var(--led); }
+
+    .chat-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--paper);
+      min-width: 0;
+    }
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: var(--s-24) var(--s-32);
+    }
+    .msg {
+      display: flex;
+      gap: var(--s-12);
+      margin-bottom: var(--s-20);
+      max-width: 860px;
+    }
+    .msg.user { flex-direction: row-reverse; margin-left: auto; }
+    .msg .bubble {
+      padding: var(--s-12) var(--s-16);
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.7;
+      word-wrap: break-word;
+      white-space: pre-wrap;
+    }
+    .msg.user .bubble {
+      background: var(--led);
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+    .msg.assistant .bubble {
+      background: var(--glass-fill);
+      color: var(--ink);
+      border: 1px solid var(--glass-line);
+      border-bottom-left-radius: 4px;
+    }
+    .msg .role-tag {
+      font-size: 11px;
+      color: var(--muted-2);
+      margin-bottom: 4px;
+      font-weight: 500;
+    }
+    .msg.user .role-tag { text-align: right; }
+    .msg-thinking .bubble { color: var(--muted); font-style: italic; }
+    .msg-error .bubble { background: rgba(239,68,68,0.1); color: var(--block); border-color: rgba(239,68,68,0.3); }
+
+    .input-area {
+      border-top: 1px solid var(--glass-line);
+      padding: var(--s-16) var(--s-32);
+      background: var(--glass-fill-soft);
+    }
+    .input-row {
+      display: flex;
+      gap: var(--s-12);
+      align-items: flex-end;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+    .input-row textarea {
+      flex: 1;
+      padding: 12px var(--s-16);
+      border: 1px solid var(--glass-line-strong);
+      border-radius: 10px;
+      background: var(--glass-fill);
+      color: var(--ink);
+      font: 400 14px/1.6 var(--font-sans);
+      resize: none;
+      outline: none;
+      min-height: 48px;
+      max-height: 160px;
+    }
+    .input-row textarea:focus { border-color: var(--led); }
+    .input-row button {
+      padding: 12px var(--s-20);
+      border: none;
+      border-radius: 10px;
+      font: 500 14px/1 var(--font-sans);
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .send-btn { background: var(--led); color: #fff; }
+    .send-btn:hover { background: #4338ca; }
+    .send-btn:disabled { background: var(--muted-2); cursor: not-allowed; }
+    .stop-btn { background: var(--block); color: #fff; }
+    .stop-btn:hover { background: #dc2626; }
+    .empty-hint {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--muted);
+      font-size: 15px;
+    }
+    .token-info {
+      font-size: 11px;
+      color: var(--muted-2);
+      margin-top: 4px;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot" aria-hidden="true"></span>
+      <h1 class="brand-title">
+        <span class="tt-pipeline">管线</span>
+        <span class="tt-sep">/</span>
+        <span class="tt-repo">对话</span>
+        <span class="tt-sep">/</span>
+        <span class="tt-page">chat</span>
+      </h1>
+    </div>
+    <div class="top-right">
+      <a class="nav-link" href="/pipeline">AI 管线</a>
+      <a class="nav-link" href="/tickets">工单</a>
+      <a class="nav-link" href="/account">账号管理</a>
+      <a class="nav-link" href="/github-audit">GitHub</a>
+      <a class="nav-link" href="/team" id="teamLink" style="display:none;">团队管理</a>
+      <a class="nav-link active" href="/chat">AI 对话</a>
+      <span class="user-chip"><span class="avatar" aria-hidden="true"></span><span id="userName">未登录</span></span>
+      <button class="logout" id="logoutBtn" type="button">退出</button>
+    </div>
+  </header>
+
+  <div class="chat-layout">
+    <aside class="chat-sidebar">
+      <div class="sidebar-head">
+        <span class="sidebar-title">对话会话</span>
+      </div>
+      <button type="button" class="new-chat-btn" id="newChatBtn">+ 新建会话</button>
+      <div class="session-list" id="sessionList"></div>
+      <div class="model-bar">
+        <label for="modelSelect">模型</label>
+        <select id="modelSelect"></select>
+      </div>
+    </aside>
+
+    <main class="chat-main">
+      <div class="messages" id="messages">
+        <div class="empty-hint">选择或新建一个会话开始对话</div>
+      </div>
+      <div class="input-area">
+        <div class="input-row">
+          <textarea id="msgInput" placeholder="输入消息…（Enter 发送，Shift+Enter 换行）" rows="1"></textarea>
+          <button type="button" class="send-btn" id="sendBtn">发送</button>
+          <button type="button" class="stop-btn" id="stopBtn" style="display:none;">停止</button>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
