@@ -7,7 +7,7 @@ description: ai-flows 能力总入口，只做目录与路由，不承载业务�
 
 本文件是**唯一入口**，只负责判断意图并指向业务文档。**业务细节一律不在本文件展开。**
 
-## ERROR约束（先读，必须遵守）
+## 强制约束（先读，必须遵守）
 
 - **只读需求的文档**：每轮对话只允许读取与当前意图匹配的**相关需求**业务文档；其余业务文档严禁打开、严禁 `Grep`、严禁凭印象引用。
 - **按需下钻**：业务文档内部若再指向支撑文件（如 `references/reviewers/` 下的规则子文档），由该业务文档自己决定是否读取，主文档不管，也不能提前读。
@@ -44,7 +44,7 @@ ai-flows/
     ├── init-repo.mjs                     # 拷贝 config + 装 pre-push hook
     ├── check-key.mjs                     # 校验模型密钥有效性
     ├── check-remote-auth.mjs             # 推送前置检查（远端认证 + 凭据泄露）
-    └── normalize-review.mjs              # 评审输出ERROR归一（不靠 prompt）
+    └── normalize-review.mjs              # 评审输出强制归一（不靠 prompt）
 ```
 
 ## 红线

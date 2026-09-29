@@ -84,7 +84,7 @@ gameui.net 游戏截图获取工具集。CodeBuddy skill 项目，提供 Python 
 - **`.gitignore` 规则**：`.gitignore` 已配置忽略 `.agents/skills/gameui-screenshot/scripts/**/*.图片文件`、`截图/` 和 `game_concepts/`。新增含图片的输出目录需追加对应规则。
 - **日志文件 UTF-8**：`LogManager` 输出的日志文件为 UTF-8 编码，在 GBK 终端下 `type` 显示乱码属正常，可用 `read_file` 工具查看。
 
-### 工具链ERROR执行（无需 CLAUDE.md 重复）
+### 工具链强制执行（无需 CLAUDE.md 重复）
 
 | 规则 | 工具/机制 |
 |------|----------|

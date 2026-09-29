@@ -9,7 +9,7 @@
 用法：
     python research-crawler-skill/scripts/batch_steam_crawl.py
     python research-crawler-skill/scripts/batch_steam_crawl.py --count 500
-    python research-crawler-skill/scripts/batch_steam_crawl.py --force   # ERROR重爬所有
+    python research-crawler-skill/scripts/batch_steam_crawl.py --force   # 强制重爬所有
     python research-crawler-skill/scripts/batch_steam_crawl.py --resume  # 从失败处继续
 """
 import argparse
@@ -70,7 +70,7 @@ def main():
     parser.add_argument('--count', type=int, default=DEFAULT_COUNT,
                         help=f'每个游戏爬取评论数（默认 {DEFAULT_COUNT}）')
     parser.add_argument('--force', action='store_true',
-                        help='ERROR重爬所有游戏（不跳过已完成）')
+                        help='强制重爬所有游戏（不跳过已完成）')
     parser.add_argument('--resume', action='store_true',
                         help='从上次中断处继续（跳过已完成）')
     parser.add_argument('--exclude-games', type=str, nargs='*', default=[],

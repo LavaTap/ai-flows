@@ -4,18 +4,18 @@
 
 ## 规则
 
-### DOC-01（ERROR，PY033）module / function / class / method 接口必须用 docstring
+### DOC-01（强制，PY033）module / function / class / method 接口必须用 docstring
 - 必须用三个双引号 `"""`。
 - 用三个单引号 `'''` 不规范。
 - 对外接口必写；内部接口可写可不写。
 
-### DOC-02（ERROR，PY034）docstring 至少包含
+### DOC-02（强制，PY034）docstring 至少包含
 - 功能简介
 - 参数（Args）
 - 返回值（Returns）
 - 可能抛出的异常（Raises）——如果有
 
-### DOC-03（ERROR）每个文件必须有文件头声明
+### DOC-03（强制）每个文件必须有文件头声明
 包含：版权、功能简介、修改人及联系方式。示例：
 ```python
 #!/usr/bin/env python
@@ -30,7 +30,7 @@ Date: 2014/04/05 17:23:06
 """
 ```
 
-### DOC-04（INFO）TODO 格式固定
+### DOC-04（建议）TODO 格式固定
 ```
 # TODO: 干什么事情 $负责人(邮箱前缀) $最终期限(YYYY-MM-DD) $
 ```

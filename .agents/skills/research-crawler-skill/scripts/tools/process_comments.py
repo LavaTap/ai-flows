@@ -2,7 +2,6 @@
 治愈游戏评论数据处理脚本 v4 - 含 AI 复核，支持按平台输出
 读取 data/raw/ 中的 CSV，输出到 output/{平台}/ 目录下。
 """
-import argparse
 import csv, re, sys, os, json
 
 HEALING_TAGS = ["放松解压","安心平静","温暖陪伴","美术疗愈","音乐疗愈","自然疗愈",
@@ -372,12 +371,9 @@ def process_csv(input_path, output_path=None, game_name=None, platform=None):
     sentiments = [r["情绪倾向"] for r in results]
     total = len(results)
     print(f"\n处理完成！输出: {output_path}")
-    if total == 0:
-        print("  ⚠️  输入无有效评论，跳过占比统计")
-    else:
-        for s in ["正向","中性","负向","混合"]:
-            c = sentiments.count(s)
-            print(f"  {s}: {c} ({c/total*100:.1f}%)")
+    for s in ["正向","中性","负向","混合"]:
+        c = sentiments.count(s)
+        print(f"  {s}: {c} ({c/total*100:.1f}%)")
     
     return output_path
 

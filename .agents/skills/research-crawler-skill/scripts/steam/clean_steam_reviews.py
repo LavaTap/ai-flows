@@ -44,7 +44,7 @@ with open(raw_csv_path, "w", encoding="utf-8-sig", newline="") as f:
         dt = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
         votes_up = rev.get("votes_up", 0)
         
-        writer.writerow([i, author.get("personaname", ""), steam_id, content, dt, votes_up])
+        writer.writerow([i, steam_id, steam_id, content, dt, votes_up])
 
 print(f"已生成原始评论文件: {raw_csv_path}")
 

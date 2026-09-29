@@ -19,7 +19,7 @@ import sys
 import time
 from datetime import datetime
 
-# ERROR stdout/stderr 为 UTF-8
+# 强制 stdout/stderr 为 UTF-8
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 

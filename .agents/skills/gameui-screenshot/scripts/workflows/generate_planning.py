@@ -380,7 +380,7 @@ def check_vision_model() -> dict:
             if has_vision_keyword:
                 details.append(f"  检测到识图模型关键词 ✅")
             else:
-                details.append(f"  未检测到识图模型关键词，INFO确认模型是否支持多模态")
+                details.append(f"  未检测到识图模型关键词，建议确认模型是否支持多模态")
 
     if not found_model:
         details.append("模型环境变量: 未设置（将依赖 AI Agent 能力）")
@@ -398,7 +398,7 @@ def check_vision_model() -> dict:
     # 4. 综合判断
     if HAS_PIL:
         message = ("识图模型检测通过。Pillow 可用，配合 AI Agent 可对游戏截图"
-                   "进行核心玩法分析。INFO使用支持多模态的 AI 模型（如 Claude "
+                   "进行核心玩法分析。建议使用支持多模态的 AI 模型（如 Claude "
                    "系列、GPT-4V/4o、Gemini 等）以获得最佳分析效果。")
     else:
         message = ("⚠ 识图模型检测未完全通过。请执行 pip install Pillow 安装图像处理库。"
@@ -946,7 +946,7 @@ def generate_template(game_context: dict) -> str:
 ### 1. 核心玩法成熟度评估
 > [AI 填写] 基于截图判断该游戏的玩法完整度和设计成熟度
 
-### 2. 潜在改进INFO
+### 2. 潜在改进建议
 > [AI 填写] 从设计角度提出的优化方向
 
 ### 3. 参考价值

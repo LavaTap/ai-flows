@@ -11,7 +11,6 @@
 
 import os
 import csv
-import sys
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
@@ -34,37 +33,41 @@ def fix_csv_game_name(csv_path: str, correct_game_name: str) -> bool:
                 return False
 
             if '游戏名称' not in fieldnames:
-                print(f"  ⚠️  无'游戏名称'字段: {csv_path}")
-                return False
+                # 如果缺少'游戏名称'字段，则添加它
+                fieldnames.append('游戏名称')
+                print(f"    添加'游戏名称'字段到: {csv_path}")
+                modified = True # 标记为已修改，因为字段结构改变了
 
             for row in reader:
-                old_name = row.get('游戏名称', '')
-                if old_name != correct_game_name:
+                old_name = row.get('游戏名称')
+                # 如果字段不存在、为空或不正确，则更新
+                if old_name is None or old_name == '' or old_name != correct_game_name:
                     row['游戏名称'] = correct_game_name
                     modified = True
                 rows.append(row)
 
         if modified:
-            # 先写临时文件再原子替换，避免中途失败损坏原 CSV
-            tmp_path = csv_path + '.tmp'
-            with open(tmp_path, 'w', encoding='utf-8-sig', newline='') as f:
+            with open(csv_path, 'w', encoding='utf-8-sig', newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
                 writer.writerows(rows)
-            os.replace(tmp_path, csv_path)
             return True
 
         return False
 
     except Exception as e:
-        print(f"  ❌ 读取失败: {csv_path}, 错误: {e}")
+        print(f"  读取失败: {csv_path}, 错误: {e}")
         return False
 
 
 def main():
-    # Windows 控制台默认编码可能无法输出中文/emoji，统一切换为 UTF-8
-    if hasattr(sys.stdout, 'reconfigure'):
-        sys.stdout.reconfigure(encoding='utf-8')
+    import sys
+    # 解决 Windows 中文编码问题
+    if sys.stdout.encoding != 'utf-8':
+        try:
+            sys.stdout.reconfigure(encoding='utf-8')
+        except AttributeError:
+            pass
 
     total_files = 0
     total_fixed = 0
@@ -75,26 +78,27 @@ def main():
     print("=" * 70)
 
     # 遍历每个游戏目录
-    if not os.path.isdir(OUTPUT_DIR):
-        print(f"  ❌ 目录不存在，请先执行采集: {OUTPUT_DIR}")
-        return
+    # 强制 os.listdir 用 UTF-8 解码（解决 Windows 中文编码问题）
     for game_name in os.listdir(OUTPUT_DIR):
+        # 确保名称是正确 Unicode
+        if isinstance(game_name, bytes):
+            game_name = game_name.decode('utf-8')
         game_dir = os.path.join(OUTPUT_DIR, game_name)
         if not os.path.isdir(game_dir):
             continue
 
         # 游戏名称就是目录名（就是搜索关键词）
         # Windows 路径不允许 :"?* 所以保存时替换了，这里还原
-        # 注意：必须先还原多字符占位符（__、^），最后再还原单字符 _，
-        # 否则 _ 先被替换成冒号会导致 __ 永远匹配不到
         correct_game_name = game_name
+        correct_game_name = correct_game_name.replace('_', ':')
         correct_game_name = correct_game_name.replace('__', '?')
         correct_game_name = correct_game_name.replace('^', '"')
-        correct_game_name = correct_game_name.replace('_', ':')
         print(f"\nGame: {correct_game_name}")
 
         # 遍历每个笔记会话目录
         for note_session in os.listdir(game_dir):
+            if isinstance(note_session, bytes):
+                note_session = note_session.decode('utf-8')
             note_dir = os.path.join(game_dir, note_session)
             if not os.path.isdir(note_dir):
                 continue

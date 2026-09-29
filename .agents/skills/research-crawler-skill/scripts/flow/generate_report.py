@@ -38,7 +38,6 @@ def scan_games():
     Returns:
         游戏字典列表，每项包含 ``name`` 和 ``sessions``（会话列表）。
     """
-    games = []
     for game_name in sorted(os.listdir(OUTPUT_ROOT)):
         game_path = os.path.join(OUTPUT_ROOT, game_name)
         if not os.path.isdir(game_path):
@@ -69,8 +68,6 @@ def count_comments(session_path):
     Returns:
         (total_raw, total_clean) 二元组。
     """
-    raw_dir = os.path.join(session_path, 'raw')
-    clean_dir = os.path.join(raw_dir, 'clean')
     total_raw = 0
     total_clean = 0
     if os.path.isdir(raw_dir):
@@ -109,7 +106,6 @@ def classify_errors(batch_dir):
         - categories: 各类别错误计数 dict。
         - error_files: 包含错误的日志文件数。
     """
-    categories = {'412风控': 0, 'JSON解析失败': 0, 'Cookie失效': 0, '其他': 0}
     error_files = 0
     if os.path.isdir(batch_dir):
         for fname in os.listdir(batch_dir):

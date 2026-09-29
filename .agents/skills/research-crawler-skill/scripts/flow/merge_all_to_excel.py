@@ -43,11 +43,6 @@ DEFAULT_COL_WIDTH = 15
 MIN_COL_WIDTH = 8
 MAX_COL_WIDTH = 45  # 兜底列宽上限（评论类长文本列由规则显式指定）
 
-# 小红书文件夹名中冒号被批量采集替换为下划线，合并展示时尝试还原：
-# 主模式为 "名称_ 副标题"（冒号+空格 → 下划线+空格），无空格时退化为首个下划线
-COLLECTED_COLON_SEP = '_ '
-DISPLAY_COLON_SEP = ': '
-
 # 行高配置（单位：磅）
 LINE_HEIGHT = 15        # 单行文本高度（11pt字体）
 ROW_PADDING = 4         # 行内上下留白
@@ -205,28 +200,6 @@ def merge_to_excel(output_path: str, root_dir: str = '.'):
         _write_platform_excel(out_file, items)
 
 
-def make_unique_sheet_name(name: str, used: set) -> str:
-    """生成合法且唯一的 Excel 工作表名。
-
-    Excel 限制：名称非空、不超过 31 字符、不能使用保留名（如 History），
-    且同一工作簿内不能重名；重名时追加序号。
-    """
-    safe = str(name)[:31]
-    safe = (safe.replace(':', '_').replace('\\', '_').replace('/', '_')
-            .replace('?', '').replace('*', '').replace('[', '').replace(']', ''))
-    safe = safe.strip()
-    if not safe:
-        safe = 'Sheet'
-    base = safe
-    idx = 1
-    while safe.lower() in used or safe.lower() == 'history':
-        suffix = f'_{idx}'
-        safe = base[:31 - len(suffix)] + suffix
-        idx += 1
-    used.add(safe.lower())
-    return safe
-
-
 def _write_platform_excel(output_path: str, items: list):
     """将单个平台的所有游戏 output.csv 写入一个 Excel，每个游戏一个工作表。
 
@@ -236,15 +209,9 @@ def _write_platform_excel(output_path: str, items: list):
         output_path: 输出 Excel 文件路径。
         items: (game_name, platform, csv_path) 列表。
     """
-    if not items:
-        print(f"  [SKIP] 无项目可写入: {output_path}")
-        return
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     platform = items[0][1]
     print(f"\n>> 平台: {platform} — {len(items)} 个项目")
-
-    # 维护已用 sheet 名，避免截断/替换后重名或为空
-    used_sheet_names = set()
 
     # 小红书：按 CSV 内的 游戏名称 分组合并（同一关键词搜索的多篇笔记合并）
     if platform == 'xiaohongshu':
@@ -258,14 +225,14 @@ def _write_platform_excel(output_path: str, items: list):
                 # 外层文件夹名称就是游戏名称（批量采集结构），所以直接用它作为分组键
                 # 保证同一游戏所有笔记都在同一分组，即使CSV内有差异
                 game_name = game_folder_name
-                # 采集时文件名不能包含冒号，被替换为下划线，此处按已知模式尝试还原：
-                # 1) "名称_ 副标题"（下划线+空格）→ "名称: 副标题"（冒号+空格）
-                # 2) 若无空格，则把首个下划线还原为冒号+空格
-                # 注意：该还原为启发式，本身含下划线但非冒号转义的游戏名（如 Half_Life）
-                #       可能被误改；彻底修复需在采集阶段把原始游戏名写入 CSV 或 sidecar 元数据。
-                game_name = game_name.replace(COLLECTED_COLON_SEP, DISPLAY_COLON_SEP)
+                # 批量采集时文件名不能包含冒号，把冒号换成了下划线，恢复
+                # 格式： "Sky_ Children of the Light" -> "Sky: Children of the Light"
+                # 格式： "STORY OF SEASONS_ Grand Bazaar" -> "STORY OF SEASONS: Grand Bazaar"
+                # 批量替换：所有 下划线+空格 变成 冒号+空格
+                game_name = game_name.replace('_ ', ': ')
+                # 如果还有下划线没替换（没有空格），替换第一个下划线为冒号+空格
                 if '_' in game_name:
-                    game_name = game_name.replace('_', DISPLAY_COLON_SEP, 1)
+                    game_name = game_name.replace('_', ': ', 1)
                 if game_name not in grouped:
                     grouped[game_name] = []
                 grouped[game_name].append(df)
@@ -277,13 +244,13 @@ def _write_platform_excel(output_path: str, items: list):
         with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
             for game_name, dfs in sorted(grouped.items()):
                 if len(dfs) > 1:
-                    merged_df = pd.concat(dfs, ignore_index=True, sort=False)
+                    merged_df = pd.concat(dfs, ignore_index=True)
                     # 重新生成连续序号
                     if '序号' in merged_df.columns:
                         merged_df['序号'] = range(1, len(merged_df) + 1)
                 else:
                     merged_df = dfs[0]
-                sheet_name = make_unique_sheet_name(game_name, used_sheet_names)
+                sheet_name = game_name[:31].replace(':', '_').replace('\\', '_').replace('/', '_').replace('?', '').replace('*', '').replace('[', '').replace(']', '')
                 merged_df.to_excel(writer, sheet_name=sheet_name, index=False)
                 style_worksheet(writer.sheets[sheet_name], merged_df)
                 print(f"  写入sheet [{sheet_name}]: {len(merged_df)} 条评论" +
@@ -296,7 +263,7 @@ def _write_platform_excel(output_path: str, items: list):
                 print(f"  读取: {platform}/{game_name} -> {csv_path}")
                 try:
                     df = pd.read_csv(csv_path, encoding='utf-8-sig')
-                    sheet_name = make_unique_sheet_name(game_name, used_sheet_names)
+                    sheet_name = game_name[:31].replace(':', '_').replace('\\', '_').replace('/', '_').replace('?', '').replace('*', '').replace('[', '').replace(']', '')
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
                     style_worksheet(writer.sheets[sheet_name], df)
                     print(f"    [OK] 写入成功: {len(df)} 条评论")

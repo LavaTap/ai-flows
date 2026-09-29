@@ -446,13 +446,8 @@ def analyze_session(session_dir):
             write_back_count += 1
 
     # 6. 写回 output/output.csv（合并后：全部行，AI 字段已回填）
-    # 保留原始 output.csv 的列顺序，再把缺失的 AI 列追加到末尾，避免丢列或 extrasaction 报错
-    out_fieldnames = list(out_rows[0].keys()) if out_rows else list(fieldnames)
-    for col in fieldnames:
-        if col not in out_fieldnames:
-            out_fieldnames.append(col)
     with open(out_csv, 'w', encoding='utf-8-sig', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=out_fieldnames, extrasaction='ignore')
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(out_rows)
 
