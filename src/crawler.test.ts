@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { inflateRawSync } from "node:zlib";
-import { buildZip, collectFiles, crc32 } from "./crawler.js";
+import { buildZip, collectFiles, crc32, sevenZipCandidates } from "./crawler.js";
 
 test("should match the known CRC32 value when given the standard check string", () => {
   assert.equal(crc32(Buffer.from("123456789", "utf8")), 0xcbf43926);
@@ -52,4 +52,35 @@ test("should list nested files with posix separators when collecting a directory
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("should put the explicit 7-Zip command first when it is configured", () => {
+  const out = sevenZipCandidates("C:/bin;D:/tools", "win32", "C:/custom/7z.exe");
+  assert.equal(out[0], "C:/custom/7z.exe");
+});
+
+test("should list every exe name in every PATH directory when probing on windows", () => {
+  const out = sevenZipCandidates("C:/bin;D:/tools", "win32");
+  assert.ok(out.includes(join("C:/bin", "7z.exe")));
+  assert.ok(out.includes(join("C:/bin", "7za.exe")));
+  assert.ok(out.includes(join("D:/tools", "7zz.exe")));
+  assert.ok(out.includes("C:\\Program Files\\7-Zip\\7z.exe"));
+});
+
+test("should use colon separated PATH and bare names when probing on posix", () => {
+  const out = sevenZipCandidates("/usr/bin:/opt/bin", "linux");
+  assert.ok(out.includes(join("/usr/bin", "7z")));
+  assert.ok(out.includes(join("/opt/bin", "7za")));
+  assert.ok(!out.some((p) => p.endsWith(".exe")));
+});
+
+test("should tolerate a missing PATH and still fall back to common install paths", () => {
+  const out = sevenZipCandidates(undefined, "win32");
+  assert.deepEqual(out, ["C:\\Program Files\\7-Zip\\7z.exe", "C:\\Program Files (x86)\\7-Zip\\7z.exe"]);
+});
+
+test("should drop blank and duplicate entries when building the 7-Zip candidate list", () => {
+  const out = sevenZipCandidates(";C:/bin;;C:/bin", "win32");
+  assert.equal(new Set(out).size, out.length);
+  assert.ok(!out.includes(""));
 });

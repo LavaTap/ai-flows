@@ -65,6 +65,8 @@ export interface ChatConfig {
 export interface CrawlerConfig {
   /** agent 项目根目录（绝对路径，或相对当前工作目录）；agent 在该目录内运行 */
   root?: string;
+  /** 含脚本 skill 的执行根覆盖：键为 skill 目录名，缺省用仓库根 */
+  skillRoots?: Record<string, string>;
   /** agent CLI 可执行文件，缺省 claude */
   command?: string;
   /** 传给 agent CLI 的参数；需求文本经 stdin 传入，不拼进命令行 */
@@ -73,6 +75,8 @@ export interface CrawlerConfig {
   outputDir?: string;
   /** agent 执行超时毫秒，缺省 600000（10 分钟） */
   timeoutMs?: number;
+  /** 7-Zip 可执行文件路径；缺省空即按 PATH 与常见安装路径自动探测，找不到回退零依赖内置压缩 */
+  zipCommand?: string;
 }
 
 export interface ReviewConfig {
@@ -122,10 +126,12 @@ export function loadConfig(configPath?: string): ReviewConfig {
   cfg.reviews.gitHubTokenEnv = cfg.reviews.gitHubTokenEnv ?? "GH_TOKEN";
   cfg.crawler = cfg.crawler ?? {};
   cfg.crawler.root = cfg.crawler.root ?? "";
+  cfg.crawler.skillRoots = cfg.crawler.skillRoots ?? {};
   cfg.crawler.command = cfg.crawler.command ?? "claude";
   cfg.crawler.args = cfg.crawler.args ?? ["-p", "--permission-mode", "bypassPermissions"];
   cfg.crawler.outputDir = cfg.crawler.outputDir ?? "output";
   cfg.crawler.timeoutMs = cfg.crawler.timeoutMs ?? 600000;
+  cfg.crawler.zipCommand = cfg.crawler.zipCommand ?? "";
   cfg.chat = cfg.chat ?? {};
   cfg.chat.systemPrompt =
     cfg.chat.systemPrompt ??

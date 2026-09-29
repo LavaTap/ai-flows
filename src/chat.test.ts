@@ -3,6 +3,7 @@ import assert from "node:assert";
 import {
   buildChatMessages,
   buildSummaryMessages,
+  buildUserContent,
   historyToText,
   countChars,
   MEMORY_SUMMARY_SYSTEM,
@@ -11,6 +12,13 @@ import {
   PROVIDER_DEFAULT_ENDPOINTS,
 } from "./chat.js";
 import type { ChatMessage } from "./db.js";
+
+/** prompt 内容可能是纯文本或多模态分段，测试里统一取文本部分 */
+function textOf(content: string | { type: string; text?: string }[] | null): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) return content.map((p) => p.text ?? "").join("");
+  return "";
+}
 
 test("should inject system prompt and append user message", () => {
   const msgs = buildChatMessages("你是助手", [], "你好");
@@ -95,7 +103,7 @@ test("should inject memory summary after system prompt when provided", () => {
   assert.strictEqual(msgs.length, 4);
   assert.strictEqual(msgs[0].content, "sys");
   assert.strictEqual(msgs[1].role, "system");
-  assert.ok(msgs[1].content.includes("用户在做网关性能优化"));
+  assert.ok(textOf(msgs[1].content).includes("用户在做网关性能优化"));
   assert.strictEqual(msgs[2].content, "hi");
   assert.strictEqual(msgs[3].content, "next");
 });
@@ -130,14 +138,37 @@ test("should build summary prompt merging previous summary with new history", ()
   assert.strictEqual(msgs.length, 2);
   assert.strictEqual(msgs[0].role, "system");
   assert.strictEqual(msgs[0].content, MEMORY_SUMMARY_SYSTEM);
-  assert.ok(msgs[1].content.includes("旧摘要"));
-  assert.ok(msgs[1].content.includes("用户：新问题"));
+  assert.ok(textOf(msgs[1].content).includes("旧摘要"));
+  assert.ok(textOf(msgs[1].content).includes("用户：新问题"));
 });
 
 test("should omit previous summary section when blank", () => {
   const msgs = buildSummaryMessages("  ", "用户：新问题");
-  assert.ok(!msgs[1].content.includes("已有记忆摘要"));
-  assert.ok(msgs[1].content.includes("新增对话记录"));
+  assert.ok(!textOf(msgs[1].content).includes("已有记忆摘要"));
+  assert.ok(textOf(msgs[1].content).includes("新增对话记录"));
+});
+
+test("should build plain text user content when no images", () => {
+  const c = buildUserContent("看下这段代码", [], ["### 附件：a.ts\nconst x = 1;"]);
+  assert.strictEqual(typeof c, "string");
+  assert.ok(textOf(c).includes("a.ts"));
+  assert.ok(textOf(c).includes("看下这段代码"));
+});
+
+test("should build multimodal content parts when images present", () => {
+  const c = buildUserContent("这是什么", ["data:image/png;base64,AAA"], []);
+  assert.ok(Array.isArray(c));
+  const parts = c as { type: string; text?: string; image_url?: { url: string } }[];
+  assert.strictEqual(parts[0].type, "text");
+  assert.strictEqual(parts[1].type, "image_url");
+  assert.strictEqual(parts[1].image_url?.url, "data:image/png;base64,AAA");
+});
+
+test("should build image-only content when text is empty", () => {
+  const c = buildUserContent("   ", ["data:image/png;base64,AAA"], []);
+  const parts = c as { type: string }[];
+  assert.strictEqual(parts.length, 1);
+  assert.strictEqual(parts[0].type, "image_url");
 });
 
 test("should include deepseek default endpoint", () => {

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { sanitizeFilename, buildSkillPrompt, resolveSkillDoc } from "./skill.js";
+import { sanitizeFilename, buildSkillPrompt, resolveSkillDoc, skillHasExecutables } from "./skill.js";
 
 test("should keep basename and replace illegal chars when sanitizing filename", () => {
   assert.strictEqual(sanitizeFilename("a/b\\c.txt"), "c.txt");
@@ -43,4 +43,16 @@ test("should load installed skill doc without frontmatter", () => {
   const doc = resolveSkillDoc("product-manager");
   assert.ok(doc.length > 100);
   assert.ok(!doc.startsWith("---"));
+});
+
+test("should mark doc-only skill as not executable", () => {
+  assert.strictEqual(skillHasExecutables("product-manager-skill"), false);
+});
+
+test("should mark skill shipping scripts as executable", () => {
+  assert.strictEqual(skillHasExecutables("research-crawler-skill"), true);
+});
+
+test("should treat missing skill dir as not executable", () => {
+  assert.strictEqual(skillHasExecutables("no-such-skill"), false);
 });

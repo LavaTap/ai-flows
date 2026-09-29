@@ -11,6 +11,9 @@ export const TICKET_IMAGES_DIR = join(DB_DIR, "ticket-uploads");
 /** 头像上传目录 db/avatars/（已 gitignore，二进制不入库） */
 export const AVATARS_DIR = join(DB_DIR, "avatars");
 
+/** AI 对话附件上传目录 db/chat-uploads/（已 gitignore，二进制不入库，消息只存元数据） */
+export const CHAT_UPLOADS_DIR = join(DB_DIR, "chat-uploads");
+
 /** 身份：员工 / 部门主管（主管权限最高，可操控并批准所有节点） */
 export type Role = "staff" | "supervisor";
 
@@ -198,6 +201,40 @@ export interface TicketRecord {
 /** 聊天消息角色 */
 export type ChatRole = "user" | "assistant";
 
+/** 对话附件元数据（二进制落 db/chat-uploads/，消息里只存引用信息） */
+export interface ChatAttachment {
+  /** 类型：image=图片（多模态送模型）；file=文本类文件（读内容拼进 prompt） */
+  kind: "image" | "file";
+  /** 落盘文件名（db/chat-uploads/<file>，服务端生成） */
+  file: string;
+  /** 原始文件名（展示用） */
+  name: string;
+  /** MIME 类型 */
+  mime: string;
+  /** 字节数 */
+  size: number;
+}
+
+/** 一次 AI 调用 skill 的记录（随消息落库，刷新后消息流里仍能看到灰字提示与产物） */
+export interface ChatSkillCall {
+  /** skill 目录名 */
+  skill: string;
+  /** 执行结果：ok=成功；error=失败 */
+  status: "ok" | "error";
+  /** 失败原因（status=error 时有值） */
+  error?: string;
+  /** 本次 skill 产出的文件（已复制到 db/chat-uploads/，可直接下载） */
+  files?: ChatAttachment[];
+}
+
+/** 被引用的其他会话（作为上下文拼进 prompt） */
+export interface ChatRef {
+  /** 被引用会话 id */
+  id: string;
+  /** 被引用会话标题（展示用，冗余存一份防会话被删后无从展示） */
+  title: string;
+}
+
 /** 聊天消息 */
 export interface ChatMessage {
   /** 消息 id（UUID） */
@@ -212,6 +249,12 @@ export interface ChatMessage {
   modelId?: string;
   /** token 用量（assistant 消息有值，total tokens） */
   tokens?: number;
+  /** 用户消息携带的附件（图片 / 文本类文件） */
+  attachments?: ChatAttachment[];
+  /** 用户消息引用的其他会话（作为上下文） */
+  refs?: ChatRef[];
+  /** 本消息内 AI 调用过的 skill（含产出文件）；assistant 消息有值 */
+  skillCalls?: ChatSkillCall[];
 }
 
 /** 聊天会话（按 ownerEmail 私有，不按部门过滤） */
@@ -541,6 +584,9 @@ interface MessageRow {
   at: string;
   model_id: string | null;
   tokens: number | null;
+  attachments: string | null;
+  refs: string | null;
+  skill_calls: string | null;
 }
 
 function rowToMessage(r: MessageRow): ChatMessage {
@@ -552,6 +598,27 @@ function rowToMessage(r: MessageRow): ChatMessage {
   };
   if (r.model_id != null) m.modelId = r.model_id;
   if (r.tokens != null) m.tokens = r.tokens;
+  if (r.attachments) {
+    try {
+      m.attachments = JSON.parse(r.attachments) as ChatAttachment[];
+    } catch {
+      // 旧数据 / 非法 JSON 按无附件处理，不阻断读取
+    }
+  }
+  if (r.refs) {
+    try {
+      m.refs = JSON.parse(r.refs) as ChatRef[];
+    } catch {
+      // 同上
+    }
+  }
+  if (r.skill_calls) {
+    try {
+      m.skillCalls = JSON.parse(r.skill_calls) as ChatSkillCall[];
+    } catch {
+      // 同上
+    }
+  }
   return m;
 }
 
@@ -691,6 +758,9 @@ function messageParams(m: ChatMessage, sessionId: string, ord: number): Record<s
     at: m.at,
     modelId: m.modelId ?? null,
     tokens: m.tokens ?? null,
+    attachments: m.attachments ? JSON.stringify(m.attachments) : null,
+    refs: m.refs ? JSON.stringify(m.refs) : null,
+    skillCalls: m.skillCalls ? JSON.stringify(m.skillCalls) : null,
   };
 }
 
@@ -735,7 +805,7 @@ function insertChats(c: Database.Database, sessions: ChatSession[], startOrd: nu
     "INSERT OR REPLACE INTO chat_reviews.chat_sessions (ord,id,owner_email,title,created_at,updated_at,summary,summary_upto) VALUES (@ord,@id,@ownerEmail,@title,@createdAt,@updatedAt,@summary,@summaryUpto)"
   );
   const insM = c.prepare(
-    "INSERT OR REPLACE INTO chat_reviews.chat_messages (ord,id,session_id,role,content,at,model_id,tokens) VALUES (@ord,@id,@sessionId,@role,@content,@at,@modelId,@tokens)"
+    "INSERT OR REPLACE INTO chat_reviews.chat_messages (ord,id,session_id,role,content,at,model_id,tokens,attachments,refs,skill_calls) VALUES (@ord,@id,@sessionId,@role,@content,@at,@modelId,@tokens,@attachments,@refs,@skillCalls)"
   );
   sessions.forEach((s, i) => {
     insS.run(sessionParams(s, startOrd + i));

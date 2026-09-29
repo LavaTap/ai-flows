@@ -3,17 +3,21 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname, basename, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, loadTickets, appendTicket, updateTicket, TICKET_IMAGES_DIR, AVATARS_DIR, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel } from "./db.js";
+import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, loadTickets, appendTicket, updateTicket, TICKET_IMAGES_DIR, AVATARS_DIR, CHAT_UPLOADS_DIR, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel, type ChatAttachment, type ChatRef, type ChatSkillCall } from "./db.js";
 import {
   callModelStream,
   callModelOnce,
   buildChatMessages,
   buildSummaryMessages,
+  buildUserContent,
   historyToText,
   countChars,
   truncateTitle,
   esc,
   PROVIDER_DEFAULT_ENDPOINTS,
+  type ContentPart,
+  type ToolDef,
+  type ToolCall,
 } from "./chat.js";
 import { createSession, destroySession, currentUser, sessionCookie, clearCookie, SESSION_COOKIE, parseCookies } from "./auth.js";
 import { loadConfig, type CrawlerConfig, type ReviewConfig } from "./config.js";
@@ -23,9 +27,18 @@ import { decideGate } from "./gate.js";
 import { writeReviewReport, buildReportView, fetchRepoTree } from "./reporter.js";
 import { isRepo, currentBranch } from "./git.js";
 import { ensureReportServer, REPORTS_DIR } from "./serve.js";
-import { runSkill, sanitizeFilename } from "./skill.js";
-import { runCrawler } from "./crawler.js";
+import { runSkill, sanitizeFilename, listSkills, resolveSkillDocByName, REPO_ROOT, type SkillInfo } from "./skill.js";
+import { runCrawler, runSkillAgent, packZip } from "./crawler.js";
 import { sanitizeRichHtml, isEmptyRichHtml } from "./richtext.js";
+import {
+  CHAT_IMAGE_TYPES,
+  isImageName,
+  isTextName,
+  extOf,
+  readTextAttachment,
+  cleanAttachmentName,
+  imageToDataUrl,
+} from "./attach.js";
 
 /** 平台静态资源目录 web/（src 与 dist 均位于仓库根下一级，向上取根） */
 export const WEB_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
@@ -59,6 +72,33 @@ const TICKET_IMAGE_NAME_RE = /^[a-f0-9]{12}\.(png|jpg|jpeg|gif|webp)$/;
 
 /** 头像上传请求体上限：base64 data URL（2MB 图约 2.8MB），留余量 */
 const AVATAR_BODY_MAX = 4 * 1024 * 1024;
+
+/** 对话附件文件名形态（上传 / skill 产物均由服务端生成，严格校验防路径穿越） */
+const CHAT_FILE_NAME_RE = /^[a-f0-9]{12}\.[a-z0-9]{1,8}$/;
+
+/** 对话上传请求体上限：base64 data URL（8MB 文件约 11MB），覆盖图片与文本类文件 */
+const CHAT_UPLOAD_BODY_MAX = 16 * 1024 * 1024;
+
+/** 单个被引用会话注入 prompt 的字符上限（超出截断，防上下文溢出） */
+const CHAT_REF_TEXT_LIMIT = 6000;
+
+/** skill 产物回灌 prompt / 展示的字符上限 */
+const CHAT_SKILL_TEXT_LIMIT = 12000;
+
+/** 一次对话内最多执行 skill 工具的轮数（防无限循环） */
+const CHAT_SKILL_ROUNDS = 3;
+
+/** 单次 skill 执行最多收集的产物文件数 */
+const CHAT_SKILL_MAX_FILES = 12;
+
+/** 单个 skill 产物文件大小上限（超出不收集，避免把大包塞进对话） */
+const CHAT_SKILL_FILE_MAX = 16 * 1024 * 1024;
+
+/** 收集 skill 产物时跳过的噪音目录（依赖、缓存、虚拟环境） */
+const SKILL_OUTPUT_SKIP = new Set(["node_modules", "venv", "__pycache__"]);
+
+/** 会话标题长度上限（用户手工重命名时超出按此截断） */
+const CHAT_TITLE_MAX = 60;
 
 /** 员工只能执行本部门节点；部门主管不限部门（权限最高） */
 export function canExecute(user: UserAccount, node: NodeState): boolean {
@@ -469,8 +509,8 @@ function toChatModelView(m: ChatModel): { id: string; name: string; provider: st
 }
 
 /** 聊天消息视图（落库原文，前端渲染时再转义） */
-function toChatMessageView(m: ChatMessage): { id: string; role: ChatMessage["role"]; content: string; at: string; modelId?: string; tokens?: number } {
-  return { id: m.id, role: m.role, content: m.content, at: m.at, modelId: m.modelId, tokens: m.tokens };
+function toChatMessageView(m: ChatMessage): { id: string; role: ChatMessage["role"]; content: string; at: string; modelId?: string; tokens?: number; attachments?: ChatAttachment[]; refs?: ChatRef[]; skillCalls?: ChatSkillCall[] } {
+  return { id: m.id, role: m.role, content: m.content, at: m.at, modelId: m.modelId, tokens: m.tokens, attachments: m.attachments, refs: m.refs, skillCalls: m.skillCalls };
 }
 
 /** 渲染 AI 对话页：读静态 chat.html，注入登录用户 + 模型列表 + 激活模型 bootstrap */
@@ -530,6 +570,260 @@ function chatModelToModelConfig(m: ChatModel): { baseUrl: string; apiKeyEnv: str
   return { baseUrl, apiKeyEnv: m.apiKeyEnv, model: m.model, timeoutMs: 120000 };
 }
 
+// ---------- AI 对话：附件 / 引用会话 / skill 工具 ----------
+
+/** 把消息附件还原成 prompt 分段：图片转 data URL，文本类读内容拼成文本段 */
+function attachmentParts(atts: ChatAttachment[] | undefined): { imageUrls: string[]; fileSections: string[] } {
+  const imageUrls: string[] = [];
+  const fileSections: string[] = [];
+  for (const a of atts ?? []) {
+    const abs = join(CHAT_UPLOADS_DIR, a.file);
+    if (a.kind === "image") {
+      const url = imageToDataUrl(abs, a.mime);
+      if (url) imageUrls.push(url);
+    } else {
+      const text = readTextAttachment(abs);
+      fileSections.push(`### 附件：${a.name}\n${text ?? "（二进制附件，仅提供文件名，不做内容分析）"}`);
+    }
+  }
+  return { imageUrls, fileSections };
+}
+
+/** 历史消息还原器：带附件的历史也还原成多模态内容，保证上下文完整 */
+function renderHistoryMessage(m: ChatMessage): string | ContentPart[] {
+  if (!m.attachments?.length) return m.content;
+  const { imageUrls, fileSections } = attachmentParts(m.attachments);
+  return buildUserContent(m.content, imageUrls, fileSections);
+}
+
+/** 组装被引用会话的上下文文本（只取当前用户自己的会话，防越权读取他人对话） */
+function buildRefContext(ownerEmail: string, refs: ChatRef[]): string {
+  if (!refs.length) return "";
+  const sessions = loadChats().sessions;
+  const parts: string[] = [];
+  for (const r of refs) {
+    const s = sessions.find((x) => x.id === r.id && x.ownerEmail === ownerEmail);
+    if (!s) continue;
+    const text = historyToText(s.messages).slice(0, CHAT_REF_TEXT_LIMIT);
+    if (text) parts.push(`【引用会话：${s.title || "未命名"}】\n${text}`);
+  }
+  return parts.join("\n\n");
+}
+
+/** 组装 skill 工具定义：单个 invoke_skill 工具，skill 参数用枚举限定在市面可用的 skill 目录 */
+function buildSkillTool(): { tool: ToolDef; skills: Map<string, SkillInfo> } | null {
+  const list = listSkills();
+  if (!list.length) return null;
+  const lines = list.map(
+    (s) => `- ${s.dir}：${s.name}${s.description ? ` — ${s.description}` : ""}${s.executable ? "（含脚本，可真实执行）" : "（纯文档）"}`
+  );
+  const tool: ToolDef = {
+    type: "function",
+    function: {
+      name: "invoke_skill",
+      description: `调用平台内置 Skill 处理任务并产出专业文档。可用 Skill：\n${lines.join("\n")}\n当用户显式要求使用某个 Skill，或任务与上述 Skill 的用途高度契合时调用。`,
+      parameters: {
+        type: "object",
+        properties: {
+          skill: { type: "string", enum: list.map((s) => s.dir), description: "要调用的 Skill 目录名" },
+          requirement: { type: "string", description: "交给该 Skill 的完整任务需求描述" },
+        },
+        required: ["skill", "requirement"],
+      },
+    },
+  };
+  return { tool, skills: new Map(list.map((s) => [s.dir, s])) };
+}
+
+/** 附件展示 / 下载用 MIME：按扩展名给出真实类型，未知类型落 octet-stream */
+function chatMimeOf(name: string): string {
+  const ext = extOf(name);
+  const known: Record<string, string> = {
+    md: "text/markdown; charset=utf-8",
+    json: "application/json; charset=utf-8",
+    csv: "text/csv; charset=utf-8",
+    txt: "text/plain; charset=utf-8",
+    log: "text/plain; charset=utf-8",
+    zip: "application/zip",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    xls: "application/vnd.ms-excel",
+    pdf: "application/pdf",
+  };
+  return CHAT_IMAGE_TYPES[ext] ?? known[ext] ?? "application/octet-stream";
+}
+
+/** 递归收集 skill 产物目录下本次执行新产生的文件（mtime ≥ sinceMs），跳过噪音目录与超大文件 */
+function collectNewFiles(dir: string, sinceMs: number, out: string[]): void {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const e of entries) {
+    if (out.length >= CHAT_SKILL_MAX_FILES) return;
+    if (e.name.startsWith(".") || SKILL_OUTPUT_SKIP.has(e.name)) continue;
+    const full = join(dir, e.name);
+    if (e.isDirectory()) {
+      collectNewFiles(full, sinceMs, out);
+      continue;
+    }
+    if (!e.isFile()) continue;
+    try {
+      if (statSync(full).mtimeMs < sinceMs) continue;
+    } catch {
+      continue;
+    }
+    out.push(full);
+  }
+}
+
+/** 把 skill 本次产出的文件收进 db/chat-uploads/，返回可下载附件（供消息里的文件卡片展示）。
+ *  产出 ≥2 个文件时优先打包成一个 zip：先试 7-Zip，不可用则回退零依赖内置压缩。 */
+async function collectSkillOutputs(
+  root: string,
+  outputDirName: string,
+  sinceMs: number,
+  skill: string,
+  zipCommand: string,
+  onStage?: (label: string) => void
+): Promise<ChatAttachment[]> {
+  if (!outputDirName) return [];
+  const abs = join(root, outputDirName);
+  if (!existsSync(abs) || !statSync(abs).isDirectory()) return [];
+
+  const found: string[] = [];
+  collectNewFiles(abs, sinceMs, found);
+
+  const usable: Array<{ full: string; size: number }> = [];
+  for (const full of found) {
+    try {
+      const size = statSync(full).size;
+      if (size <= CHAT_SKILL_FILE_MAX) usable.push({ full, size });
+    } catch {
+      /* 读取失败的跳过 */
+    }
+  }
+  if (!usable.length) return [];
+  mkdirSync(CHAT_UPLOADS_DIR, { recursive: true });
+
+  if (usable.length >= 2) {
+    onStage?.(`打包 ${usable.length} 个产物…`);
+    const file = `${randomBytes(6).toString("hex")}.zip`;
+    const outPath = join(CHAT_UPLOADS_DIR, file);
+    try {
+      await packZip({ base: abs, files: usable.map((u) => u.full), outPath, command: zipCommand });
+      return [
+        {
+          kind: "file",
+          file,
+          name: cleanAttachmentName(`${skill}-产物.zip`),
+          mime: "application/zip",
+          size: statSync(outPath).size,
+        },
+      ];
+    } catch {
+      /* 打包失败退回逐个文件，不让用户拿不到产物 */
+    }
+  }
+
+  onStage?.("收集产物…");
+  const out: ChatAttachment[] = [];
+  for (const { full, size } of usable) {
+    const name = basename(full);
+    const file = `${randomBytes(6).toString("hex")}.${extOf(name)}`;
+    if (!CHAT_FILE_NAME_RE.test(file)) continue; // 无扩展名 / 扩展名过长的不收集（不然无法经 /api/chat/files 取回）
+    try {
+      writeFileSync(join(CHAT_UPLOADS_DIR, file), readFileSync(full));
+    } catch {
+      continue;
+    }
+    out.push({ kind: "file", file, name: cleanAttachmentName(name), mime: chatMimeOf(name), size });
+  }
+  return out;
+}
+
+/** 对话页执行 skill：纯文档 skill 直接回 SKILL.md 注入上下文；含脚本 skill 在 skill 项目根内跑 agent 真执行 */
+async function executeChatSkill(
+  dir: string,
+  info: SkillInfo,
+  requirement: string,
+  emit: (payload: Record<string, unknown>) => void
+): Promise<{ text: string; files: ChatAttachment[] }> {
+  // 纯文档 skill：不跑进程，直接把 SKILL.md 灌进上下文；同样报 start/done，让前端消息流里也出现灰字提示
+  if (!info.executable) {
+    emit({ status: "start", skill: dir });
+    const doc = resolveSkillDocByName(dir);
+    emit({ status: "done", skill: dir });
+    return { text: doc, files: [] };
+  }
+
+  const crawler = loadCrawlerConfig();
+  // 执行根：仓库内 skill（脚本以仓库相对路径调用）缺省落在仓库根，需外部项目环境的 skill 走 skillRoots 覆盖
+  const root = crawler.skillRoots[dir] || REPO_ROOT;
+  emit({ status: "start", skill: dir });
+  const doc = resolveSkillDocByName(dir);
+  // 产物只认本次执行期间写进输出目录的文件；留 2s 时钟余量，避免漏掉恰好与起始同秒落盘的文件
+  const sinceMs = Date.now() - 2000;
+  let lastEcho = 0;
+  const text = await runSkillAgent({
+    root,
+    command: crawler.command,
+    args: crawler.args,
+    prompt: `请按下面的 Skill 说明文档执行任务，直接给出最终结果，不要复述文档内容。\n\n${doc}\n\n## 用户需求\n${requirement}`,
+    timeoutMs: crawler.timeoutMs,
+    onProgress: (pct, label) => emit({ status: "progress", skill: dir, pct, label }),
+    // agent 输出实时回显：频率上限 1.2s 一条，避免刷屏把 SSE 打满
+    onOutput: (line) => {
+      const now = Date.now();
+      if (now - lastEcho < 1200) return;
+      lastEcho = now;
+      emit({ status: "progress", skill: dir, label: `运行中：${line.slice(0, 160)}` });
+    },
+  });
+  const files = await collectSkillOutputs(root, crawler.outputDir, sinceMs, dir, crawler.zipCommand, (label) =>
+    emit({ status: "progress", skill: dir, label })
+  );
+  emit({
+    status: "done",
+    skill: dir,
+    files: files.map((f) => ({ file: f.file, name: f.name, size: f.size })),
+  });
+  return { text, files };
+}
+
+/** 规范化对话附件入参：只保留文件名合法且确实存在的条目（防伪造 / 穿越） */
+function normalizeAttachments(raw: unknown): ChatAttachment[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ChatAttachment[] = [];
+  for (const item of raw as any[]) {
+    const file = String(item?.file ?? "");
+    if (!CHAT_FILE_NAME_RE.test(file)) continue;
+    if (!existsSync(join(CHAT_UPLOADS_DIR, file))) continue;
+    const kind = item?.kind === "image" ? "image" : "file";
+    out.push({
+      kind,
+      file,
+      name: cleanAttachmentName(String(item?.name ?? file)),
+      mime: String(item?.mime ?? "application/octet-stream"),
+      size: Number(item?.size ?? 0) || 0,
+    });
+  }
+  return out;
+}
+
+/** 规范化引用会话入参：只保留 id 形态合法的条目（归属另在 buildRefContext 校验） */
+function normalizeRefs(raw: unknown): ChatRef[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ChatRef[] = [];
+  for (const item of raw as any[]) {
+    const id = String(item?.id ?? "");
+    if (!id || /[/\\]/.test(id)) continue;
+    out.push({ id, title: String(item?.title ?? "").slice(0, 120) });
+  }
+  return out;
+}
+
 /** skill 执行用的模型配置：优先目标仓库的 ai-review.config.json，缺省回退平台启动目录配置 */
 function loadSkillModelConfig(repo: string): ReviewConfig {
   const repoCfg = join(repo, "ai-review.config.json");
@@ -547,10 +841,14 @@ function loadCrawlerConfig(): Required<CrawlerConfig> {
   }
   return {
     root: cfg.root ? resolve(cfg.root) : "",
+    skillRoots: Object.fromEntries(
+      Object.entries(cfg.skillRoots ?? {}).map(([k, v]) => [k, v ? resolve(v) : ""])
+    ),
     command: cfg.command || "claude",
     args: cfg.args ?? ["-p", "--permission-mode", "bypassPermissions"],
     outputDir: cfg.outputDir || "output",
     timeoutMs: cfg.timeoutMs ?? 600000,
+    zipCommand: cfg.zipCommand || "",
   };
 }
 
@@ -2081,6 +2379,118 @@ export async function startPlatformServer(
       return;
     }
 
+    // 重命名会话标题（仅 owner；不刷新 updatedAt，避免改个名就跳到列表顶部）
+    if (csm && req.method === "PATCH") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const session = loadChats().sessions.find((s) => s.id === csm[1]);
+      if (!session) {
+        sendJson(res, 404, { error: "会话不存在" });
+        return;
+      }
+      if (session.ownerEmail !== user.email) {
+        sendJson(res, 403, { error: "无权修改该会话" });
+        return;
+      }
+      let title = "";
+      try {
+        const body = JSON.parse(await readBody(req, 4 * 1024)) as { title?: unknown };
+        if (typeof body.title === "string") title = body.title.trim().slice(0, CHAT_TITLE_MAX);
+      } catch {
+        sendJson(res, 400, { error: "请求体不是合法 JSON" });
+        return;
+      }
+      if (!title) {
+        sendJson(res, 400, { error: "标题不能为空" });
+        return;
+      }
+      updateChat(session.id, (s) => {
+        s.title = title;
+      });
+      sendJson(res, 200, { ok: true, title });
+      return;
+    }
+
+    // 对话附件上传（body 为 base64，服务端生成文件名后落 db/chat-uploads/）
+    if (path === "/api/chat/upload" && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      let filename = "";
+      let contentBase64 = "";
+      try {
+        const body = JSON.parse(await readBody(req, CHAT_UPLOAD_BODY_MAX)) as {
+          filename?: unknown;
+          contentBase64?: unknown;
+        };
+        if (typeof body.filename === "string") filename = body.filename;
+        if (typeof body.contentBase64 === "string") contentBase64 = body.contentBase64;
+      } catch {
+        sendJson(res, 400, { error: "文件过大（上限 12MB）或不是合法 JSON" });
+        return;
+      }
+      const ext = extOf(filename);
+      const image = isImageName(filename);
+      const text = isTextName(filename);
+      if (!contentBase64 || (!image && !text)) {
+        sendJson(res, 400, { error: "仅支持图片（png/jpg/gif/webp）与常见文本 / 代码类文件" });
+        return;
+      }
+      const buf = Buffer.from(contentBase64, "base64");
+      const name = `${randomBytes(6).toString("hex")}.${ext}`;
+      mkdirSync(CHAT_UPLOADS_DIR, { recursive: true });
+      writeFileSync(join(CHAT_UPLOADS_DIR, name), buf);
+      const attachment: ChatAttachment = {
+        kind: image ? "image" : "file",
+        file: name,
+        name: cleanAttachmentName(filename),
+        mime: image ? CHAT_IMAGE_TYPES[ext] : "text/plain; charset=utf-8",
+        size: buf.length,
+      };
+      sendJson(res, 200, { attachment });
+      return;
+    }
+
+    // 对话附件 / skill 产物读取（文件名严格校验，天然免疫路径穿越）
+    const cfm = path.match(/^\/api\/chat\/files\/([^/\\]+)$/);
+    if (cfm && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const name = cfm[1];
+      if (!CHAT_FILE_NAME_RE.test(name)) {
+        sendJson(res, 404, { error: "文件不存在" });
+        return;
+      }
+      const abs = join(CHAT_UPLOADS_DIR, name);
+      if (!existsSync(abs)) {
+        sendJson(res, 404, { error: "文件不存在" });
+        return;
+      }
+      res.setHeader("Content-Type", chatMimeOf(name));
+      res.setHeader("Cache-Control", "private, max-age=86400");
+      res.end(readFileSync(abs));
+      return;
+    }
+
+    // 可用 skill 列表（对话页「调用 Skill」选择器；只暴露目录名 + 展示名 + 描述）
+    if (path === "/api/chat/skills" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      sendJson(res, 200, { skills: listSkills() });
+      return;
+    }
+
     // 发送消息（SSE 流式入口）：写入 user message → 调模型流式生成 → 写入 assistant message
     const cmm = path.match(/^\/api\/chat\/sessions\/([^/\\]+)\/messages$/);
     if (cmm && req.method === "POST") {
@@ -2101,15 +2511,27 @@ export async function startPlatformServer(
 
       let content = "";
       let modelId = "";
+      let skillDir = "";
+      let attachments: ChatAttachment[] = [];
+      let refs: ChatRef[] = [];
       try {
-        const body = JSON.parse(await readBody(req, 64 * 1024)) as { content?: unknown; modelId?: unknown };
+        const body = JSON.parse(await readBody(req, 256 * 1024)) as {
+          content?: unknown;
+          modelId?: unknown;
+          skill?: unknown;
+          attachments?: unknown;
+          refs?: unknown;
+        };
         if (typeof body.content === "string") content = body.content.trim();
         if (typeof body.modelId === "string") modelId = body.modelId;
+        if (typeof body.skill === "string") skillDir = body.skill;
+        attachments = normalizeAttachments(body.attachments);
+        refs = normalizeRefs(body.refs);
       } catch {
         sendJson(res, 400, { error: "请求体过大或不是合法 JSON" });
         return;
       }
-      if (!content) {
+      if (!content && !attachments.length && !skillDir) {
         sendJson(res, 400, { error: "消息内容不能为空" });
         return;
       }
@@ -2125,13 +2547,15 @@ export async function startPlatformServer(
 
       const now = new Date().toISOString();
       const userMsg: ChatMessage = { id: randomUUID(), role: "user", content, at: now };
+      if (attachments.length) userMsg.attachments = attachments;
+      if (refs.length) userMsg.refs = refs;
 
       // 写入 user message（首条消息时更新会话标题）
       const updated = updateChat(session.id, (s) => {
         s.messages.push(userMsg);
         s.updatedAt = now;
         if (s.messages.filter((m) => m.role === "user").length === 1) {
-          s.title = truncateTitle(content);
+          s.title = truncateTitle(content || attachments[0]?.name || "");
         }
       });
       if (!updated) {
@@ -2140,6 +2564,12 @@ export async function startPlatformServer(
       }
 
       const chatCfg = loadChatConfig();
+      const modelCfg = chatModelToModelConfig(chatModel);
+      // 引用会话内容作为上下文附在 system 之后（仅取本人会话）
+      const refContext = buildRefContext(user.email, refs);
+      const systemPrompt = refContext
+        ? `${chatCfg.systemPrompt}\n\n以下是用户引用的其他会话内容，仅作上下文参考：\n${refContext}`
+        : chatCfg.systemPrompt;
 
       // 设置 SSE 响应头（先回，记忆压缩可能耗时，前端能立即看到 thinking）
       res.writeHead(200, {
@@ -2181,29 +2611,82 @@ export async function startPlatformServer(
         }
       }
 
+      // 可用 skill 工具（同时用于校验前端显式指定的 skill）
+      const skillTool = buildSkillTool();
+
       // 摘要已覆盖的历史不再送原文，只送【摘要 + 未压缩的近期原文】+ 当前 user 内容
+      // 当前消息与带附件的历史都还原成多模态内容（图片 data URL + 文本附件正文）
+      // 显式指定 skill 时给模型一条调用指令（只进 prompt，不落库，避免污染消息与标题）
+      const skillHint = skillDir && skillTool?.skills.has(skillDir) ? `【请调用 Skill：${skillDir}】` : "";
+      const userText = skillHint ? `${skillHint}\n${content}` : content;
+      const { imageUrls, fileSections } = attachmentParts(attachments);
+      const userContent = buildUserContent(userText, imageUrls, fileSections);
       const promptMessages = buildChatMessages(
-        chatCfg.systemPrompt,
+        systemPrompt,
         prior.slice(memoryUpto),
-        content,
+        userContent,
         chatCfg.maxHistory,
-        memory
+        memory,
+        renderHistoryMessage
       );
 
+      // 工具调用循环：模型请求 invoke_skill 时执行 skill 并把产物回灌后续轮次（最多 CHAT_SKILL_ROUNDS 轮）
+      const working = [...promptMessages];
       let fullContent = "";
       let totalTokens = 0;
+      // 本轮 AI 调用过的 skill（含产出文件），随 assistant 消息一起落库，供消息流里的灰字提示与文件卡片使用
+      const skillCalls: ChatSkillCall[] = [];
       try {
-        for await (const chunk of callModelStream(chatModelToModelConfig(chatModel), promptMessages, {
-          maxTokens: chatCfg.maxTokens,
-          temperature: chatCfg.temperature,
-          signal: ac.signal,
-        })) {
-          if (chunk.type === "delta" && chunk.delta) {
-            fullContent += chunk.delta;
-            res.write(`event: delta\ndata: ${JSON.stringify({ content: chunk.delta })}\n\n`);
-          } else if (chunk.type === "usage" && chunk.usage) {
-            totalTokens = chunk.usage.totalTokens;
-            res.write(`event: usage\ndata: ${JSON.stringify({ totalTokens })}\n\n`);
+        for (let round = 0; round <= CHAT_SKILL_ROUNDS; round++) {
+          let roundText = "";
+          let toolCalls: ToolCall[] = [];
+          for await (const chunk of callModelStream(modelCfg, working, {
+            maxTokens: chatCfg.maxTokens,
+            temperature: chatCfg.temperature,
+            signal: ac.signal,
+            tools: skillTool ? [skillTool.tool] : undefined,
+          })) {
+            if (chunk.type === "delta" && chunk.delta) {
+              roundText += chunk.delta;
+              fullContent += chunk.delta;
+              res.write(`event: delta\ndata: ${JSON.stringify({ content: chunk.delta })}\n\n`);
+            } else if (chunk.type === "usage" && chunk.usage) {
+              totalTokens = chunk.usage.totalTokens;
+              res.write(`event: usage\ndata: ${JSON.stringify({ totalTokens })}\n\n`);
+            } else if (chunk.type === "tool_call" && chunk.toolCalls) {
+              toolCalls = chunk.toolCalls;
+            }
+          }
+          if (!toolCalls.length || !skillTool || round === CHAT_SKILL_ROUNDS) break;
+
+          working.push({ role: "assistant", content: roundText || null, tool_calls: toolCalls });
+          for (const call of toolCalls) {
+            let resultText = "";
+            if (call.function.name !== "invoke_skill") {
+              resultText = `未知工具：${call.function.name}`;
+            } else {
+              let callDir = "";
+              try {
+                const args = JSON.parse(call.function.arguments || "{}") as { skill?: unknown; requirement?: unknown };
+                callDir = String(args.skill ?? "");
+                const info = skillTool.skills.get(callDir);
+                if (!info) throw new Error(`未知 skill：${callDir}`);
+                const requirement = String(args.requirement ?? "").trim() || content || "请依据上下文完成任务";
+                const out = await executeChatSkill(callDir, info, requirement, (payload) =>
+                  res.write(`event: skill\ndata: ${JSON.stringify(payload)}\n\n`)
+                );
+                resultText = out.text.slice(0, CHAT_SKILL_TEXT_LIMIT);
+                const rec: ChatSkillCall = { skill: callDir, status: "ok" };
+                if (out.files.length) rec.files = out.files;
+                skillCalls.push(rec);
+              } catch (err: any) {
+                const msg = String(err?.message ?? err);
+                res.write(`event: skill\ndata: ${JSON.stringify({ status: "error", skill: callDir, error: msg })}\n\n`);
+                resultText = `Skill 执行失败：${msg}`;
+                skillCalls.push({ skill: callDir || "未知 skill", status: "error", error: msg });
+              }
+            }
+            working.push({ role: "tool", tool_call_id: call.id, name: call.function.name, content: resultText });
           }
         }
       } catch (err: any) {
@@ -2224,6 +2707,7 @@ export async function startPlatformServer(
         modelId: chatModel.id,
         tokens: totalTokens,
       };
+      if (skillCalls.length) asstMsg.skillCalls = skillCalls;
       updateChat(session.id, (s) => {
         s.messages.push(asstMsg);
         s.updatedAt = asstMsg.at;
