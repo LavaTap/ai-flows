@@ -65,3 +65,56 @@ test("should drop invalid data-email values on links", () => {
     '<a href="/x">@x</a>'
   );
 });
+
+test("should keep data-kb-id on knowledge links", () => {
+  assert.strictEqual(
+    sanitizeRichHtml('<a href="/kb?id=k-m3x1-ab12cd" data-kb-id="k-m3x1-ab12cd">部署手册</a>'),
+    '<a href="/kb?id=k-m3x1-ab12cd" data-kb-id="k-m3x1-ab12cd">部署手册</a>'
+  );
+});
+
+test("should drop invalid data-kb-id values on links", () => {
+  assert.strictEqual(
+    sanitizeRichHtml('<a href="/kb?id=x" data-kb-id="../etc/passwd">x</a>'),
+    '<a href="/kb?id=x">x</a>'
+  );
+  assert.strictEqual(
+    sanitizeRichHtml('<a href="/kb?id=x" data-kb-id="k-1" style="color:red">x</a>'),
+    '<a href="/kb?id=x" data-kb-id="k-1">x</a>'
+  );
+});
+
+test("should keep editor layout styles on text and images", () => {
+  assert.strictEqual(
+    sanitizeRichHtml('<span style="font-size:16px">大一点</span>'),
+    '<span style="font-size: 16px">大一点</span>'
+  );
+  assert.strictEqual(
+    sanitizeRichHtml('<p style="text-align:center">居中</p>'),
+    '<p style="text-align: center">居中</p>'
+  );
+  assert.strictEqual(
+    sanitizeRichHtml('<img src="/api/tickets/images/ab12cd34ef56.png" style="float:left;width:40%;margin:6px 14px 8px 0">'),
+    '<img src="/api/tickets/images/ab12cd34ef56.png" style="float: left; width: 40%; margin: 6px 14px 8px 0">'
+  );
+});
+
+test("should drop non-layout style declarations", () => {
+  assert.strictEqual(
+    sanitizeRichHtml('<span style="position:fixed;font-size:14px">x</span>'),
+    '<span style="font-size: 14px">x</span>'
+  );
+  assert.strictEqual(
+    sanitizeRichHtml('<div style="background:url(javascript:alert(1))">x</div>'),
+    "<div>x</div>"
+  );
+  assert.strictEqual(
+    sanitizeRichHtml('<p style="width:expression(alert(1))">x</p>'),
+    "<p>x</p>"
+  );
+  // 不允许 style 的标签即使样式合法也要丢掉
+  assert.strictEqual(
+    sanitizeRichHtml('<a href="/x" style="font-size:16px">x</a>'),
+    '<a href="/x">x</a>'
+  );
+});

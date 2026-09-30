@@ -93,6 +93,27 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_email ON messages(email);
+
+/* 知识库文章（类似工单但独立于管线节点，像内部文章）。
+   可见范围 visibility：all=全体 / departments=指定部门（departments 存 JSON 数组）/ private=仅撰写人。
+   故意不加外键：users 行整体替换（saveUsers 先 DELETE 再插）会级联清空文章，
+   撰写人 / 更新人与账号的关联靠 email 逻辑匹配。 */
+CREATE TABLE IF NOT EXISTS kb_articles (
+  ord              INTEGER NOT NULL,
+  id               TEXT PRIMARY KEY,
+  title            TEXT NOT NULL,
+  content          TEXT NOT NULL,
+  author_email     TEXT NOT NULL,
+  author_name      TEXT NOT NULL,
+  visibility       TEXT NOT NULL,
+  departments      TEXT,
+  created_at       TEXT NOT NULL,
+  updated_at       TEXT NOT NULL,
+  updated_by_email TEXT,
+  updated_by_name  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_kb_updated ON kb_articles(updated_at);
 `;
 
 /** AI 对话与评审库 DDL：会话 / 消息 / 模型配置 / 评审记录。

@@ -31,6 +31,15 @@
     return email ? email.charAt(0).toUpperCase() : "?";
   }
 
+  function formatTime(iso) {
+    if (!iso) return "";
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    function p(n) { return (n < 10 ? "0" : "") + n; }
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) +
+      " " + p(d.getHours()) + ":" + p(d.getMinutes());
+  }
+
   function avatarHtml(u) {
     if (u.avatar) {
       return '<span class="res-avatar"><img src="/api/avatars/' + esc(u.avatar) + '" alt=""></span>';
@@ -92,6 +101,20 @@
       '<span class="res-badge ' + esc(t.status) + '">' + esc(STATUS_LABEL[t.status] || t.status) + "</span></a>";
   }
 
+  function renderKbRow(k) {
+    var meta = ["撰写人 " + (k.authorName || "—"), "最近更新 " + (formatTime(k.updatedAt) || "—")]
+      .filter(Boolean).join(" · ");
+    return '<a class="res-row" href="/kb?id=' + encodeURIComponent(k.id) +
+      '" data-type="kb" data-id="' + esc(k.id) + '" data-title="' + esc(k.title || k.id) +
+      '" data-author="' + esc(k.authorName || "") + '" data-updated="' + esc(k.updatedAt || "") +
+      '" data-updater="' + esc(k.updatedByName || "") + '">' +
+      '<span class="res-body">' +
+      '<span class="res-title">' + esc(k.title || k.id) + "</span>" +
+      '<span class="res-meta">' + esc(meta) + "</span>" +
+      "</span>" +
+      '<span class="res-badge kb">知识库</span></a>';
+  }
+
   function bindRowClicks(container) {
     var rows = container.querySelectorAll(".res-row");
     for (var i = 0; i < rows.length; i++) {
@@ -113,6 +136,16 @@
             name: name ? name.textContent : email,
             department: dept,
           });
+        } else if (type === "kb") {
+          // 知识库文章记浏览历史，正常跳转 /kb?id=
+          addHistory({
+            _type: "kb",
+            id: row.getAttribute("data-id"),
+            title: row.getAttribute("data-title"),
+            authorName: row.getAttribute("data-author"),
+            updatedAt: row.getAttribute("data-updated"),
+            updatedByName: row.getAttribute("data-updater"),
+          });
         }
       });
     }
@@ -130,6 +163,7 @@
       var item = list[i];
       if (item._type === "user") html += renderUserRow(item);
       else if (item._type === "ticket") html += renderTicketRow(item);
+      else if (item._type === "kb") html += renderKbRow(item);
     }
     byId("results").innerHTML = html;
     bindRowClicks(byId("results"));
@@ -144,13 +178,14 @@
       var emptyTip = "暂无浏览记录";
       if (filterType === "user") emptyTip = "暂无浏览过的员工";
       else if (filterType === "ticket") emptyTip = "暂无浏览过的工单";
-      else if (filterType === "kb") emptyTip = "知识库暂未接入";
+      else if (filterType === "kb") emptyTip = "暂无浏览过的文章";
       byId("results").innerHTML = '<div class="home-hint">' + emptyTip + "</div>";
       return;
     }
     var title = "最近浏览";
     if (filterType === "user") title = "最近浏览的员工";
     else if (filterType === "ticket") title = "最近浏览的工单";
+    else if (filterType === "kb") title = "最近浏览的文章";
     var html = '<div class="res-section-title">' + title +
       '<button class="clear-hist" type="button" id="clearHist">清空</button>' +
       "</div>";
@@ -160,6 +195,8 @@
         html += renderUserRow({ email: item.email, name: item.name, avatar: item.avatar, role: item.role, department: item.department, title: item.title });
       } else if (item._type === "ticket") {
         html += renderTicketRow({ id: item.id, title: item.title, status: item.status, department: item.department, authorName: item.authorName, assigneeEmail: item.assigneeEmail });
+      } else if (item._type === "kb") {
+        html += renderKbRow(item);
       }
     }
     byId("results").innerHTML = html;
@@ -172,15 +209,7 @@
     var type = state.type;
     // 无搜索词时，展示浏览记录（按类型过滤）
     if (!state.q) {
-      if (type === "kb") {
-        byId("results").innerHTML = '<div class="home-hint">知识库暂未接入</div>';
-      } else {
-        renderHistory(type);
-      }
-      return;
-    }
-    if (type === "kb") {
-      byId("results").innerHTML = '<div class="home-hint">知识库暂未接入</div>';
+      renderHistory(type);
       return;
     }
     fetch("/api/search?type=" + encodeURIComponent(type) + "&q=" + encodeURIComponent(state.q))
@@ -195,6 +224,8 @@
           renderMixed(list, "共 " + list.length + " 条结果");
         } else if (type === "user") {
           renderMixed(list, "共 " + list.length + " 个员工");
+        } else if (type === "kb") {
+          renderMixed(list, "共 " + list.length + " 篇知识库文章");
         } else {
           renderMixed(list, "共 " + list.length + " 个工单");
         }

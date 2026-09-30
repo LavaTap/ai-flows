@@ -16,16 +16,58 @@ const VOID_TAGS = new Set(["br", "hr", "img"]);
 
 /** 各标签允许的属性白名单（未列出 = 该标签不允许任何属性） */
 const ALLOWED_ATTRS: Record<string, Set<string>> = {
-  a: new Set(["href", "title", "data-email"]),
-  img: new Set(["src", "alt", "width", "height"]),
+  a: new Set(["href", "title", "data-email", "data-kb-id"]),
+  img: new Set(["src", "alt", "width", "height", "style"]),
   font: new Set(["size", "color"]),
+  p: new Set(["style"]),
+  div: new Set(["style"]),
+  span: new Set(["style"]),
+  h1: new Set(["style"]),
+  h2: new Set(["style"]),
+  h3: new Set(["style"]),
+  h4: new Set(["style"]),
+  li: new Set(["style"]),
+  blockquote: new Set(["style"]),
 };
+
+/** 允许携带 style 的标签（正文容器与图片） */
+const STYLE_TAGS = new Set(Object.keys(ALLOWED_ATTRS).filter((t) => ALLOWED_ATTRS[t].has("style")));
+
+/** 行内样式属性白名单：只放行编辑器会产出的排版属性，值用正则严格限定（杜绝 url() 等注入） */
+const ALLOWED_STYLES: Record<string, RegExp> = {
+  "font-size": /^\d{1,3}(\.\d+)?(px|em|rem|%)$/,
+  "text-align": /^(left|right|center|justify)$/,
+  "float": /^(left|right|none)$/,
+  "display": /^(block|inline|inline-block)$/,
+  margin: /^-?\d{1,3}(\.\d+)?(px|em|%)?(\s+-?\d{1,3}(\.\d+)?(px|em|%)?){0,3}$/,
+  width: /^\d{1,4}(\.\d+)?(px|%)$/,
+  height: /^\d{1,4}(\.\d+)?(px|%)$/,
+  "max-width": /^\d{1,4}(\.\d+)?(px|%)$/,
+};
+
+/** 清洗 style：逐条声明匹配白名单，全部非法则丢弃该属性 */
+function cleanStyle(raw: string): string | null {
+  const out: string[] = [];
+  for (const decl of raw.split(";")) {
+    const idx = decl.indexOf(":");
+    if (idx === -1) continue;
+    const prop = decl.slice(0, idx).trim().toLowerCase();
+    const val = decl.slice(idx + 1).trim().toLowerCase();
+    const re = ALLOWED_STYLES[prop];
+    if (!re || !re.test(val)) continue;
+    out.push(`${prop}: ${val}`);
+  }
+  return out.length ? out.join("; ") : null;
+}
 
 /** 图片只能引用本平台上传接口的地址（禁止外链，避免信息外泄与追踪） */
 const IMG_SRC_RE = /^\/api\/tickets\/images\/[A-Za-z0-9._-]+$/;
 
 /** @提及链接带上的被提及人邮箱（前端据此渲染头像 + 名字与悬停用户卡片） */
 const EMAIL_RE = /^[^\s<>"'@/\\]+@[^\s<>"'@/\\]+\.[^\s<>"'@/\\]+$/;
+
+/** 知识库引用链接带上的文章 id（前端据此渲染知识卡片：名称 / 撰写人 / 最近更新时间 / 更新人） */
+const KB_ID_RE = /^k-[A-Za-z0-9-]{1,40}$/;
 
 /** 剥离控制字符（避免零宽 / 换行注入进属性值） */
 function stripControl(v: string): string {
@@ -45,6 +87,7 @@ function escapeAttr(v: string): string {
 /** 校验并归一化单个属性值：非法返回 null（该属性丢弃） */
 function cleanAttrValue(tag: string, name: string, raw: string): string | null {
   const val = stripControl(raw).trim();
+  if (name === "style") return STYLE_TAGS.has(tag) ? cleanStyle(val) : null;
   if (tag === "img") {
     if (name === "src") return IMG_SRC_RE.test(val) ? val : null;
     if (name === "alt") return val.slice(0, 200);
@@ -55,6 +98,7 @@ function cleanAttrValue(tag: string, name: string, raw: string): string | null {
     if (name === "href") return /^(https?:\/\/|mailto:|\/)/i.test(val) ? val : null;
     if (name === "title") return val.slice(0, 200);
     if (name === "data-email") return EMAIL_RE.test(val) ? val.slice(0, 120) : null;
+    if (name === "data-kb-id") return KB_ID_RE.test(val) ? val : null;
     return null;
   }
   if (tag === "font") {

@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname, basename, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, loadTickets, appendTicket, updateTicket, loadPlatformMessages, appendPlatformMessage, markMessageRead, markAllMessagesRead, TICKET_IMAGES_DIR, AVATARS_DIR, CHAT_UPLOADS_DIR, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel, type ChatAttachment, type ChatRef, type ChatSkillCall, type PlatformMessage, type MessageType } from "./db.js";
+import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, loadTickets, appendTicket, updateTicket, loadPlatformMessages, appendPlatformMessage, markMessageRead, markAllMessagesRead, loadKbArticles, appendKbArticle, updateKbArticle, TICKET_IMAGES_DIR, AVATARS_DIR, CHAT_UPLOADS_DIR, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel, type ChatAttachment, type ChatRef, type ChatSkillCall, type PlatformMessage, type MessageType, type KbArticle, type KbVisibility } from "./db.js";
 import {
   callModelStream,
   callModelOnce,
@@ -57,6 +57,9 @@ const TICKET_TITLE_MAX = 100;
 
 /** 工单富文本正文 / 评论长度上限（净化前的原始 HTML 长度） */
 const TICKET_CONTENT_MAX = 20000;
+
+/** 知识库文章标题长度上限 */
+const KB_TITLE_MAX = 100;
 
 /** 工单图片允许的扩展名 → MIME */
 const TICKET_IMAGE_TYPES: Record<string, string> = {
@@ -146,6 +149,27 @@ export function filterTicketsByUser(tickets: TicketRecord[], user: UserAccount):
 /** 工单状态取值合法（用于请求体校验） */
 export function isTicketStatus(v: unknown): v is TicketStatus {
   return v === "open" || v === "doing" || v === "resolved";
+}
+
+/** 知识库可见性：主管全量；撰写人本人始终可见；其余按可见范围（全体 / 指定部门 / 仅自己） */
+export function canViewKb(article: KbArticle, user: UserAccount): boolean {
+  if (user.role === "supervisor") return true;
+  if (article.authorEmail === user.email) return true;
+  if (article.visibility === "all") return true;
+  if (article.visibility === "departments") {
+    return (article.departments ?? []).includes(user.department);
+  }
+  return false; // private：仅撰写人本人（上面已放行）
+}
+
+/** 按视角过滤知识库文章：主管全量，员工按可见范围 */
+export function filterKbByUser(articles: KbArticle[], user: UserAccount): KbArticle[] {
+  return articles.filter((a) => canViewKb(a, user));
+}
+
+/** 知识库可见范围取值合法（请求体校验） */
+export function isKbVisibility(v: unknown): v is KbVisibility {
+  return v === "all" || v === "departments" || v === "private";
 }
 
 /** 从净化后的正文中收集引用的本平台图片文件名（挂到工单记录，便于统计/审计） */
@@ -450,6 +474,72 @@ function toTicketView(t: TicketRecord, user: UserAccount): TicketView {
   };
 }
 
+/** 知识库文章视图（含正文，供详情渲染与编辑器回填；canEdit = 撰写人本人或主管） */
+interface KbView {
+  id: string;
+  title: string;
+  content: string;
+  authorName: string;
+  authorEmail: string;
+  visibility: KbVisibility;
+  departments: string[];
+  createdAt: string;
+  updatedAt: string;
+  updatedByName: string;
+  updatedByEmail: string;
+  mine: boolean;
+  canEdit: boolean;
+}
+
+function toKbView(a: KbArticle, user: UserAccount): KbView {
+  return {
+    id: a.id,
+    title: a.title,
+    content: a.content,
+    authorName: a.authorName,
+    authorEmail: a.authorEmail,
+    visibility: a.visibility,
+    departments: a.departments ?? [],
+    createdAt: a.createdAt,
+    updatedAt: a.updatedAt,
+    updatedByName: a.updatedByName,
+    updatedByEmail: a.updatedByEmail,
+    mine: a.authorEmail === user.email,
+    canEdit: a.authorEmail === user.email || canApprove(user),
+  };
+}
+
+/** 知识库轻量索引（工单 / 知识库正文里引用卡的渲染数据：名称 / 撰写人 / 最近更新时间 / 更新人） */
+export interface KbCardInfo {
+  id: string;
+  title: string;
+  authorName: string;
+  updatedAt: string;
+  updatedByName: string;
+}
+
+function toKbCardInfo(a: KbArticle): KbCardInfo {
+  return {
+    id: a.id,
+    title: a.title,
+    authorName: a.authorName,
+    updatedAt: a.updatedAt,
+    updatedByName: a.updatedByName,
+  };
+}
+
+/** 归一化可见部门：去空、去重、必须是平台已知部门（防止前端传任意字符串） */
+function normalizeDepartments(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  const known = new Set(loadUsers().map((u) => u.department).filter(Boolean));
+  const out: string[] = [];
+  for (const item of v) {
+    const s = typeof item === "string" ? item.trim() : "";
+    if (s && known.has(s) && !out.includes(s)) out.push(s);
+  }
+  return out;
+}
+
 /** 站内消息视图（收件人视角；refType/refId 供前端跳转关联对象） */
 interface MessageView {
   id: string;
@@ -571,6 +661,9 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   "/home.js": { file: "home.js", type: "text/javascript; charset=utf-8" },
   "/profile.js": { file: "profile.js", type: "text/javascript; charset=utf-8" },
   "/messages.js": { file: "messages.js", type: "text/javascript; charset=utf-8" },
+  "/richtext-editor.js": { file: "richtext-editor.js", type: "text/javascript; charset=utf-8" },
+  "/user-card.js": { file: "user-card.js", type: "text/javascript; charset=utf-8" },
+  "/kb.js": { file: "kb.js", type: "text/javascript; charset=utf-8" },
 };
 
 /** 读 web/ 下静态文件并响应，不存在返回 false */
@@ -655,8 +748,28 @@ function ticketsHtml(user: UserAccount): string {
     departments: Array.from(new Set(allUsers.map((u) => u.department).filter(Boolean))),
     members: allUsers.map(toUserView),
     isSupervisor: user.role === "supervisor",
+    /** 可见的知识库索引：工单正文里的知识卡片渲染 + 编辑器「知识库」引用选择 */
+    kb: filterKbByUser(loadKbArticles(), user).map(toKbCardInfo),
   };
   const inject = `<script>window.__TICKETS__ = ${jsonForScript(boot)};</script>\n<script src="/tickets.js" defer></script>`;
+  return raw.replace("</body>", `${inject}\n</body>`);
+}
+
+/** 渲染知识库页：读静态 kb.html，注入登录用户 + 可见文章 + 成员 + 部门 bootstrap */
+function kbHtml(user: UserAccount): string {
+  const raw = readFileSync(join(WEB_DIR, "kb.html"), "utf8");
+  const allUsers = loadUsers();
+  const articles = filterKbByUser(loadKbArticles(), user).sort((a, b) =>
+    b.updatedAt.localeCompare(a.updatedAt)
+  );
+  const boot = {
+    user: toUserView(user),
+    isSupervisor: user.role === "supervisor",
+    members: allUsers.map(toUserView),
+    departments: Array.from(new Set(allUsers.map((u) => u.department).filter(Boolean))),
+    articles: articles.map((a) => toKbView(a, user)),
+  };
+  const inject = `<script>window.__KB__ = ${jsonForScript(boot)};</script>\n<script src="/kb.js" defer></script>`;
   return raw.replace("</body>", `${inject}\n</body>`);
 }
 
@@ -2364,6 +2477,192 @@ export async function startPlatformServer(
       return;
     }
 
+    // 知识库页（未登录重定向到登录页）
+    if (path === "/kb" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        res.statusCode = 302;
+        res.setHeader("Location", "/login");
+        res.end();
+        return;
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(kbHtml(user));
+      return;
+    }
+
+    // 知识库列表（按可见范围过滤；q 命中标题 / 撰写人 / 更新人 / 正文纯文本）
+    if (path === "/api/kb" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const q = (u.searchParams.get("q") ?? "").trim().toLowerCase();
+      const list = filterKbByUser(loadKbArticles(), user)
+        .filter(
+          (a) =>
+            !q ||
+            [a.title, a.authorName, a.updatedByName, htmlToPlainText(a.content)].some((v) =>
+              (v ?? "").toLowerCase().includes(q)
+            )
+        )
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .map((a) => toKbView(a, user));
+      sendJson(res, 200, { articles: list });
+      return;
+    }
+
+    // 新建知识库文章（撰写人 = 当前用户，可见范围由撰写人设定）
+    if (path === "/api/kb" && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      let title = "";
+      let rawContent: unknown = "";
+      let visibility: unknown = "all";
+      let deps: unknown = [];
+      try {
+        const body = JSON.parse(await readBody(req, 64 * 1024)) as {
+          title?: unknown;
+          content?: unknown;
+          visibility?: unknown;
+          departments?: unknown;
+        };
+        if (typeof body.title === "string") title = body.title.trim();
+        rawContent = body.content;
+        visibility = body.visibility ?? "all";
+        deps = body.departments;
+      } catch {
+        sendJson(res, 400, { error: "请求体过大或不是合法 JSON" });
+        return;
+      }
+      if (!title || title.length > KB_TITLE_MAX) {
+        sendJson(res, 400, { error: `标题不能为空且不超过 ${KB_TITLE_MAX} 字` });
+        return;
+      }
+      const content = normalizeRichField(rawContent);
+      if (content === null) {
+        sendJson(res, 400, { error: `正文过长（上限 ${TICKET_CONTENT_MAX} 字）` });
+        return;
+      }
+      if (isEmptyRichHtml(content)) {
+        sendJson(res, 400, { error: "正文不能为空" });
+        return;
+      }
+      const vis = isKbVisibility(visibility) ? visibility : "all";
+      const departments = vis === "departments" ? normalizeDepartments(deps) : [];
+      if (vis === "departments" && !departments.length) {
+        sendJson(res, 400, { error: "请至少选择一个可见部门" });
+        return;
+      }
+      const now = new Date().toISOString();
+      const authorName = user.name?.trim() || user.email.split("@")[0];
+      const article: KbArticle = {
+        id: `k-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`,
+        title,
+        content,
+        authorName,
+        authorEmail: user.email,
+        visibility: vis,
+        departments,
+        createdAt: now,
+        updatedAt: now,
+        updatedByName: authorName,
+        updatedByEmail: user.email,
+      };
+      appendKbArticle(article);
+      sendJson(res, 201, { article: toKbView(article, user) });
+      return;
+    }
+
+    // 知识库详情（不可见按不存在处理）
+    const kbm = path.match(/^\/api\/kb\/([^/\\]+)$/);
+    if (kbm && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const article = loadKbArticles().find((a) => a.id === kbm[1]);
+      if (!article || !canViewKb(article, user)) {
+        sendJson(res, 404, { error: "文章不存在或不可见" });
+        return;
+      }
+      sendJson(res, 200, { article: toKbView(article, user) });
+      return;
+    }
+
+    // 更新知识库文章（撰写人本人 + 主管可编辑；刷新最近更新时间 / 最近更新人）
+    if (kbm && req.method === "PUT") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const article = loadKbArticles().find((a) => a.id === kbm[1]);
+      if (!article || !canViewKb(article, user)) {
+        sendJson(res, 404, { error: "文章不存在或不可见" });
+        return;
+      }
+      if (article.authorEmail !== user.email && !canApprove(user)) {
+        sendJson(res, 403, { error: "仅撰写人或部门主管可编辑该文章" });
+        return;
+      }
+      let title = "";
+      let rawContent: unknown = "";
+      let visibility: unknown = "";
+      let deps: unknown = [];
+      try {
+        const body = JSON.parse(await readBody(req, 64 * 1024)) as {
+          title?: unknown;
+          content?: unknown;
+          visibility?: unknown;
+          departments?: unknown;
+        };
+        if (typeof body.title === "string") title = body.title.trim();
+        rawContent = body.content;
+        visibility = body.visibility;
+        deps = body.departments;
+      } catch {
+        sendJson(res, 400, { error: "请求体过大或不是合法 JSON" });
+        return;
+      }
+      if (!title || title.length > KB_TITLE_MAX) {
+        sendJson(res, 400, { error: `标题不能为空且不超过 ${KB_TITLE_MAX} 字` });
+        return;
+      }
+      const content = normalizeRichField(rawContent);
+      if (content === null) {
+        sendJson(res, 400, { error: `正文过长（上限 ${TICKET_CONTENT_MAX} 字）` });
+        return;
+      }
+      if (isEmptyRichHtml(content)) {
+        sendJson(res, 400, { error: "正文不能为空" });
+        return;
+      }
+      const vis = isKbVisibility(visibility) ? visibility : article.visibility;
+      const departments = vis === "departments" ? normalizeDepartments(deps) : [];
+      if (vis === "departments" && !departments.length) {
+        sendJson(res, 400, { error: "请至少选择一个可见部门" });
+        return;
+      }
+      const now = new Date().toISOString();
+      const updated = updateKbArticle(article.id, (a) => {
+        a.title = title;
+        a.content = content;
+        a.visibility = vis;
+        a.departments = departments;
+        a.updatedAt = now;
+        a.updatedByName = user.name?.trim() || user.email.split("@")[0];
+        a.updatedByEmail = user.email;
+      });
+      sendJson(res, 200, { article: toKbView(updated as KbArticle, user) });
+      return;
+    }
+
     // 工单列表：按视角过滤（主管全量 / 员工本部门），按更新时间倒序
     if (path === "/api/tickets" && req.method === "GET") {
       const user = currentUser(req);
@@ -3267,10 +3566,6 @@ export async function startPlatformServer(
       }
       const type = u.searchParams.get("type") ?? "all";
       const q = (u.searchParams.get("q") ?? "").trim().toLowerCase();
-      if (type === "kb") {
-        sendJson(res, 200, { results: [] });
-        return;
-      }
       const userResults = () =>
         loadUsers()
           .filter(
@@ -3302,6 +3597,18 @@ export async function startPlatformServer(
           .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
           .slice(0, 50)
           .map((t) => ({ ...toTicketListItem(t), _type: "ticket" }));
+      const kbResults = () =>
+        filterKbByUser(loadKbArticles(), user)
+          .filter(
+            (a) =>
+              !q ||
+              [a.title, a.authorName, a.updatedByName, htmlToPlainText(a.content)].some((v) =>
+                (v ?? "").toLowerCase().includes(q)
+              )
+          )
+          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+          .slice(0, 50)
+          .map((a) => ({ ...toKbCardInfo(a), _type: "kb" }));
       if (type === "user") {
         sendJson(res, 200, { results: userResults() });
         return;
@@ -3310,12 +3617,17 @@ export async function startPlatformServer(
         sendJson(res, 200, { results: ticketResults() });
         return;
       }
+      if (type === "kb") {
+        sendJson(res, 200, { results: kbResults() });
+        return;
+      }
       if (type === "all") {
         // 混合：各取 30 条后按相关度/时间合并，总上限 60
         const us = userResults().slice(0, 30);
         const ts = ticketResults().slice(0, 30);
-        // 简单合并：有搜索词时用户优先（精准匹配），无搜索词时工单按时间排前面
-        const merged = q ? [...us, ...ts] : [...ts, ...us];
+        const ks = kbResults().slice(0, 30);
+        // 简单合并：有搜索词时用户优先（精准匹配），无搜索词时工单、知识库按时间排前面
+        const merged = q ? [...us, ...ts, ...ks] : [...ts, ...ks, ...us];
         sendJson(res, 200, { results: merged.slice(0, 60) });
         return;
       }

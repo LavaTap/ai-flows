@@ -52,8 +52,13 @@
 | 操控停用/启用节点 | ❌ | ✅（权限最高） |
 | 提交 bug 单 | ✅ | ✅ |
 | 查看 / 流转状态 / 评论工单 | ✅（限本部门） | ✅（全部部门） |
+| 指派工单负责人 | ✅（可见范围内） | ✅ |
+| 查看 / 删除节点执行角色 | ❌ | ✅（全部节点） |
+| 撰写 / 编辑知识库文章 | ✅（自己的；主管可改全部） | ✅ |
+| 查看知识库文章 | ✅（按撰写人设定的可见范围：全体 / 指定部门 / 仅自己） | ✅（全量） |
+| 查看本人消息（未读小红点） | ✅（仅本人） | ✅（仅本人） |
 
-> 判定只走 `platform.ts` 的 `canExecute` / `canApprove` / `canEditRequirement`；工单可见与操作判定走 `canAccessTicket` / `filterTicketsByUser`；前端按钮显隐仅是展示。
+> 判定只走 `platform.ts` 的 `canExecute` / `canApprove` / `canEditRequirement`；工单可见与操作判定走 `canAccessTicket` / `filterTicketsByUser`；知识库可见与编辑判定走 `canViewKb` / `filterKbByUser`；前端按钮显隐仅是展示。
 
 ## 6. 管线节点模型
 
@@ -113,6 +118,8 @@ ai-flows/
 11. **P10 工单平台 · bug 单页**（已完成）：挂现有 platform 服务（`GET /tickets`，页面 `web/tickets.html` + `web/tickets.js`，顶栏各页统一补「工单」入口）。每个登录用户在页面内有独立富文本编辑器（`contenteditable` + `execCommand` 工具栏：加粗/斜体/下划线/删除线、字号、无序/有序列表、引用、插入图片、清除格式；粘贴统一转纯文本）。数据落 `db/tickets.json`（`src/db.ts` 新增 `loadTickets`/`appendTicket`/`updateTicket`），提交人 `department` 即可见范围判据：本部门员工 + 主管（`canAccessTicket` / `filterTicketsByUser`，与服务端校验双保险，路由内不另写权限）。工单三态 `open（待处理）/ doing（处理中）/ resolved（已解决）` 可互相流转；评论与正文同权、按部门可见。接口：`GET/POST /api/tickets`、`GET /api/tickets/<id>`、`POST /api/tickets/<id>/status`、`POST /api/tickets/<id>/comments`、`POST /api/tickets/upload`、`GET /api/tickets/images/<file>`。富文本一律经 `src/richtext.ts` 的 `sanitizeRichHtml` 白名单净化后才落库并回显（`<script>`/事件处理器/`javascript:`/外链图片全丢）；图片按 base64 上传，服务端生成 `[a-f0-9]{12}.<ext>` 文件名落 `db/ticket-uploads/`（已 gitignore），正文只存 `/api/tickets/images/<file>` 引用，图片读取按文件名严格校验防穿越。列表页支持状态分段筛选 + 关键词搜索 + 「只看我提交的」。冒烟 25 项全过（净化、可见性、跨部门 403、状态/评论、图片上传与读取、未登录 401/302、路径穿越 404）。
 
 12. **P11 账号头像 + GitHub 独立页 + 顶栏统一**（已完成）：`UserAccount` 新增 `avatar` 字段，二进制落 `db/avatars/`（gitignore），`users.json` 只存文件名。账号管理页（`account.html`）头像可点击上传，前端 canvas 居中裁剪为正方形 + 滑块缩放 + 圆形预览，确认后 `POST /api/account/avatar`（限 png/jpg/jpeg/gif/webp、≤2MB）上传，`GET /api/avatars/<file>` 读取（文件名严格校验 `[a-f0-9]{12}.<ext>` 防穿越）；缺省回退首字配色头像。GitHub 绑定管理从 `account.html`（操作）+ `team.html`（审核）拆出独立页 `/github-audit`（`web/github-audit.html` + `web/github-audit.js`）：员工区自助绑定/解绑/取消待审，主管区待审核列表 + 成员 GitHub 一览；`account.html` 只展示 GitHub 状态只读并引导到 `/github-audit`，`team.html` 移除 GitHub 审核卡只保留成员资料管理。顶栏统一：`.nav-link` / `.tab` 由椭圆 `999px` 改为方形圆角 `8px`；所有页面（管线/工单/账号/团队/GitHub）右上角统一展示 `user-chip`（自定义头像图片或首字配色 + 姓名）+ 退出按钮。团队页部门下拉 `.edit-select` 统一自定义箭头 + `border-radius:8px`，与 `.edit-input` 风格一致。冒烟 15 项全过（页面渲染、头像上传/读取/穿越拦截、未登录 302、员工 team 403）。
+
+13. **P12 消息中心 + 工单负责人 + 编辑器增强 + 知识库**（本期）：主库新增 `messages` 表（`email` 收件人 + `type` + `refType`/`refId` 跳转 + `read_at`），`src/db.ts` 增 `loadPlatformMessages` / `appendPlatformMessage` / `markMessageRead` / `markAllMessagesRead`；全站顶栏在 `user-chip` 左侧挂消息铃铛（未读小红点，读 `GET /api/messages/unread`，逻辑收在共享 `web/user-menu.js`），独立消息页 `/messages`（`web/messages.html` + `web/messages.js`，`GET /api/messages` 列表 + `POST /api/messages/<id>/read` 单条已读 + `POST /api/messages/read-all` 全部已读）。工单新增「负责人」`assigneeEmail`（`POST /api/tickets/<id>/assignee`，仅主管可指派）：指派 / 改派给被指派人投递消息（未读 +1，`ticket_assign`）；工单挂管线节点（`nodeId`）时负责人自动挂进该节点执行角色，主管「+」加执行人则反向自动建指派工单（`[执行] <step>`）并投递消息。节点执行角色支持移除：鼠标移到角色头像上侧边展开「删除」按钮（仅主管，`DELETE /api/nodes/<id>/executors/<email>`，删后通知本人）；修复员工个人主页顶栏头像信息为空。工单评论区改纯文本（不加载富文本编辑器）；@提及渲染为「头像 + 名字」胶囊，悬停弹出用户卡片（共享 `web/user-card.js`，工单 / 知识库页复用）。富文本编辑器增强（`web/richtext-editor.js`）：修复字号下拉不生效（`execCommand fontSize=7` 打标后替换为 `span[style=font-size:Npx]`）、插入图片可设尺寸（25/50/75/100% 或自定义 px）+ 右下角拖拽缩放手柄 + 文字环绕（左/右/居中/不环绕），`src/richtext.ts` 白名单同步放行。新增知识库：主库 `kb_articles` 表（`title` / `content` / `author_*` / `visibility` / `departments` / `updated_by_*`）+ `/kb` 独立页（`web/kb.html` + `web/kb.js`，撰写 / 编辑，无工单状态机）；可见范围三档 `all（全体）/ departments（指定部门）/ private（仅自己）`，判定走 `canViewKb` / `filterKbByUser`（主管全量、作者全权），写入校验走 `isKbVisibility` + `normalizeDepartments`（必须命中平台已知部门）；`GET/POST /api/kb`、`GET/PUT /api/kb/<id>`；工单 / 知识库编辑器工具条新增「知识库」按钮，插入 `data-kb-id` 链接（白名单放行），渲染为知识卡片（知识库名 + 撰写人 + 最近更新时间 + 更新人）；首页 / 全局搜索接入 `type=kb`。冒烟全过（页面渲染 / 可见性过滤 / 越权 403 与 404 / 部门校验 400 / 搜索 / 导航）。
 
 ## 8. 待确认事项（实施时已按默认处理）
 

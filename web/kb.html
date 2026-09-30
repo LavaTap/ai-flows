@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>知识库 · AI-FLOWS 平台</title>
+  <link rel="stylesheet" href="./ai-pipeline.css">
+  <script src="/user-card.js" defer></script>
+  <script src="/richtext-editor.js" defer></script>
+  <script src="/user-menu.js" defer></script>
+  <style>
+    /* 知识库页专用样式：左列表贴边 + 右详情（与工单页同款结构，无状态流转） */
+    body { background: var(--paper); }
+    [hidden] { display: none !important; }
+
+    .page-shell { padding: 0; }
+
+    .btn { padding: 8px 16px; border-radius: 8px; font: 500 12px/18px var(--font-sans); cursor: pointer;
+      border: 1px solid var(--glass-line); background: var(--glass-fill); color: var(--ink-soft); white-space: nowrap; }
+    .btn:hover { background: var(--paper-2); }
+    .btn.primary { background: var(--led); color: #fff; border-color: var(--led); }
+    .btn.primary:hover { background: #4338ca; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    .tk-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 0;
+      height: calc(100vh - 56px); }
+    @media (max-width: 900px) { .tk-layout { grid-template-columns: minmax(0, 1fr); } }
+
+    /* 去卡片化：无背景/边框/阴影，仅结构容器 */
+    .card { background: transparent; border: none; border-radius: 0; box-shadow: none; }
+
+    /* ---- 左列：搜索 + 列表 ---- */
+    .side { padding: 16px 12px; height: 100%; overflow-y: auto;
+      border-right: 1px solid var(--glass-line); background: var(--paper-2); }
+    .side-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .side-top .new-mini { padding: 5px 12px; font-size: 11px; line-height: 16px; }
+    .tk-input { width: 100%; padding: 8px 12px; border: 1px solid var(--glass-line); border-radius: 8px;
+      background: #fff; font: 400 13px/20px var(--font-sans); color: var(--ink); box-sizing: border-box; }
+    .tk-input:focus { outline: none; border-color: var(--led); box-shadow: 0 0 0 3px var(--led-soft); }
+
+    .tk-list { list-style: none; margin: 12px 0 0; padding: 0; }
+    .tk-item { padding: 10px 12px; border: 1px solid transparent; border-radius: 10px; cursor: pointer; }
+    .tk-item:hover { background: var(--paper-2); }
+    .tk-item.on { background: var(--led-soft); border-color: rgba(79,70,229,.25); }
+    .tk-item-title { font: 600 13px/20px var(--font-sans); color: var(--ink-soft); margin-bottom: 6px;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .tk-item-meta { display: flex; align-items: center; gap: 8px; font: 400 11px/16px var(--font-sans); color: var(--muted); }
+    .tk-item-meta .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tk-empty { padding: 28px 12px; text-align: center; font: 400 12px/20px var(--font-sans); color: var(--muted-2); }
+
+    .tk-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font: 500 11px/16px var(--font-sans); flex: none; }
+    .tk-badge.all { background: var(--teal-soft); color: var(--teal); }
+    .tk-badge.departments { background: var(--led-soft); color: var(--led); }
+    .tk-badge.private { background: var(--paper-2); color: var(--muted); }
+
+    /* ---- 右列：详情 / 编辑器 ---- */
+    .panel { height: 100%; overflow-y: auto; padding: 28px 40px; }
+    .panel-empty { display: flex; flex-direction: column; align-items: center; justify-content: center;
+      height: 100%; gap: 8px; color: var(--muted-2); font: 400 13px/20px var(--font-sans); }
+    .tk-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
+    .tk-head h2 { flex: 1; margin: 0; font: 600 19px/28px var(--font-sans); color: var(--ink); }
+    .tk-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font: 400 12px/18px var(--font-sans); color: var(--muted); margin-bottom: 14px; }
+    .tk-meta b { color: var(--ink-soft); font-weight: 500; }
+    .tk-meta .author-link { color: var(--led); cursor: pointer; text-decoration: none; }
+    .tk-meta .author-link:hover { text-decoration: underline; }
+
+    .tk-content { font: 400 13px/22px var(--font-sans); color: var(--copy); word-break: break-word;
+      border-top: 1px solid var(--glass-line); padding-top: 16px; }
+    .tk-content img { max-width: 100%; border-radius: 8px; border: 1px solid var(--glass-line); }
+    .tk-content blockquote { margin: 8px 0; padding: 6px 12px; border-left: 3px solid var(--glass-line-strong); color: var(--muted); }
+    .tk-content ul, .tk-content ol { margin: 6px 0; padding-left: 22px; }
+    .tk-content code { font-family: var(--font-mono); background: var(--paper-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+    .tk-content p { margin: 6px 0; }
+    /* 图片左右环绕时不让浮动溢出容器 */
+    .tk-content::after { content: ""; display: block; clear: both; }
+
+    .tk-editor-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .tk-editor-head h2 { margin: 0; font: 600 16px/24px var(--font-sans); color: var(--ink-soft); }
+    .tk-editor-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+    .tk-field-label { font: 500 12px/18px var(--font-sans); color: var(--muted); margin: 14px 0 6px; }
+    .tk-hint { font: 400 11px/16px var(--font-sans); color: var(--muted-2); margin-top: 6px; }
+    .tk-error { font: 400 12px/18px var(--font-sans); color: var(--block); margin-top: 8px; }
+
+    /* 可见范围：三选一 + 指定部门多选 */
+    .kb-vis { display: flex; gap: 6px; }
+    .kb-vis button { border: 1px solid var(--glass-line); background: var(--glass-fill); border-radius: 999px;
+      cursor: pointer; font: 500 12px/18px var(--font-sans); color: var(--muted); padding: 5px 14px; }
+    .kb-vis button.on { border-color: transparent; background: var(--led); color: #fff; }
+    .kb-depts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .kb-dept { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px;
+      border: 1px solid var(--glass-line); border-radius: 999px; background: var(--glass-fill);
+      font: 400 12px/18px var(--font-sans); color: var(--muted); cursor: pointer; }
+    .kb-dept input { margin: 0; }
+    .kb-dept.on { border-color: var(--led); color: var(--led); }
+
+    /* 富文本编辑器 / @提及胶囊 / 悬停用户卡片样式见 ai-pipeline.css */
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot" aria-hidden="true"></span>
+      <h1 class="brand-title">
+        <span class="tt-pipeline">AI-FLOWS</span>
+        <span class="tt-sep">/</span>
+        <span>知识库</span>
+      </h1>
+    </div>
+    <div class="top-right">
+      <a class="nav-link" href="/home">首页</a>
+      <a class="nav-link" href="/pipeline" target="_blank" rel="noopener">AI 管线</a>
+      <a class="nav-link" href="/tickets">工单</a>
+      <a class="nav-link active" href="/kb">知识库</a>
+      <a class="nav-link" href="/github-audit">GitHub</a>
+      <a class="nav-link" href="/team" id="teamLink" style="display:none;">团队管理</a>
+      <a class="nav-link" href="/chat" target="_blank" rel="noopener">AI 对话</a>
+      <div class="user-menu">
+        <span class="user-chip" id="userChip" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"><span class="avatar" aria-hidden="true"></span><span id="userName">未登录</span></span>
+        <div class="user-panel" id="userPanel" hidden>
+          <div class="user-panel-head">
+            <span class="avatar" aria-hidden="true"></span>
+            <div class="user-panel-meta">
+              <strong id="userPanelName">未登录</strong>
+              <span class="user-panel-email" id="userPanelEmail"></span>
+            </div>
+          </div>
+          <div class="user-panel-sep"></div>
+          <a class="user-panel-item" href="/account"><span class="user-panel-ico" aria-hidden="true">⚙</span>设置</a>
+          <div class="user-panel-sep"></div>
+          <button class="user-panel-item user-panel-logout" type="button"><span class="user-panel-ico" aria-hidden="true">⏻</span>退出登录</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="page-shell">
+    <div class="tk-layout">
+      <!-- 左列：搜索 + 文章列表（贴边） -->
+      <aside class="card side">
+        <div class="side-top">
+          <div style="font:600 13px/18px var(--font-sans); color:var(--ink);">知识库</div>
+          <button class="btn primary new-mini" id="newBtn" type="button">+ 撰写</button>
+        </div>
+        <input class="tk-input" id="searchInput" type="search" placeholder="搜索标题 / 撰写人 / 正文" maxlength="60">
+        <ul class="tk-list" id="kbList"></ul>
+      </aside>
+
+      <!-- 右列：详情 / 编辑器 -->
+      <section class="card panel">
+        <div class="panel-empty" id="emptyState">
+          <span>选择左侧文章查看，或点「撰写」新建一篇</span>
+        </div>
+
+        <div id="detailView" hidden>
+          <div class="tk-head">
+            <h2 id="dTitle"></h2>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <button class="btn" id="editBtn" type="button" style="display:none;">编辑</button>
+            </div>
+          </div>
+          <div class="tk-meta" id="dMeta"></div>
+          <div class="tk-content" id="dContent"></div>
+        </div>
+
+        <div id="editorView" hidden>
+          <div class="tk-editor-head">
+            <h2>撰写文章</h2>
+            <button class="btn" id="cancelBtn" type="button">取消</button>
+          </div>
+          <div class="tk-field-label">标题</div>
+          <input class="tk-input" id="eTitle" maxlength="100" placeholder="文章标题，如：评审报告页接入指南">
+          <div class="tk-field-label">正文</div>
+          <div id="editorHost"></div>
+          <div class="tk-hint">与工单同款编辑器：字号 / 对齐 / 列表 / 引用 / @提及成员；插入图片后可点选图片设置尺寸与文字环绕（也可拖右下角手柄缩放）；图片上限 6MB。</div>
+          <div class="tk-field-label">可见范围</div>
+          <div class="kb-vis" id="visSeg">
+            <button type="button" data-vis="all" class="on">全体可见</button>
+            <button type="button" data-vis="departments">指定部门</button>
+            <button type="button" data-vis="private">仅自己可见</button>
+          </div>
+          <div class="kb-depts" id="deptBox" hidden></div>
+          <div class="tk-editor-foot">
+            <button class="btn" id="cancelBtn2" type="button">取消</button>
+            <button class="btn primary" id="saveBtn" type="button">保存文章</button>
+          </div>
+          <div class="tk-error" id="editorError" hidden></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- 悬停用户卡片（@提及 / 撰写人 / 更新人 共用） -->
+  <div class="user-card" id="userCard" hidden></div>
+</body>
+</html>

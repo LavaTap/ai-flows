@@ -235,6 +235,35 @@ export interface PlatformMessage {
   at: string;
 }
 
+/** 知识库可见范围：all=全体可见 / departments=指定部门可见 / private=仅撰写人可见 */
+export type KbVisibility = "all" | "departments" | "private";
+
+/** 知识库文章（表 kb_articles，主库）。像内部文章，独立于工单与管线节点，无状态流转 */
+export interface KbArticle {
+  /** 文章 id（k- 前缀 + 时间戳 + 随机串） */
+  id: string;
+  /** 标题 */
+  title: string;
+  /** 正文（净化后的富文本 HTML） */
+  content: string;
+  /** 撰写人姓名 */
+  authorName: string;
+  /** 撰写人邮箱 */
+  authorEmail: string;
+  /** 可见范围 */
+  visibility: KbVisibility;
+  /** 可见部门（visibility=departments 时生效） */
+  departments: string[];
+  /** ISO 创建时间 */
+  createdAt: string;
+  /** ISO 最近更新时间 */
+  updatedAt: string;
+  /** 最近更新人姓名（新建时同撰写人） */
+  updatedByName: string;
+  /** 最近更新人邮箱 */
+  updatedByEmail: string;
+}
+
 /** 聊天消息角色 */
 export type ChatRole = "user" | "assistant";
 
@@ -1170,6 +1199,89 @@ export function updateTicket(
   mutate(ticket);
   saveTickets(tickets);
   return ticket;
+}
+
+// ============ 知识库文章 ============
+
+interface KbRow {
+  id: string;
+  title: string;
+  content: string;
+  author_name: string;
+  author_email: string;
+  visibility: string;
+  departments: string | null;
+  created_at: string;
+  updated_at: string;
+  updated_by_name: string | null;
+  updated_by_email: string | null;
+}
+
+function rowToKb(r: KbRow): KbArticle {
+  return {
+    id: r.id,
+    title: r.title,
+    content: r.content,
+    authorName: r.author_name,
+    authorEmail: r.author_email,
+    visibility: r.visibility as KbVisibility,
+    departments: parseJsonArray<string>(r.departments) ?? [],
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    updatedByName: r.updated_by_name ?? r.author_name,
+    updatedByEmail: r.updated_by_email ?? r.author_email,
+  };
+}
+
+function kbParams(a: KbArticle, ord: number): Record<string, unknown> {
+  return {
+    ord,
+    id: a.id,
+    title: a.title,
+    content: a.content,
+    authorName: a.authorName,
+    authorEmail: a.authorEmail,
+    visibility: a.visibility,
+    departments: JSON.stringify(a.departments ?? []),
+    createdAt: a.createdAt,
+    updatedAt: a.updatedAt,
+    updatedByName: a.updatedByName,
+    updatedByEmail: a.updatedByEmail,
+  };
+}
+
+const KB_INSERT_SQL =
+  "INSERT OR REPLACE INTO kb_articles (ord,id,title,content,author_name,author_email,visibility,departments,created_at,updated_at,updated_by_name,updated_by_email) VALUES (@ord,@id,@title,@content,@authorName,@authorEmail,@visibility,@departments,@createdAt,@updatedAt,@updatedByName,@updatedByEmail)";
+
+/** 读取全部知识库文章（按原顺序；调用方按可见范围过滤） */
+export function loadKbArticles(): KbArticle[] {
+  return (db().prepare("SELECT * FROM kb_articles ORDER BY ord").all() as KbRow[]).map(rowToKb);
+}
+
+/** 写回全部知识库文章（整体替换：先清后插） */
+export function saveKbArticles(articles: KbArticle[]): void {
+  const c = db();
+  const ins = c.prepare(KB_INSERT_SQL);
+  c.transaction(() => {
+    c.prepare("DELETE FROM kb_articles").run();
+    articles.forEach((a, i) => ins.run(kbParams(a, i)));
+  })();
+}
+
+/** 追加一条知识库文章 */
+export function appendKbArticle(article: KbArticle): void {
+  const c = db();
+  c.prepare(KB_INSERT_SQL).run(kbParams(article, nextOrd(c, "kb_articles")));
+}
+
+/** 按 id 更新知识库文章（mutate 回调内改字段，含最近更新人）；文章不存在返回 null */
+export function updateKbArticle(id: string, mutate: (a: KbArticle) => void): KbArticle | null {
+  const articles = loadKbArticles();
+  const article = articles.find((a) => a.id === id);
+  if (!article) return null;
+  mutate(article);
+  saveKbArticles(articles);
+  return article;
 }
 
 // ============ 站内消息 ============
