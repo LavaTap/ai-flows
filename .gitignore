@@ -9,6 +9,9 @@ ai-review.config.json
 .ai-review-reports/
 review-report.md
 
+# 运行期日志（AI 请求日志 / 网页访问日志，本地实时写入，不入版本库）
+logs/
+
 # 运行时数据：SQLite 三库（含 WAL/SHM 日志）与上传二进制，均不入版本库
 # 注意：db/*.json 是 SQLite 首次导入的种子数据，仍需跟踪，勿忽略
 db/*.sqlite

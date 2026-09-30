@@ -18,7 +18,8 @@
   var memberByEmail = UC.memberByEmail;
   var bindUserCard = UC.bind;
 
-  var PLACEHOLDER = "写正文…支持字号 / 对齐 / 列表 / 引用 / @提及成员 / 插入图片后可设置尺寸与文字环绕";
+  var PLACEHOLDER = "写正文…支持字号 / 对齐 / 列表 / 引用 / @提及成员 / 插入图片后可设置尺寸与文字环绕；" +
+    "也认 Markdown：# 标题自动调字号、图片链接自动转图片、粘贴 Markdown 自动排版";
 
   function byId(id) {
     return document.getElementById(id);

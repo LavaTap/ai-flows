@@ -12,6 +12,7 @@ import {
   buildUserContent,
   historyToText,
   countChars,
+  countPromptChars,
   truncateTitle,
   esc,
   PROVIDER_DEFAULT_ENDPOINTS,
@@ -30,6 +31,8 @@ import { ensureReportServer, REPORTS_DIR } from "./serve.js";
 import { runSkill, sanitizeFilename, listSkills, resolveSkillDocByName, REPO_ROOT, type SkillInfo } from "./skill.js";
 import { runCrawler, runSkillAgent, packZip } from "./crawler.js";
 import { sanitizeRichHtml, isEmptyRichHtml } from "./richtext.js";
+import { localizeExternalImages, IMAGE_EXT_TYPES } from "./imagefetch.js";
+import { recordAi, recordWeb, readLogTail, shouldLogWeb, type LogKind } from "./log.js";
 import {
   CHAT_IMAGE_TYPES,
   isImageName,
@@ -60,15 +63,6 @@ const TICKET_CONTENT_MAX = 20000;
 
 /** 知识库文章标题长度上限 */
 const KB_TITLE_MAX = 100;
-
-/** 工单图片允许的扩展名 → MIME */
-const TICKET_IMAGE_TYPES: Record<string, string> = {
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  gif: "image/gif",
-  webp: "image/webp",
-};
 
 /** 工单图片文件名形态（上传时由服务端生成，严格校验防路径穿越） */
 const TICKET_IMAGE_NAME_RE = /^[a-f0-9]{12}\.(png|jpg|jpeg|gif|webp)$/;
@@ -194,10 +188,11 @@ export function decodePathSegment(seg: string): string | null {
   return out;
 }
 
-/** 净化 + 长度校验富文本字段；非法时返回 null */
-function normalizeRichField(raw: unknown): string | null {
+/** 净化 + 长度校验富文本字段；非法时返回 null。
+ *  净化前先把正文里的外链图片转存到本地（详见 imagefetch.ts）。 */
+async function normalizeRichField(raw: unknown): Promise<string | null> {
   if (typeof raw !== "string" || raw.length > TICKET_CONTENT_MAX) return null;
-  return sanitizeRichHtml(raw);
+  return sanitizeRichHtml(await localizeExternalImages(raw));
 }
 
 /** 按 id 去重，platform 优先于 external（platform 记录有更完整的执行人/角色元信息） */
@@ -614,6 +609,14 @@ function messagesHtml(user: UserAccount): string {
   return raw.replace("</body>", `${inject}\n</body>`);
 }
 
+/** 渲染日志页：读静态 logs.html，注入登录用户 bootstrap */
+function logsHtml(user: UserAccount): string {
+  const raw = readFileSync(join(WEB_DIR, "logs.html"), "utf8");
+  const boot = { user: toUserView(user), isSupervisor: user.role === "supervisor" };
+  const inject = `<script>window.__LOGS__ = ${jsonForScript(boot)};</script>\n<script src="/logs.js" defer></script>`;
+  return raw.replace("</body>", `${inject}\n</body>`);
+}
+
 /** JSON 序列化为可安全内嵌 <script> 的字符串（转义 < 防提前闭合标签） */
 function jsonForScript(v: unknown): string {
   return JSON.stringify(v).replace(/</g, "\\u003c");
@@ -648,6 +651,7 @@ function readBody(req: IncomingMessage, maxBytes = 16 * 1024): Promise<string> {
 /** 静态资源白名单：文件名 → MIME（精确匹配，天然免疫路径穿越） */
 const STATIC_FILES: Record<string, { file: string; type: string }> = {
   "/login.css": { file: "login.css", type: "text/css; charset=utf-8" },
+  "/login-bg.jpg": { file: "login-bg.jpg", type: "image/jpeg" },
   "/ai-pipeline.css": { file: "ai-pipeline.css", type: "text/css; charset=utf-8" },
   "/ai-pipeline-app.js": { file: "ai-pipeline-app.js", type: "text/javascript; charset=utf-8" },
   "/user-menu.js": { file: "user-menu.js", type: "text/javascript; charset=utf-8" },
@@ -664,6 +668,7 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   "/richtext-editor.js": { file: "richtext-editor.js", type: "text/javascript; charset=utf-8" },
   "/user-card.js": { file: "user-card.js", type: "text/javascript; charset=utf-8" },
   "/kb.js": { file: "kb.js", type: "text/javascript; charset=utf-8" },
+  "/logs.js": { file: "logs.js", type: "text/javascript; charset=utf-8" },
 };
 
 /** 读 web/ 下静态文件并响应，不存在返回 false */
@@ -1356,6 +1361,20 @@ export async function startPlatformServer(
     const u = new URL(req.url ?? "/", `http://${host}`);
     const path = u.pathname;
 
+    // 网页访问日志：响应结束时记一条（静态资源与日志页自身轮询由 shouldLogWeb 过滤）
+    const startedAt = Date.now();
+    res.on("finish", () => {
+      if (!shouldLogWeb(path)) return;
+      const user = currentUser(req);
+      recordWeb({
+        method: req.method ?? "GET",
+        path,
+        status: res.statusCode,
+        ms: Date.now() - startedAt,
+        email: user?.email,
+      });
+    });
+
     if (path === "/health") {
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
       res.end("ok");
@@ -1725,7 +1744,7 @@ export async function startPlatformServer(
     if (avm && req.method === "GET") {
       const file = avm[1];
       const ext = file.split(".").pop() as string;
-      const mime = TICKET_IMAGE_TYPES[ext] || "application/octet-stream";
+      const mime = IMAGE_EXT_TYPES[ext] || "application/octet-stream";
       const fp = join(AVATARS_DIR, file);
       if (!existsSync(fp)) {
         res.statusCode = 404;
@@ -2477,6 +2496,34 @@ export async function startPlatformServer(
       return;
     }
 
+    // 日志页（未登录重定向到登录页；所有登录用户可看）
+    if (path === "/logs" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        res.statusCode = 302;
+        res.setHeader("Location", "/login");
+        res.end();
+        return;
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(logsHtml(user));
+      return;
+    }
+
+    // 日志读取：kind=ai 模型请求日志 / kind=web 网页访问日志（末尾 N 条，顺序与文件一致）
+    if (path === "/api/logs" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const kind: LogKind = u.searchParams.get("kind") === "web" ? "web" : "ai";
+      const limitRaw = Number(u.searchParams.get("limit"));
+      const limit = Math.min(Math.max(Number.isFinite(limitRaw) ? Math.floor(limitRaw) : 200, 1), 500);
+      sendJson(res, 200, { kind, entries: readLogTail(kind, limit) });
+      return;
+    }
+
     // 知识库页（未登录重定向到登录页）
     if (path === "/kb" && req.method === "GET") {
       const user = currentUser(req);
@@ -2543,7 +2590,7 @@ export async function startPlatformServer(
         sendJson(res, 400, { error: `标题不能为空且不超过 ${KB_TITLE_MAX} 字` });
         return;
       }
-      const content = normalizeRichField(rawContent);
+      const content = await normalizeRichField(rawContent);
       if (content === null) {
         sendJson(res, 400, { error: `正文过长（上限 ${TICKET_CONTENT_MAX} 字）` });
         return;
@@ -2634,7 +2681,7 @@ export async function startPlatformServer(
         sendJson(res, 400, { error: `标题不能为空且不超过 ${KB_TITLE_MAX} 字` });
         return;
       }
-      const content = normalizeRichField(rawContent);
+      const content = await normalizeRichField(rawContent);
       if (content === null) {
         sendJson(res, 400, { error: `正文过长（上限 ${TICKET_CONTENT_MAX} 字）` });
         return;
@@ -2703,7 +2750,7 @@ export async function startPlatformServer(
         sendJson(res, 400, { error: `标题不能为空且不超过 ${TICKET_TITLE_MAX} 字` });
         return;
       }
-      const content = normalizeRichField(rawContent);
+      const content = await normalizeRichField(rawContent);
       if (content === null) {
         sendJson(res, 400, { error: `正文过长（上限 ${TICKET_CONTENT_MAX} 字）` });
         return;
@@ -2753,7 +2800,7 @@ export async function startPlatformServer(
         return;
       }
       const ext = filename.toLowerCase().split(".").pop() ?? "";
-      if (!contentBase64 || !TICKET_IMAGE_TYPES[ext]) {
+      if (!contentBase64 || !IMAGE_EXT_TYPES[ext]) {
         sendJson(res, 400, { error: "仅支持 png / jpg / gif / webp 图片" });
         return;
       }
@@ -2783,7 +2830,7 @@ export async function startPlatformServer(
         return;
       }
       const ext = name.split(".").pop() ?? "";
-      res.setHeader("Content-Type", TICKET_IMAGE_TYPES[ext]);
+      res.setHeader("Content-Type", IMAGE_EXT_TYPES[ext]);
       res.setHeader("Cache-Control", "private, max-age=86400");
       res.end(readFileSync(abs));
       return;
@@ -2914,7 +2961,7 @@ export async function startPlatformServer(
         sendJson(res, 400, { error: "请求体过大或不是合法 JSON" });
         return;
       }
-      const content = normalizeRichField(rawContent);
+      const content = await normalizeRichField(rawContent);
       if (content === null || isEmptyRichHtml(content)) {
         sendJson(res, 400, { error: "评论内容不能为空或过长" });
         return;
@@ -2973,7 +3020,7 @@ export async function startPlatformServer(
         sendJson(res, 400, { error: `标题不能为空且不超过 ${TICKET_TITLE_MAX} 字` });
         return;
       }
-      const content = normalizeRichField(rawContent);
+      const content = await normalizeRichField(rawContent);
       if (content === null) {
         sendJson(res, 400, { error: `正文过长（上限 ${TICKET_CONTENT_MAX} 字）` });
         return;
@@ -3304,15 +3351,22 @@ export async function startPlatformServer(
       let memoryUpto = updated.summaryUpto ?? 0;
       let memory = updated.summary ?? "";
       if (countChars(prior.slice(memoryUpto)) > chatCfg.compressChars) {
+        const compressMessages = buildSummaryMessages(memory, historyToText(prior.slice(memoryUpto)));
+        const compressStarted = Date.now();
+        let compressOk = false;
+        let compressReply = 0;
+        let compressError: string | undefined;
         try {
           res.write(
             `event: thinking\ndata: ${JSON.stringify({ status: "thinking", message: "正在压缩历史记忆…" })}\n\n`
           );
           const summaryText = await callModelOnce(
             chatModelToModelConfig(chatModel),
-            buildSummaryMessages(memory, historyToText(prior.slice(memoryUpto))),
+            compressMessages,
             { maxTokens: 600, signal: ac.signal }
           );
+          compressOk = true;
+          compressReply = summaryText.length;
           if (summaryText.trim()) {
             memory = summaryText.trim();
             memoryUpto = prior.length;
@@ -3321,8 +3375,21 @@ export async function startPlatformServer(
               s.summaryUpto = memoryUpto;
             });
           }
-        } catch {
+        } catch (err: any) {
+          compressError = String(err?.message ?? err);
           // 压缩失败时沿用现有记忆，继续正常对话
+        } finally {
+          // 记忆压缩也是一次模型请求，记进 AI 日志
+          recordAi({
+            source: "chat",
+            model: modelCfg.model,
+            target: session.id,
+            ms: Date.now() - compressStarted,
+            ok: compressOk,
+            promptChars: countPromptChars(compressMessages),
+            replyChars: compressReply,
+            error: compressError,
+          });
         }
       }
 
@@ -3355,22 +3422,43 @@ export async function startPlatformServer(
         for (let round = 0; round <= CHAT_SKILL_ROUNDS; round++) {
           let roundText = "";
           let toolCalls: ToolCall[] = [];
-          for await (const chunk of callModelStream(modelCfg, working, {
-            maxTokens: chatCfg.maxTokens,
-            temperature: chatCfg.temperature,
-            signal: ac.signal,
-            tools: skillTool ? [skillTool.tool] : undefined,
-          })) {
-            if (chunk.type === "delta" && chunk.delta) {
-              roundText += chunk.delta;
-              fullContent += chunk.delta;
-              res.write(`event: delta\ndata: ${JSON.stringify({ content: chunk.delta })}\n\n`);
-            } else if (chunk.type === "usage" && chunk.usage) {
-              totalTokens = chunk.usage.totalTokens;
-              res.write(`event: usage\ndata: ${JSON.stringify({ totalTokens })}\n\n`);
-            } else if (chunk.type === "tool_call" && chunk.toolCalls) {
-              toolCalls = chunk.toolCalls;
+          // 每一轮模型调用都记一条 AI 日志（工具调用会带来多轮请求）
+          const roundStarted = Date.now();
+          let roundOk = false;
+          let roundError: string | undefined;
+          try {
+            for await (const chunk of callModelStream(modelCfg, working, {
+              maxTokens: chatCfg.maxTokens,
+              temperature: chatCfg.temperature,
+              signal: ac.signal,
+              tools: skillTool ? [skillTool.tool] : undefined,
+            })) {
+              if (chunk.type === "delta" && chunk.delta) {
+                roundText += chunk.delta;
+                fullContent += chunk.delta;
+                res.write(`event: delta\ndata: ${JSON.stringify({ content: chunk.delta })}\n\n`);
+              } else if (chunk.type === "usage" && chunk.usage) {
+                totalTokens = chunk.usage.totalTokens;
+                res.write(`event: usage\ndata: ${JSON.stringify({ totalTokens })}\n\n`);
+              } else if (chunk.type === "tool_call" && chunk.toolCalls) {
+                toolCalls = chunk.toolCalls;
+              }
             }
+            roundOk = true;
+          } catch (err: any) {
+            roundError = String(err?.message ?? err);
+            throw err;
+          } finally {
+            recordAi({
+              source: "chat",
+              model: modelCfg.model,
+              target: session.id,
+              ms: Date.now() - roundStarted,
+              ok: roundOk,
+              promptChars: countPromptChars(working),
+              replyChars: roundText.length,
+              error: roundError,
+            });
           }
           if (!toolCalls.length || !skillTool || round === CHAT_SKILL_ROUNDS) break;
 

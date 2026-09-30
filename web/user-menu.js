@@ -2,7 +2,7 @@
    共享逻辑：各页只放同名 DOM（#userChip / #userPanel），本脚本负责开合与资料填充。
    资料源：从各页注入的 boot 全局里取 user（__ACCOUNT__ / __PIPELINE__ / __TICKETS__ / __GHAUDIT__ / __CHAT__ / __TEAM__ / __HOME__）。 */
 (function () {
-  var BOOT_KEYS = ["__ACCOUNT__", "__PIPELINE__", "__TICKETS__", "__GHAUDIT__", "__CHAT__", "__TEAM__", "__HOME__", "__PROFILE__", "__MESSAGES__", "__KB__"];
+  var BOOT_KEYS = ["__ACCOUNT__", "__PIPELINE__", "__TICKETS__", "__GHAUDIT__", "__CHAT__", "__TEAM__", "__HOME__", "__PROFILE__", "__MESSAGES__", "__KB__", "__LOGS__"];
 
   function bootUser() {
     for (var i = 0; i < BOOT_KEYS.length; i++) {

@@ -11,6 +11,15 @@ import { isRepo, currentBranch } from "./git.js";
 import { writeReviewReport, buildReportView, fetchRepoTree } from "./reporter.js";
 import { startReportServer, ensureReportServer, REPORTS_DIR, DEFAULT_REPORT_PORT } from "./serve.js";
 import { startPlatformServer, DEFAULT_PLATFORM_PORT } from "./platform.js";
+import {
+  readLogTail,
+  readLogChunk,
+  logFileSize,
+  logFilePath,
+  formatLogLine,
+  parseLine,
+  type LogKind,
+} from "./log.js";
 
 const CWD = process.cwd();
 const THIS_FILE = fileURLToPath(import.meta.url);
@@ -168,6 +177,46 @@ exit 1
   return 0;
 }
 
+/** 日志子命令：打印 AI 请求日志 / 网页访问日志末尾若干行；--follow 每秒轮询新增行 */
+async function printLogs(kindArg: string, lines: number, follow: boolean): Promise<void> {
+  const kinds: LogKind[] = kindArg === "ai" ? ["ai"] : kindArg === "web" ? ["web"] : ["ai", "web"];
+
+  // 初始回看：单一类型直接打印；all 时按时间合并（新的在后）
+  if (kinds.length === 1) {
+    for (const e of readLogTail(kinds[0], lines)) console.log(formatLogLine(kinds[0], e));
+  } else {
+    const merged = kinds
+      .flatMap((k) => readLogTail(k, lines).map((e) => ({ k, e })))
+      .sort((a, b) => a.e.at.localeCompare(b.e.at));
+    for (const { k, e } of merged) console.log(formatLogLine(k, e));
+  }
+  for (const k of kinds) console.log(`${DIM}日志文件：${logFilePath(k)}${RESET}`);
+
+  if (!follow) return;
+  console.log(`${DIM}（--follow 已开启：每秒打印新增日志，Ctrl+C 退出）${RESET}`);
+
+  const offsets = new Map<LogKind, number>();
+  const pending = new Map<LogKind, string>();
+  for (const k of kinds) {
+    offsets.set(k, logFileSize(k));
+    pending.set(k, "");
+  }
+  setInterval(() => {
+    for (const k of kinds) {
+      const { text, offset } = readLogChunk(k, offsets.get(k) ?? 0);
+      offsets.set(k, offset);
+      if (!text) continue;
+      const parts = ((pending.get(k) ?? "") + text).split("\n");
+      pending.set(k, parts.pop() ?? ""); // 末尾半行留到下一轮，避免截断
+      for (const line of parts) {
+        const entry = parseLine(line);
+        if (entry) console.log(formatLogLine(k, entry));
+      }
+    }
+  }, 1000);
+  await new Promise<void>(() => {});
+}
+
 function initConfig(): number {
   const from = resolve(CWD, "config.example.json");
   const to = resolve(CWD, "ai-review.config.json");
@@ -194,6 +243,10 @@ function usage(): void {
                                        启动 AI 管线平台（登录 + 管线页 + 节点执行/批准）
                                        节点 03 执行时在 --repo 仓库（缺省当前目录）触发真实 AI 评审
                                        账号见 db/users.json（演示密码统一 123456）
+  ai-review logs [--kind ai|web|all] [--lines <n>] [--follow]
+                                        打印日志：ai=模型请求（评审/AI 对话/skill）
+                                        web=网页与 API 访问；--lines 回看行数（默认 50）
+                                        --follow 随日志追加实时打印（Ctrl+C 退出）
   ai-review install-hook                装 pre-push hook：git push 自动评审，有 blocker 则拦截
   ai-review init                         从 config.example.json 生成配置
   ai-review -h | --help                  显示帮助
@@ -293,6 +346,20 @@ async function main(): Promise<void> {
     console.log(`${DIM}节点 03 执行触发真实 AI 评审，目标仓库：${repo}${RESET}`);
     console.log(`${DIM}（Ctrl+C 停止）${RESET}`);
     await new Promise<void>(() => {});
+    return;
+  }
+
+  if (sub === "logs") {
+    const args = parseArgs(process.argv.slice(3));
+    const kind = (args.kind || "all").toLowerCase();
+    if (kind !== "ai" && kind !== "web" && kind !== "all") {
+      console.error(`${RED}✖ --kind 只支持 ai / web / all${RESET}`);
+      process.exitCode = 1;
+      return;
+    }
+    const linesRaw = Number(args.lines || 50);
+    const lines = Math.min(Math.max(Number.isFinite(linesRaw) ? Math.floor(linesRaw) : 50, 1), 1000);
+    await printLogs(kind, lines, "follow" in args && args.follow !== "false");
     return;
   }
 

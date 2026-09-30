@@ -88,6 +88,12 @@
     .tk-content ul, .tk-content ol { margin: 6px 0; padding-left: 22px; }
     .tk-content code { font-family: var(--font-mono); background: var(--paper-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
     .tk-content p { margin: 6px 0; }
+    /* Markdown 识别出的标题（style 里已带字号，这里兜底） */
+    .tk-content h1, .tk-content h2, .tk-content h3, .tk-content h4 { margin: 10px 0 6px; font-weight: 700; line-height: 1.35; }
+    .tk-content h1 { font-size: 24px; }
+    .tk-content h2 { font-size: 20px; }
+    .tk-content h3 { font-size: 17px; }
+    .tk-content h4 { font-size: 15px; }
     /* 图片左右环绕时不让浮动溢出容器 */
     .tk-content::after { content: ""; display: block; clear: both; }
 

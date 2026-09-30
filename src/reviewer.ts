@@ -7,6 +7,7 @@ import type { ReviewIssue, ReviewResult, Severity } from "./gate.js";
 import type { CommitInfo } from "./git.js";
 import type { PushResult } from "./publisher.js";
 import { maskSecrets } from "./redact.js";
+import { recordAi } from "./log.js";
 
 const SEVERITY_DEF = `- "blocker": 阻塞级。会造成 bug / 崩溃 / 安全问题 / 明显逻辑错误，或与本次变更直接相关的严重缺陷。
 - "warning": 需要注意。潜在风险、可维护性差、命名混乱、遗漏边界处理，但不必然导致故障。
@@ -55,11 +56,12 @@ function buildPrompt(file: DiffFile): string {
 }
 
 /** 调用 OpenAI/DeepSeek 兼容的 chat/completions 接口。
- *  opts.json=false 时关闭 JSON 模式（自由文本，供 skill 生成复用）；opts.system 追加 system 消息。 */
+ *  opts.json=false 时关闭 JSON 模式（自由文本，供 skill 生成复用）；opts.system 追加 system 消息；
+ *  opts.source/target 仅用于写模型请求日志（评审缺省 source=review）。 */
 export async function callModel(
   model: ModelConfig,
   userPrompt: string,
-  opts: { json?: boolean; system?: string } = {}
+  opts: { json?: boolean; system?: string; source?: "review" | "skill"; target?: string } = {}
 ): Promise<string> {
   const apiKey = resolveApiKey(model);
   if (!apiKey) {
@@ -73,28 +75,52 @@ export async function callModel(
   const messages: { role: string; content: string }[] = [];
   if (opts.system) messages.push({ role: "system", content: opts.system });
   messages.push({ role: "user", content: userPrompt });
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    signal: AbortSignal.timeout(model.timeoutMs ?? 120000),
-    body: JSON.stringify({
-      model: model.model,
-      messages,
-      temperature: 0.2,
-      ...(opts.json === false ? {} : { response_format: { type: "json_object" } }),
-    }),
-  });
+  // 模型请求日志：只记元数据（耗时 / 字数 / 成败），不落 prompt 正文
+  const started = Date.now();
+  const promptChars = userPrompt.length + (opts.system?.length ?? 0);
+  let ok = false;
+  let replyChars = 0;
+  let error: string | undefined;
+  try {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      signal: AbortSignal.timeout(model.timeoutMs ?? 120000),
+      body: JSON.stringify({
+        model: model.model,
+        messages,
+        temperature: 0.2,
+        ...(opts.json === false ? {} : { response_format: { type: "json_object" } }),
+      }),
+    });
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`模型接口 ${res.status} ${res.statusText}：${body.slice(0, 500)}`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`模型接口 ${res.status} ${res.statusText}：${body.slice(0, 500)}`);
+    }
+    const data: any = await res.json();
+    const content = String(data?.choices?.[0]?.message?.content ?? "");
+    ok = true;
+    replyChars = content.length;
+    return content;
+  } catch (err: any) {
+    error = String(err?.message ?? err);
+    throw err;
+  } finally {
+    recordAi({
+      source: opts.source ?? "review",
+      model: model.model,
+      target: opts.target,
+      ms: Date.now() - started,
+      ok,
+      promptChars,
+      replyChars,
+      error,
+    });
   }
-  const data: any = await res.json();
-  const content = data?.choices?.[0]?.message?.content ?? "";
-  return String(content);
 }
 
 /** 从模型输出中尽力提取 JSON */
@@ -153,7 +179,7 @@ function normalizeIssues(parsed: any, path: string): ReviewIssue[] {
 
 /** 评审单个文件，返回该文件的结果 */
 async function reviewFile(model: ModelConfig, file: DiffFile): Promise<ReviewResult> {
-  const text = await callModel(model, buildPrompt(file));
+  const text = await callModel(model, buildPrompt(file), { target: file.path });
   const parsed = extractJson(text);
   const summary =
     (parsed && typeof parsed === "object" && typeof (parsed as any).summary === "string"

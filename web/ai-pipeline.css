@@ -370,6 +370,20 @@ body { padding-top: 56px; }
   outline: none;
 }
 
+/* Markdown 识别出的标题 / 段落 / 列表（style 里也带了字号，这里兜底没带 style 的情况） */
+.rt-body h1, .rt-body h2, .rt-body h3, .rt-body h4 {
+  margin: 10px 0 6px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.rt-body h1 { font-size: 24px; }
+.rt-body h2 { font-size: 20px; }
+.rt-body h3 { font-size: 17px; }
+.rt-body h4 { font-size: 15px; }
+.rt-body p { margin: 6px 0; }
+.rt-body ul, .rt-body ol { margin: 6px 0; padding-left: 22px; }
+
 .rt-body img {
   max-width: 100%;
   border-radius: 8px;

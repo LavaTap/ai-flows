@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { renderTemplate, type ReportView } from "./reporter.js";
 import { pushToTargets } from "./publisher.js";
 import { stagedFiles, commitStaged, headCommit, amendCommitMessage } from "./git.js";
+import { recordWeb, shouldLogWeb } from "./log.js";
 
 /** 存放评审报告数据（JSON）的目录名（在该 git 仓库根下） */
 export const REPORTS_DIR = ".ai-review-reports";
@@ -193,6 +194,18 @@ export async function startReportServer(
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     const u = new URL(req.url ?? "/", `http://${host}`);
     const path = u.pathname;
+
+    // 网页访问日志：响应结束时记一条（报告服务无登录态；静态资源与健康检查由 shouldLogWeb 过滤）
+    const startedAt = Date.now();
+    res.on("finish", () => {
+      if (!shouldLogWeb(path)) return;
+      recordWeb({
+        method: req.method ?? "GET",
+        path,
+        status: res.statusCode,
+        ms: Date.now() - startedAt,
+      });
+    });
 
     if (path === "/") {
       res.end(indexHtml(dir));

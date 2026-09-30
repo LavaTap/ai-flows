@@ -177,12 +177,12 @@ export function buildSkillPrompt(requirement: string, uploads: { name: string; c
   return lines.join("\n");
 }
 
-/** 带指数退避的重试模型调用（429 / 5xx 重试，最多 3 次） */
-async function callWithRetry(model: ModelConfig, prompt: string, system: string): Promise<string> {
+/** 带指数退避的重试模型调用（429 / 5xx 重试，最多 3 次）。target 为 skill 名，仅用于模型请求日志 */
+async function callWithRetry(model: ModelConfig, prompt: string, system: string, target?: string): Promise<string> {
   let lastErr: unknown;
   for (let i = 0; i < 3; i++) {
     try {
-      return await callModel(model, prompt, { json: false, system });
+      return await callModel(model, prompt, { json: false, system, source: "skill", target });
     } catch (err: any) {
       lastErr = err;
       const msg = String(err?.message ?? "");
@@ -216,7 +216,7 @@ export async function runSkill(input: SkillRunInput, model: ModelConfig): Promis
   const prompt = buildSkillPrompt(input.requirement, uploads);
 
   input.onProgress(70, "模型生成中");
-  const content = await callWithRetry(model, prompt, doc);
+  const content = await callWithRetry(model, prompt, doc, input.skill);
 
   input.onProgress(95, "写产物文件");
   mkdirSync(input.outputDir, { recursive: true });

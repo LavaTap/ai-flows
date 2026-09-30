@@ -36,6 +36,7 @@ const STYLE_TAGS = new Set(Object.keys(ALLOWED_ATTRS).filter((t) => ALLOWED_ATTR
 /** 行内样式属性白名单：只放行编辑器会产出的排版属性，值用正则严格限定（杜绝 url() 等注入） */
 const ALLOWED_STYLES: Record<string, RegExp> = {
   "font-size": /^\d{1,3}(\.\d+)?(px|em|rem|%)$/,
+  "font-weight": /^(normal|bold|[1-9]00)$/,
   "text-align": /^(left|right|center|justify)$/,
   "float": /^(left|right|none)$/,
   "display": /^(block|inline|inline-block)$/,

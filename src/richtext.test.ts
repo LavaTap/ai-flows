@@ -99,6 +99,22 @@ test("should keep editor layout styles on text and images", () => {
   );
 });
 
+test("should keep markdown heading size and weight", () => {
+  assert.strictEqual(
+    sanitizeRichHtml('<h1 style="font-size: 24px; font-weight: 700;">标题</h1>'),
+    '<h1 style="font-size: 24px; font-weight: 700">标题</h1>'
+  );
+  assert.strictEqual(
+    sanitizeRichHtml('<h2 style="font-size:20px;font-weight:bold">标题</h2>'),
+    '<h2 style="font-size: 20px; font-weight: bold">标题</h2>'
+  );
+  // 非法字重取值丢掉，合法字号保留
+  assert.strictEqual(
+    sanitizeRichHtml('<h3 style="font-size:17px;font-weight:9000">x</h3>'),
+    '<h3 style="font-size: 17px">x</h3>'
+  );
+});
+
 test("should drop non-layout style declarations", () => {
   assert.strictEqual(
     sanitizeRichHtml('<span style="position:fixed;font-size:14px">x</span>'),

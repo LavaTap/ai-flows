@@ -67,11 +67,8 @@
     roleTag.className = "role-tag " + roleCls;
     roleTag.textContent = ROLE_LABEL[target.role] || "员工";
 
-    // 姓名 + 部门标签
+    // 姓名（部门 / 职位统一在下方信息网格展示）
     byId("profileName").textContent = target.name || target.email;
-    var deptEl = byId("profileDept");
-    deptEl.textContent = target.department || "未分配部门";
-    if (!target.department) deptEl.style.display = "none";
 
     // 职位副标题
     byId("profileTitle").textContent = target.title || "";

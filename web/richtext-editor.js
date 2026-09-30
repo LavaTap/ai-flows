@@ -5,11 +5,113 @@
    - 图片：右下角手柄拖拽直接缩放
    - @提及：输入 @ 弹出成员候选，插入带 data-email 的链接（渲染端升级为「头像 + 名字」）
    - 知识库：插入知识库卡片引用（由调用方通过 opts.onPickKnowledge 提供选择弹层）
+   - Markdown 识别：行首 `# `~`#### ` 即时转标题（带字号）；整行图片链接 / `![alt](url)` 转图片；
+     粘贴 Markdown 文本自动转 HTML（标题 / 图片 / 列表 / 引用 / 粗斜体 / 行内代码 / 链接）；
+     保存前再兜底扫一遍。外链图片由服务端在落库时转存本地，前端只管插 <img>。
    用法：var ed = window.RichEditor.make(hostEl, { placeholder, onPickKnowledge }); */
 window.RichEditor = (function () {
   "use strict";
 
   var SIZE_OPTIONS = [12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 32, 40];
+
+  /* ────────────── Markdown 轻量识别 ────────────── */
+
+  /** 标题层级 → 字号（px）：同时写进 style，读页面不依赖额外 CSS 也能看到大小 */
+  var MD_HEAD_SIZE = { 1: 24, 2: 20, 3: 17, 4: 15 };
+  /** 行首 1~4 个 # + 空格 = 标题 */
+  var MD_HEAD_RE = /^(#{1,4})\s+(.+)$/;
+  /** 整行就是一个 Markdown 图片 */
+  var MD_IMG_RE = /^!\[([^\]]*)\]\(\s*([^\s()]+)\s*\)$/;
+  /** 整行就是一个图片直链 */
+  var MD_IMG_URL_RE = /^https?:\/\/\S+\.(?:png|jpe?g|gif|webp)(?:\?\S*)?$/i;
+  /** 行首标记（转标题时剥掉；快捷输入时行尾还没打空格，所以空格可有可无） */
+  var MD_MARK_RE = /^\s*#{1,4}\s*/;
+
+  function mdEsc(t) {
+    return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  /** 原始值 → 属性值（转义 + 转义引号） */
+  function mdAttr(t) {
+    return mdEsc(t).replace(/"/g, "&quot;");
+  }
+  /** 已转义文本 → 属性值（只补引号转义，避免二次转义 &） */
+  function mdQuote(t) {
+    return String(t).replace(/"/g, "&quot;");
+  }
+
+  /** 行内 Markdown → HTML：先整体转义，再按规则替换，属性值单独转义防注入 */
+  function mdInline(t) {
+    var s = mdEsc(t);
+    s = s.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+|\/[^\s)]+)\)/g, function (_, alt, src) {
+      return '<img src="' + mdQuote(src) + '" alt="' + mdQuote(alt) + '" style="max-width: 100%;">';
+    });
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/[^\s)]+)\)/g, function (_, txt, href) {
+      return '<a href="' + mdQuote(href) + '">' + txt + "</a>";
+    });
+    s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
+    s = s.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");
+    s = s.replace(/__([^_\n]+)__/g, "<b>$1</b>");
+    // 斜体要求开标记后紧跟非空白、闭标记后不接 *，避免把 "2 * 3 * 4" 这类算式吃掉
+    s = s.replace(/\*([^\s*][^*\n]*?)\*(?!\*)/g, "<i>$1</i>");
+    s = s.replace(/(^|[^\w_])_([^\s_][^_\n]*?)_(?![\w_])/g, "$1<i>$2</i>");
+    s = s.replace(/~~([^~\n]+)~~/g, "<s>$1</s>");
+    return s;
+  }
+
+  /** 整段文本按行做轻量 Markdown → HTML（用于粘贴） */
+  function mdToHtml(text) {
+    var lines = String(text || "").replace(/\r\n?/g, "\n").split("\n");
+    var out = [];
+    var listTag = null;
+    var inQuote = false;
+    function closeList() {
+      if (listTag) { out.push("</" + listTag + ">"); listTag = null; }
+    }
+    function closeQuote() {
+      if (inQuote) { out.push("</blockquote>"); inQuote = false; }
+    }
+    lines.forEach(function (raw) {
+      var t = raw.replace(/\s+$/, "").trim();
+      if (!t) { closeList(); closeQuote(); return; }
+      var hm = t.match(MD_HEAD_RE);
+      if (hm) {
+        closeList(); closeQuote();
+        var lv = hm[1].length;
+        out.push('<h' + lv + ' style="font-size: ' + MD_HEAD_SIZE[lv] + 'px; font-weight: 700;">' +
+          mdInline(hm[2]) + "</h" + lv + ">");
+        return;
+      }
+      var um = t.match(/^[-*+]\s+(.+)$/);
+      var om = t.match(/^\d+[.)]\s+(.+)$/);
+      if (um || om) {
+        closeQuote();
+        var want = um ? "ul" : "ol";
+        if (listTag !== want) { closeList(); out.push("<" + want + ">"); listTag = want; }
+        out.push("<li>" + mdInline((um || om)[1]) + "</li>");
+        return;
+      }
+      var qm = t.match(/^>\s?(.*)$/);
+      if (qm) {
+        closeList();
+        if (!inQuote) { out.push("<blockquote>"); inQuote = true; }
+        out.push("<div>" + mdInline(qm[1]) + "</div>");
+        return;
+      }
+      closeList(); closeQuote();
+      var im = t.match(MD_IMG_RE);
+      if (im) {
+        out.push('<img src="' + mdAttr(im[2]) + '" alt="' + mdAttr(im[1]) + '" style="max-width: 100%;">');
+        return;
+      }
+      if (MD_IMG_URL_RE.test(t)) {
+        out.push('<img src="' + mdAttr(t) + '" alt="" style="max-width: 100%;">');
+        return;
+      }
+      out.push("<p>" + mdInline(t) + "</p>");
+    });
+    closeList(); closeQuote();
+    return out.join("");
+  }
 
   function colorOf(email) {
     var h = 0;
@@ -147,6 +249,114 @@ window.RichEditor = (function () {
         reader.onerror = function () { reject(new Error("图片读取失败")); };
         reader.readAsDataURL(f);
       });
+    }
+
+    /* ── Markdown 识别：标题 / 图片 / 粘贴转换 ── */
+
+    /** 光标所在的最外层块（body 的直接子元素）；裸文本直接挂在 body 下时返回 null */
+    function topBlock(node) {
+      var el = node.nodeType === 3 ? node.parentElement : node;
+      if (!el || el === body) return null;
+      while (el.parentElement && el.parentElement !== body) el = el.parentElement;
+      return el.parentElement === body ? el : null;
+    }
+
+    /** 把直接挂在 body 下的裸文本节点包进 div（首行没按回车时会出现） */
+    function wrapBareText(node) {
+      var div = document.createElement("div");
+      node.parentNode.insertBefore(div, node);
+      div.appendChild(node);
+      return div;
+    }
+
+    function placeCaretEnd(el) {
+      var r = document.createRange();
+      r.selectNodeContents(el);
+      r.collapse(false);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+
+    /** `# 标题` 块 → h1~h4（剥掉行首标记，保留块内其它内联格式） */
+    function toHeading(block, level) {
+      var h = document.createElement("h" + level);
+      h.style.fontSize = MD_HEAD_SIZE[level] + "px";
+      h.style.fontWeight = "700";
+      var stripped = false;
+      while (block.firstChild) {
+        var c = block.firstChild;
+        if (!stripped && c.nodeType === 3) {
+          c.textContent = c.textContent.replace(MD_MARK_RE, "");
+          stripped = true;
+          if (!c.textContent) { block.removeChild(c); continue; }
+        }
+        h.appendChild(c);
+      }
+      return h;
+    }
+
+    /** 单块识别：标题行 → 标题；整块就是一个图片链接 → 图片 */
+    function normalizeBlock(block) {
+      if (!block || !block.parentNode) return;
+      var text = block.textContent.trim();
+      if (!text) return;
+      var hm = text.match(MD_HEAD_RE);
+      if (hm && !/^H[1-4]$/.test(block.tagName)) {
+        block.parentNode.replaceChild(toHeading(block, hm[1].length), block);
+        return;
+      }
+      var im = text.match(MD_IMG_RE);
+      var url = im ? im[2] : MD_IMG_URL_RE.test(text) ? text : "";
+      if (!url) return;
+      var img = document.createElement("img");
+      img.setAttribute("src", url);
+      img.setAttribute("alt", im ? im[1] : "");
+      img.setAttribute("style", "max-width: 100%;");
+      block.parentNode.replaceChild(img, block);
+    }
+
+    /** 保存前 / 失焦时兜底扫描：编辑器仍有焦点时跳过选区所在的块，避免打乱光标 */
+    function normalizeBody() {
+      var focused = document.activeElement === body;
+      var sel = window.getSelection();
+      var anchor = focused && sel && sel.rangeCount ? sel.getRangeAt(0).commonAncestorContainer : null;
+      Array.prototype.slice.call(body.childNodes).forEach(function (n) {
+        if (n.nodeType === 3) {
+          var line = n.textContent.trim();
+          if (!line) return;
+          if (MD_HEAD_RE.test(line) || MD_IMG_RE.test(line) || MD_IMG_URL_RE.test(line)) {
+            normalizeBlock(wrapBareText(n));
+          }
+          return;
+        }
+        if (n.nodeType !== 1) return;
+        if (anchor && n.contains(anchor)) return;
+        normalizeBlock(n);
+      });
+    }
+
+    /** 行首 `# ` ~ `#### ` 即时转标题（空格键触发） */
+    function tryHeadingShortcut() {
+      var sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return false;
+      var r = sel.getRangeAt(0);
+      if (!r.collapsed) return false;
+      var node = r.startContainer;
+      if (node.nodeType !== 3 || !body.contains(node)) return false;
+      var m = node.textContent.slice(0, r.startOffset).match(/^\s*(#{1,4})$/);
+      if (!m) return false;
+      if (node.textContent.slice(r.startOffset).trim() !== "") return false;
+      var block = topBlock(node);
+      if (!block) {
+        if (node.parentElement !== body) return false;
+        block = wrapBareText(node);
+      }
+      if (block.textContent.trim() !== m[1]) return false;
+      var h = toHeading(block, m[1].length);
+      block.parentNode.replaceChild(h, block);
+      placeCaretEnd(h);
+      return true;
     }
 
     /* ── 字号：execCommand 打标后换成 px 字号（白名单只放行 style 里的字号） ── */
@@ -443,15 +653,35 @@ window.RichEditor = (function () {
       });
     });
 
-    // 粘贴统一转纯文本，避免带入外部脚本与样式
+    // 粘贴：把纯文本按 Markdown 转成 HTML 再插入（标题 / 图片 / 列表 / 引用 / 粗斜体 / 链接），
+    // 仍不带入外部脚本与样式；execCommand 不支持时退回手工插入
     body.addEventListener("paste", function (e) {
       e.preventDefault();
       var text = (e.clipboardData || window.clipboardData).getData("text/plain");
-      document.execCommand("insertText", false, text);
+      if (!text) return;
+      var html = mdToHtml(text);
+      var ok = false;
+      try {
+        ok = document.execCommand("insertHTML", false, html);
+      } catch (err) {
+        ok = false;
+      }
+      if (!ok) insertHtmlAtCaret(html);
+    });
+
+    // 失焦时兜底识别（离开编辑器才动 DOM，不影响输入过程）
+    body.addEventListener("blur", function () {
+      normalizeBody();
     });
 
     body.addEventListener("input", checkMention);
     body.addEventListener("keydown", function (e) {
+      if (e.key === " " && !e.ctrlKey && !e.metaKey && !e.altKey && !mentionActive) {
+        if (tryHeadingShortcut()) {
+          e.preventDefault();
+          return;
+        }
+      }
       if (!mentionActive) return;
       if (e.key === "Escape") {
         e.preventDefault();
@@ -499,7 +729,10 @@ window.RichEditor = (function () {
     }
 
     return {
-      getHtml: function () { return body.innerHTML; },
+      getHtml: function () {
+        normalizeBody();
+        return body.innerHTML;
+      },
       setHtml: function (html) { body.innerHTML = html || ""; hideImgTools(); },
       clear: function () { body.innerHTML = ""; hideImgTools(); },
       focus: function () { body.focus(); },

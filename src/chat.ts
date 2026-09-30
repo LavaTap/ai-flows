@@ -315,6 +315,21 @@ export function buildChatMessages(
   return messages;
 }
 
+/** 估算发给模型的字符数：纯文本取长度，多模态分段只算文本段（图片不计），工具参数一并计入。纯函数。 */
+export function countPromptChars(messages: ChatPromptMessage[]): number {
+  let n = 0;
+  for (const m of messages) {
+    if (typeof m.content === "string") n += m.content.length;
+    else if (Array.isArray(m.content)) {
+      for (const part of m.content) {
+        if (part.type === "text") n += part.text.length;
+      }
+    }
+    for (const c of m.tool_calls ?? []) n += c.function.arguments.length;
+  }
+  return n;
+}
+
 /** 会话标题：取文本前 n 字，超长加省略号；空文本返回「新对话」。纯函数。 */
 export function truncateTitle(text: string, n = 30): string {
   const t = (text || "").trim().replace(/\s+/g, " ");
