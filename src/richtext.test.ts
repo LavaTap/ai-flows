@@ -115,6 +115,29 @@ test("should keep markdown heading size and weight", () => {
   );
 });
 
+test("should keep markdown table structure and styles", () => {
+  const html =
+    '<table style="border-collapse: collapse; width: 100%;">' +
+    "<thead><tr><th>姓名</th><th>部门</th></tr></thead>" +
+    "<tbody>" +
+    '<tr><td style="text-align: center">张三</td><td>研发部</td></tr>' +
+    "</tbody></table>";
+  const out = sanitizeRichHtml(html);
+  assert.ok(out.includes("<table"));
+  assert.ok(out.includes("<thead>"));
+  assert.ok(out.includes("<tbody>"));
+  assert.ok(out.includes("<th>姓名</th>"));
+  assert.ok(out.includes("张三"));
+  assert.ok(out.includes("<td>研发部</td>"));
+  assert.ok(out.includes("border-collapse: collapse"));
+  assert.ok(out.includes("text-align: center"));
+  // 危险属性被剥
+  assert.strictEqual(
+    sanitizeRichHtml('<table onclick="alert(1)"><tr><td>x</td></tr></table>').indexOf("onclick"),
+    -1
+  );
+});
+
 test("should drop non-layout style declarations", () => {
   assert.strictEqual(
     sanitizeRichHtml('<span style="position:fixed;font-size:14px">x</span>'),

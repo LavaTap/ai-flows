@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { formatEntry, formatLogLine, parseLine, shouldLogWeb, type AiLogEntry, type WebLogEntry } from "./log.js";
+import { formatEntry, formatLogLine, localIso, parseLine, shouldLogWeb, type AiLogEntry, type WebLogEntry } from "./log.js";
 
 const aiEntry: AiLogEntry = {
   at: "2026-09-30T12:34:56.000Z",
@@ -71,4 +71,15 @@ test("should format a failed ai line with the error reason", () => {
 test("should format a web line with method, path, status and user", () => {
   const line = formatLogLine("web", webEntry);
   assert.equal(line, "2026-09-30 12:34:56 [web] GET /pipeline 200 12ms a@b.com");
+});
+
+test("should keep the local timezone offset when stamping an entry time", () => {
+  const d = new Date("2026-09-30T12:34:56Z");
+  const iso = localIso(d);
+  assert.match(iso, /^2026-09-30T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/);
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  const local =
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  assert.equal(iso.slice(0, 19), local, "前 19 位应是本地墙上时间");
 });

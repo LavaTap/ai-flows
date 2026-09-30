@@ -58,28 +58,97 @@ window.RichEditor = (function () {
     return s;
   }
 
+  /** 把一行按 | 分割成单元格（去掉首尾空段） */
+  function splitTableRow(line) {
+    var s = line.replace(/^\s*\||\|\s*$/g, "").trim();
+    if (!s) return [];
+    return s.split("|").map(function (c) { return c.trim(); });
+  }
+
+  /** 判断某行是否是表格分隔行（| --- | --- | 形态，允许 : 对齐标记） */
+  function isTableSep(line) {
+    if (line.indexOf("|") === -1) return false;
+    var cells = splitTableRow(line);
+    if (!cells.length) return false;
+    return cells.every(function (c) {
+      return /^:?-{2,}:?$/.test(c);
+    });
+  }
+
+  /** 渲染一个表格段（已含表头行 + 分隔行 + 若干数据行） */
+  function renderTable(headerCells, bodyRows) {
+    var head = "<tr>" + headerCells.map(function (c) {
+      return "<th>" + mdInline(c) + "</th>";
+    }).join("") + "</tr>";
+    var body = bodyRows.map(function (row) {
+      return "<tr>" + row.map(function (c) {
+        return "<td>" + mdInline(c) + "</td>";
+      }).join("") + "</tr>";
+    }).join("");
+    return '<table style="border-collapse: collapse; width: 100%; margin: 8px 0;">' +
+      "<thead>" + head + "</thead><tbody>" + body + "</tbody></table>";
+  }
+
   /** 整段文本按行做轻量 Markdown → HTML（用于粘贴） */
   function mdToHtml(text) {
     var lines = String(text || "").replace(/\r\n?/g, "\n").split("\n");
     var out = [];
     var listTag = null;
     var inQuote = false;
+    var i = 0;
     function closeList() {
       if (listTag) { out.push("</" + listTag + ">"); listTag = null; }
     }
     function closeQuote() {
       if (inQuote) { out.push("</blockquote>"); inQuote = false; }
     }
-    lines.forEach(function (raw) {
+    while (i < lines.length) {
+      var raw = lines[i];
       var t = raw.replace(/\s+$/, "").trim();
-      if (!t) { closeList(); closeQuote(); return; }
+      if (!t) { closeList(); closeQuote(); i++; continue; }
+
+      // 代码块：``` 开头（可选语言），遇到下一个 ``` 结束
+      var fm = t.match(/^```(\w*)\s*$/);
+      if (fm) {
+        closeList(); closeQuote();
+        var lang = fm[1] || "";
+        i++;
+        var codeLines = [];
+        while (i < lines.length) {
+          var cl = lines[i].replace(/\s+$/, "");
+          if (/^```\s*$/.test(cl.trim())) { i++; break; }
+          codeLines.push(cl);
+          i++;
+        }
+        var codeHtml = mdEsc(codeLines.join("\n"));
+        var preClass = lang ? ' class="lang-' + lang + '"' : "";
+        out.push('<pre' + preClass + '><code>' + codeHtml + "</code></pre>");
+        continue;
+      }
+
+      // 表格：当前行含 | 且下一行是分隔行 → 连续收集数据行
+      if (t.indexOf("|") !== -1 && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+        closeList(); closeQuote();
+        var headerCells = splitTableRow(t);
+        i += 2; // 跳过表头 + 分隔行
+        var bodyRows = [];
+        while (i < lines.length) {
+          var nxt = lines[i].replace(/\s+$/, "").trim();
+          if (!nxt || nxt.indexOf("|") === -1) break;
+          bodyRows.push(splitTableRow(nxt));
+          i++;
+        }
+        if (headerCells.length) out.push(renderTable(headerCells, bodyRows));
+        continue;
+      }
+
       var hm = t.match(MD_HEAD_RE);
       if (hm) {
         closeList(); closeQuote();
         var lv = hm[1].length;
         out.push('<h' + lv + ' style="font-size: ' + MD_HEAD_SIZE[lv] + 'px; font-weight: 700;">' +
           mdInline(hm[2]) + "</h" + lv + ">");
-        return;
+        i++; continue;
       }
       var um = t.match(/^[-*+]\s+(.+)$/);
       var om = t.match(/^\d+[.)]\s+(.+)$/);
@@ -88,27 +157,28 @@ window.RichEditor = (function () {
         var want = um ? "ul" : "ol";
         if (listTag !== want) { closeList(); out.push("<" + want + ">"); listTag = want; }
         out.push("<li>" + mdInline((um || om)[1]) + "</li>");
-        return;
+        i++; continue;
       }
       var qm = t.match(/^>\s?(.*)$/);
       if (qm) {
         closeList();
         if (!inQuote) { out.push("<blockquote>"); inQuote = true; }
         out.push("<div>" + mdInline(qm[1]) + "</div>");
-        return;
+        i++; continue;
       }
       closeList(); closeQuote();
       var im = t.match(MD_IMG_RE);
       if (im) {
         out.push('<img src="' + mdAttr(im[2]) + '" alt="' + mdAttr(im[1]) + '" style="max-width: 100%;">');
-        return;
+        i++; continue;
       }
       if (MD_IMG_URL_RE.test(t)) {
         out.push('<img src="' + mdAttr(t) + '" alt="" style="max-width: 100%;">');
-        return;
+        i++; continue;
       }
       out.push("<p>" + mdInline(t) + "</p>");
-    });
+      i++;
+    }
     closeList(); closeQuote();
     return out.join("");
   }
@@ -316,11 +386,85 @@ window.RichEditor = (function () {
       block.parentNode.replaceChild(img, block);
     }
 
+    /** 表格识别：扫描 body 的子节点，找到连续的「表头行 + 分隔行 + 数据行」
+     *  序列，整体替换成 <table>。返回替换数量，供 normalizeBody 重扫。 */
+    function normalizeTables() {
+      var children = Array.prototype.slice.call(body.childNodes);
+      var replaced = 0;
+      var i = 0;
+      while (i < children.length - 1) {
+        var node0 = children[i];
+        var node1 = children[i + 1];
+        var t0 = node0.textContent ? node0.textContent.trim() : "";
+        var t1 = node1.textContent ? node1.textContent.trim() : "";
+        // 必须两行都含 | 且第二行是分隔行
+        if (!t0 || t0.indexOf("|") === -1 || !t1 || !isTableSep(t1)) {
+          i++;
+          continue;
+        }
+        // 收集数据行
+        var j = i + 2;
+        var dataLines = [];
+        while (j < children.length) {
+          var nt = children[j].textContent ? children[j].textContent.trim() : "";
+          if (!nt || nt.indexOf("|") === -1) break;
+          dataLines.push(nt);
+          j++;
+        }
+        // 构建 <table>
+        var headerCells = splitTableRow(t0);
+        if (!headerCells.length) { i++; continue; }
+        var table = document.createElement("table");
+        table.style.borderCollapse = "collapse";
+        table.style.width = "100%";
+        table.style.margin = "8px 0";
+        var thead = document.createElement("thead");
+        var trh = document.createElement("tr");
+        headerCells.forEach(function (c) {
+          var th = document.createElement("th");
+          th.textContent = c;
+          trh.appendChild(th);
+        });
+        thead.appendChild(trh);
+        table.appendChild(thead);
+        var tbody = document.createElement("tbody");
+        dataLines.forEach(function (line) {
+          var cells = splitTableRow(line);
+          var tr = document.createElement("tr");
+          cells.forEach(function (c) {
+            var td = document.createElement("td");
+            td.textContent = c;
+            tr.appendChild(td);
+          });
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        // 用 table 替换表头行（后续行在其后依次移除）
+        var firstBlock = node0.nodeType === 3 ? wrapBareText(node0) : node0;
+        // 重新取 i 之后的子节点（wrapBareText 可能改变了顺序）
+        var all = Array.prototype.slice.call(body.childNodes);
+        var idx = all.indexOf(firstBlock);
+        if (idx === -1) { i++; continue; }
+        // 移除分隔行和数据行
+        var removeCount = 1 + dataLines.length; // 分隔行 + 数据行
+        for (var k = 0; k < removeCount; k++) {
+          var next = all[idx + 1 + k];
+          if (next && next.parentNode) next.parentNode.removeChild(next);
+        }
+        firstBlock.parentNode.replaceChild(table, firstBlock);
+        replaced++;
+        i = j;
+      }
+      return replaced;
+    }
+
     /** 保存前 / 失焦时兜底扫描：编辑器仍有焦点时跳过选区所在的块，避免打乱光标 */
     function normalizeBody() {
       var focused = document.activeElement === body;
       var sel = window.getSelection();
       var anchor = focused && sel && sel.rangeCount ? sel.getRangeAt(0).commonAncestorContainer : null;
+      // 先扫表格（多行块，不受单块跳过逻辑影响）
+      normalizeTables();
       Array.prototype.slice.call(body.childNodes).forEach(function (n) {
         if (n.nodeType === 3) {
           var line = n.textContent.trim();
@@ -331,6 +475,7 @@ window.RichEditor = (function () {
           return;
         }
         if (n.nodeType !== 1) return;
+        if (n.tagName === "TABLE") return;
         if (anchor && n.contains(anchor)) return;
         normalizeBlock(n);
       });
@@ -461,12 +606,14 @@ window.RichEditor = (function () {
       a.textContent = "@" + (u.name || u.email);
       a.contentEditable = "false";
       range.insertNode(a);
-      range.setStartAfter(a);
-      range.setEndAfter(a);
+      // 在 @ 后面插入一个普通空格文本节点（不用 execCommand，避免被序列化为 &nbsp; 造成双重转义）
+      var spaceNode = document.createTextNode("\u0020");
+      a.parentNode.insertBefore(spaceNode, a.nextSibling);
+      range.setStartAfter(spaceNode);
+      range.setEndAfter(spaceNode);
       range.collapse(true);
       sel.removeAllRanges();
       sel.addRange(range);
-      document.execCommand("insertText", false, " ");
       closeMention();
     }
 
@@ -628,11 +775,28 @@ window.RichEditor = (function () {
       });
     });
 
-    sizeSel.addEventListener("mousedown", function (e) { e.preventDefault(); });
+    // 字号下拉：mousedown 时暂存选区（点 <select> 会让 contenteditable 失焦），
+    // change 时先回焦 + 恢复选区再应用字号。不阻止 mousedown 默认行为，否则下拉打不开。
+    var savedRange = null;
+    sizeSel.addEventListener("mousedown", function () {
+      var sel = window.getSelection();
+      if (sel && sel.rangeCount > 0 && body.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+        savedRange = sel.getRangeAt(0).cloneRange();
+      } else {
+        savedRange = null;
+      }
+    });
     sizeSel.addEventListener("change", function () {
       var px = parseInt(this.value, 10);
       this.value = "";
-      if (px) applyFontSize(px);
+      if (!px) return;
+      body.focus();
+      if (savedRange) {
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(savedRange);
+      }
+      applyFontSize(px);
     });
 
     file.addEventListener("change", function () {

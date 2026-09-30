@@ -1,7 +1,9 @@
 import Database from "better-sqlite3";
+import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DB_DIR, getDb } from "./sqlite.js";
+import { localIso } from "./log.js";
 
 export { DB_DIR };
 
@@ -210,8 +212,8 @@ export interface TicketRecord {
   assigneeEmail?: string;
 }
 
-/** 站内消息类型：工单指派 / 工单评论 / 节点提醒 / 知识库 / 系统 */
-export type MessageType = "ticket_assign" | "ticket_comment" | "node" | "kb" | "system";
+/** 站内消息类型：工单指派 / 工单评论 / 工单提及 / 节点提醒 / 知识库 / 知识库提及 / 系统 */
+export type MessageType = "ticket_assign" | "ticket_comment" | "ticket_mention" | "node" | "kb" | "kb_mention" | "system";
 
 /** 站内消息（表 messages，主库）。按收件人邮箱私有可见，顶栏铃铛只读本人未读数 */
 export interface PlatformMessage {
@@ -262,6 +264,27 @@ export interface KbArticle {
   updatedByName: string;
   /** 最近更新人邮箱 */
   updatedByEmail: string;
+}
+
+/** Token 用量明细（表 token_usage，主库）。一次模型请求记一条，供 Token 面板按人/时段聚合。
+ *  与 AI 日志解耦：日志会轮转只留 500 行，用量需要长期累积。 */
+export interface TokenUsageRecord {
+  /** 明细 id（u- 前缀 + 时间戳 + 随机串） */
+  id: string;
+  /** 归属人邮箱（外部触发 / 无账号时为空串） */
+  email: string;
+  /** 来源：review 评审 / chat AI 对话 / skill 技能执行 */
+  source: string;
+  /** 模型名 */
+  model: string;
+  /** 提示 token 数 */
+  promptTokens: number;
+  /** 回复 token 数 */
+  completionTokens: number;
+  /** 总 token 数 */
+  totalTokens: number;
+  /** ISO 时间（本地时区） */
+  at: string;
 }
 
 /** 聊天消息角色 */
@@ -1201,6 +1224,11 @@ export function updateTicket(
   return ticket;
 }
 
+/** 按 id 删除工单（评论随同库外键级联清理）；返回是否命中 */
+export function deleteTicket(id: string): boolean {
+  return db().prepare("DELETE FROM tickets.tickets WHERE id = ?").run(id).changes > 0;
+}
+
 // ============ 知识库文章 ============
 
 interface KbRow {
@@ -1282,6 +1310,11 @@ export function updateKbArticle(id: string, mutate: (a: KbArticle) => void): KbA
   mutate(article);
   saveKbArticles(articles);
   return article;
+}
+
+/** 按 id 删除知识库文章；返回是否命中 */
+export function deleteKbArticle(id: string): boolean {
+  return db().prepare("DELETE FROM kb_articles WHERE id = ?").run(id).changes > 0;
 }
 
 // ============ 站内消息 ============
@@ -1458,4 +1491,67 @@ export function setActiveModel(id: string): ChatModel | null {
   store.activeId = id;
   saveChatModels(store);
   return target;
+}
+
+// ============ Token 用量 ============
+
+interface TokenRow {
+  id: string;
+  email: string | null;
+  source: string;
+  model: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  at: string;
+}
+
+function rowToToken(r: TokenRow): TokenUsageRecord {
+  return {
+    id: r.id,
+    email: r.email ?? "",
+    source: r.source,
+    model: r.model,
+    promptTokens: r.prompt_tokens,
+    completionTokens: r.completion_tokens,
+    totalTokens: r.total_tokens,
+    at: r.at,
+  };
+}
+
+/** 追加一条 token 用量明细 */
+export function appendTokenUsage(rec: TokenUsageRecord): void {
+  const c = db();
+  c.prepare(
+    "INSERT OR REPLACE INTO token_usage (ord,id,at,email,source,model,prompt_tokens,completion_tokens,total_tokens) VALUES (@ord,@id,@at,@email,@source,@model,@promptTokens,@completionTokens,@totalTokens)"
+  ).run({
+    ord: nextOrd(c, "token_usage"),
+    id: rec.id,
+    at: rec.at,
+    email: rec.email || null,
+    source: rec.source,
+    model: rec.model,
+    promptTokens: rec.promptTokens,
+    completionTokens: rec.completionTokens,
+    totalTokens: rec.totalTokens,
+  });
+}
+
+/** 记一条 token 用量（自动补 id 与本地时间戳）；失败静默——用量统计不得影响主流程 */
+export function recordTokenUsage(rec: Omit<TokenUsageRecord, "id" | "at">): void {
+  try {
+    appendTokenUsage({
+      id: `u-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`,
+      at: localIso(),
+      ...rec,
+    });
+  } catch {
+    /* 用量统计失败不影响业务 */
+  }
+}
+
+/** 读取全部 token 用量明细（按写入顺序） */
+export function loadTokenUsage(): TokenUsageRecord[] {
+  const rows = db().prepare("SELECT * FROM token_usage ORDER BY ord").all() as TokenRow[];
+  return rows.map(rowToToken);
 }

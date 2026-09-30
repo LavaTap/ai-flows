@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { filterReviewsByUser, canEditRequirement, safeRepoPath, canAccessTicket, filterTicketsByUser, isTicketStatus, collectTicketImages, decodePathSegment } from "./platform.js";
+import { filterReviewsByUser, canEditRequirement, safeRepoPath, canAccessTicket, filterTicketsByUser, isTicketStatus, collectTicketImages, decodePathSegment, summarizeTokenUsage } from "./platform.js";
 import type { ReviewRecord, UserAccount, NodeState, TicketRecord } from "./db.js";
 
 function user(role: "staff" | "supervisor", department: string): UserAccount {
@@ -132,4 +132,29 @@ test("should decode url-encoded email path segment and reject malformed or unsaf
   assert.strictEqual(decodePathSegment("a%5Cb"), null);
   assert.strictEqual(decodePathSegment("%"), null);
   assert.strictEqual(decodePathSegment(""), null);
+});
+
+test("should summarize token usage into today / week / month / total windows", () => {
+  const now = new Date(2026, 8, 30, 12, 0, 0); // 2026-09-30 12:00 本地时间
+  const at = (msAgo: number) => new Date(now.getTime() - msAgo).toISOString();
+  const DAY = 86400000;
+  const s = summarizeTokenUsage(
+    [
+      { at: at(0), totalTokens: 100 }, // 今天
+      { at: at(2 * DAY), totalTokens: 200 }, // 2 天前（7 天内）
+      { at: at(10 * DAY), totalTokens: 400 }, // 10 天前（7 天外、30 天内）
+      { at: at(40 * DAY), totalTokens: 800 }, // 40 天前（仅累计）
+    ],
+    now
+  );
+  assert.strictEqual(s.today, 100);
+  assert.strictEqual(s.week, 300);
+  assert.strictEqual(s.month, 700);
+  assert.strictEqual(s.total, 1500);
+});
+
+test("should count invalid timestamps into total only", () => {
+  const s = summarizeTokenUsage([{ at: "not-a-date", totalTokens: 5 }, { at: "", totalTokens: 7 }]);
+  assert.strictEqual(s.total, 12);
+  assert.strictEqual(s.today + s.week + s.month, 0);
 });

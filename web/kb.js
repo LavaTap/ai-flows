@@ -117,13 +117,17 @@
     return span;
   }
 
-  /** 姓名胶囊：可点跳个人主页 + 悬停出用户卡片 */
+  /** 头像 + 名字胶囊：可点跳个人主页 + 悬停出用户卡片（与工单页样式一致） */
   function personLink(email, name) {
-    var link = document.createElement("a");
-    link.className = "author-link";
-    link.href = profileUrl(email);
-    link.textContent = name || email;
     var m = memberByEmail(email);
+    var link = document.createElement("a");
+    link.className = "mention-chip";
+    link.href = profileUrl(email);
+    link.setAttribute("data-email", email);
+    link.appendChild(makeAvatar(m, email, "mc-av"));
+    var nm = document.createElement("span");
+    nm.textContent = name || email;
+    link.appendChild(nm);
     link.addEventListener("click", function (e) {
       e.preventDefault();
       goProfile(email, (m && m.name) || name, m && m.department);

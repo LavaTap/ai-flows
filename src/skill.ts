@@ -37,6 +37,8 @@ export interface SkillRunInput {
   onProgress: (pct: number, label: string) => void;
   /** 产物文件名主干（不含扩展名）；缺省用 <skill>-<时间戳> */
   filenameBase?: string;
+  /** 触发人邮箱，仅用于把本次 token 用量归到本人（缺省不归属） */
+  email?: string;
 }
 
 /** skill 执行结果 */
@@ -178,11 +180,11 @@ export function buildSkillPrompt(requirement: string, uploads: { name: string; c
 }
 
 /** 带指数退避的重试模型调用（429 / 5xx 重试，最多 3 次）。target 为 skill 名，仅用于模型请求日志 */
-async function callWithRetry(model: ModelConfig, prompt: string, system: string, target?: string): Promise<string> {
+async function callWithRetry(model: ModelConfig, prompt: string, system: string, target?: string, email?: string): Promise<string> {
   let lastErr: unknown;
   for (let i = 0; i < 3; i++) {
     try {
-      return await callModel(model, prompt, { json: false, system, source: "skill", target });
+      return await callModel(model, prompt, { json: false, system, source: "skill", target, email });
     } catch (err: any) {
       lastErr = err;
       const msg = String(err?.message ?? "");
@@ -216,7 +218,7 @@ export async function runSkill(input: SkillRunInput, model: ModelConfig): Promis
   const prompt = buildSkillPrompt(input.requirement, uploads);
 
   input.onProgress(70, "模型生成中");
-  const content = await callWithRetry(model, prompt, doc, input.skill);
+  const content = await callWithRetry(model, prompt, doc, input.skill, input.email);
 
   input.onProgress(95, "写产物文件");
   mkdirSync(input.outputDir, { recursive: true });

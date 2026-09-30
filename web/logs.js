@@ -22,7 +22,14 @@
       .replace(/'/g, "&#39;");
   }
 
-  function fmtTime(iso) { return String(iso || "").replace("T", " ").slice(0, 19); }
+  /** 时间按浏览器本地时区展示（旧数据是 UTC 的 Z 结尾，也能正确换算成本地时间） */
+  function fmtTime(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso || "").replace("T", " ").slice(0, 19);
+    var p = function (n) { return (n < 10 ? "0" : "") + n; };
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " +
+      p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+  }
 
   function token(cls, text) {
     return '<span class="' + cls + '">' + esc(text) + "</span>";

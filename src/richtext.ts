@@ -9,6 +9,7 @@ const ALLOWED_TAGS = new Set([
   "font", "ul", "ol", "li", "blockquote",
   "h1", "h2", "h3", "h4",
   "a", "img", "code", "pre", "hr",
+  "table", "thead", "tbody", "tr", "th", "td",
 ]);
 
 /** 空元素：只输出开标签，不输出闭合标签 */
@@ -28,6 +29,12 @@ const ALLOWED_ATTRS: Record<string, Set<string>> = {
   h4: new Set(["style"]),
   li: new Set(["style"]),
   blockquote: new Set(["style"]),
+  table: new Set(["style"]),
+  th: new Set(["style", "align"]),
+  td: new Set(["style", "align"]),
+  tr: new Set(["style"]),
+  thead: new Set([]),
+  tbody: new Set([]),
 };
 
 /** 允许携带 style 的标签（正文容器与图片） */
@@ -44,6 +51,8 @@ const ALLOWED_STYLES: Record<string, RegExp> = {
   width: /^\d{1,4}(\.\d+)?(px|%)$/,
   height: /^\d{1,4}(\.\d+)?(px|%)$/,
   "max-width": /^\d{1,4}(\.\d+)?(px|%)$/,
+  "border-collapse": /^(collapse|separate)$/,
+  "vertical-align": /^(top|middle|bottom|baseline)$/,
 };
 
 /** 清洗 style：逐条声明匹配白名单，全部非法则丢弃该属性 */

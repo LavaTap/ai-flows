@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname, basename, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, loadTickets, appendTicket, updateTicket, loadPlatformMessages, appendPlatformMessage, markMessageRead, markAllMessagesRead, loadKbArticles, appendKbArticle, updateKbArticle, TICKET_IMAGES_DIR, AVATARS_DIR, CHAT_UPLOADS_DIR, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel, type ChatAttachment, type ChatRef, type ChatSkillCall, type PlatformMessage, type MessageType, type KbArticle, type KbVisibility } from "./db.js";
+import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, loadTickets, appendTicket, updateTicket, deleteTicket, loadPlatformMessages, appendPlatformMessage, markMessageRead, markAllMessagesRead, loadKbArticles, appendKbArticle, updateKbArticle, deleteKbArticle, TICKET_IMAGES_DIR, AVATARS_DIR, CHAT_UPLOADS_DIR, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, recordTokenUsage, loadTokenUsage, type TokenUsageRecord, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel, type ChatAttachment, type ChatRef, type ChatSkillCall, type PlatformMessage, type MessageType, type KbArticle, type KbVisibility } from "./db.js";
 import {
   callModelStream,
   callModelOnce,
@@ -175,6 +175,48 @@ export function collectTicketImages(html: string): string[] {
   return [...out];
 }
 
+/** 从富文本正文中提取所有 @提及的邮箱（来自 a[data-email] 标记）。
+ *  去重，按出现顺序返回。 */
+export function extractMentionedEmails(html: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const re = /<a\b[^>]*\bdata-email="([^"<>]+)"/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    const email = m[1].trim().toLowerCase();
+    if (email && !seen.has(email)) {
+      seen.add(email);
+      out.push(email);
+    }
+  }
+  return out;
+}
+
+/** 给正文中 @提及到的人批量投递通知；自己不会给自己发。
+ *  返回实际投递的数量。 */
+function notifyMentioned(
+  html: string,
+  senderEmail: string,
+  senderName: string,
+  opts: { type: "ticket_mention" | "kb_mention"; title: string; body?: string; refType: string; refId: string }
+): number {
+  const emails = extractMentionedEmails(html);
+  let count = 0;
+  for (const email of emails) {
+    if (email === senderEmail.toLowerCase()) continue;
+    // 确保是本平台用户才投递
+    const u = loadUsers().find((x) => x.email.toLowerCase() === email);
+    if (!u) continue;
+    notify(u.email, opts.type, opts.title, {
+      body: opts.body ? `${senderName}：${opts.body}` : undefined,
+      refType: opts.refType,
+      refId: opts.refId,
+    });
+    count++;
+  }
+  return count;
+}
+
 /** 解码 URL 路径段（前端对 email 的 @ 会编码成 %40，不还原就查不到账号）。
  *  非法编码或解码后含路径分隔符时返回 null，交调用方按「账号不存在」处理。 */
 export function decodePathSegment(seg: string): string | null {
@@ -273,10 +315,27 @@ function toUserView(u: UserAccount): UserView {
   return { email: u.email, name: u.name, role: u.role, title: u.title, department: u.department, github: u.github, githubPending: u.githubPending, avatar: u.avatar };
 }
 
-/** 节点需求工单：nodeId 命中且未指派给具体员工的那张 requirement 工单 */
+/** 节点需求工单：nodeId 命中且未指派给具体员工的那张工单。
+ *  不限定 kind：主管可从工单系统「搜索已有工单挂上来」，被挂的 bug 单同样算节点需求工单。
+ *  指派工单（assigneeEmail 有值）是节点执行人的工单，不在此列。 */
 function findRequirementTicket(nodeId: string, tickets?: TicketRecord[]): TicketRecord | undefined {
   const list = tickets ?? loadTickets();
-  return list.find((t) => t.nodeId === nodeId && t.kind === "requirement" && !t.assigneeEmail);
+  return list.find((t) => t.nodeId === nodeId && !t.assigneeEmail);
+}
+
+/** 把某工单挂到节点（替换式）：先解除该节点已有的挂单，再把目标工单 nodeId 指向节点。
+ *  只认未被指派的工单（指派工单归执行人）。返回挂上后的工单，找不到工单返回 null。 */
+function linkTicketToNode(node: NodeState, ticketId: string): TicketRecord | null {
+  const target = loadTickets().find((t) => t.id === ticketId);
+  if (!target || target.assigneeEmail) return null;
+  const stale = loadTickets().filter(
+    (t) => t.nodeId === node.id && !t.assigneeEmail && t.id !== ticketId,
+  );
+  for (const t of stale) updateTicket(t.id, (x) => { x.nodeId = undefined; });
+  return updateTicket(ticketId, (t) => {
+    t.nodeId = node.id;
+    t.updatedAt = new Date().toISOString();
+  });
 }
 
 /** 自动生成工单 id（t- 前缀 + 时间戳 + 随机串，与手动工单同形） */
@@ -547,7 +606,11 @@ interface MessageView {
   at: string;
 }
 
-function toMessageView(m: PlatformMessage): MessageView {
+function toMessageView(m: PlatformMessage): MessageView & { link?: string } {
+  let link: string | undefined;
+  if (m.refType === "ticket" && m.refId) link = `/tickets?id=${encodeURIComponent(m.refId)}`;
+  else if (m.refType === "kb" && m.refId) link = `/kb?id=${encodeURIComponent(m.refId)}`;
+  else if (m.refType === "node" && m.refId) link = `/pipeline#node-${encodeURIComponent(m.refId)}`;
   return {
     id: m.id,
     type: m.type,
@@ -557,6 +620,7 @@ function toMessageView(m: PlatformMessage): MessageView {
     refId: m.refId,
     read: !!m.readAt,
     at: m.at,
+    link,
   };
 }
 
@@ -617,6 +681,53 @@ function logsHtml(user: UserAccount): string {
   return raw.replace("</body>", `${inject}\n</body>`);
 }
 
+/** Token 消耗汇总（今天 / 近 7 天 / 近 30 天 / 累计，单位 token） */
+export interface TokenSummary {
+  today: number;
+  week: number;
+  month: number;
+  total: number;
+}
+
+/** 本地日历日 key（YYYY-MM-DD），用于判断「今天」 */
+function localDayKey(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/**
+ * 汇总一批用量明细的今天 / 近 7 天 / 近 30 天 / 累计 token。
+ * 纯函数：now 可注入便于测试；非法时间戳只计入累计。
+ * 7 天 / 30 天为滚动窗口（now 往前 7×24h / 30×24h），「今天」按本地日历日。
+ */
+export function summarizeTokenUsage(
+  records: readonly { at: string; totalTokens: number }[],
+  now: Date = new Date()
+): TokenSummary {
+  const todayKey = localDayKey(now);
+  const weekAgo = now.getTime() - 7 * 86400000;
+  const monthAgo = now.getTime() - 30 * 86400000;
+  const sum: TokenSummary = { today: 0, week: 0, month: 0, total: 0 };
+  for (const r of records) {
+    const n = r.totalTokens || 0;
+    sum.total += n;
+    const t = Date.parse(r.at);
+    if (!Number.isFinite(t)) continue;
+    if (t >= monthAgo) sum.month += n;
+    if (t >= weekAgo) sum.week += n;
+    if (localDayKey(new Date(t)) === todayKey) sum.today += n;
+  }
+  return sum;
+}
+
+/** 渲染 Token 面板页：读静态 tokens.html，注入登录用户 bootstrap */
+function tokensHtml(user: UserAccount): string {
+  const raw = readFileSync(join(WEB_DIR, "tokens.html"), "utf8");
+  const boot = { user: toUserView(user), isSupervisor: user.role === "supervisor" };
+  const inject = `<script>window.__TOKENS__ = ${jsonForScript(boot)};</script>\n<script src="/tokens.js" defer></script>`;
+  return raw.replace("</body>", `${inject}\n</body>`);
+}
+
 /** JSON 序列化为可安全内嵌 <script> 的字符串（转义 < 防提前闭合标签） */
 function jsonForScript(v: unknown): string {
   return JSON.stringify(v).replace(/</g, "\\u003c");
@@ -664,11 +775,13 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   "/chat.js": { file: "chat.js", type: "text/javascript; charset=utf-8" },
   "/home.js": { file: "home.js", type: "text/javascript; charset=utf-8" },
   "/profile.js": { file: "profile.js", type: "text/javascript; charset=utf-8" },
+  "/profile-bg.jpg": { file: "profile-bg.jpg", type: "image/jpeg" },
   "/messages.js": { file: "messages.js", type: "text/javascript; charset=utf-8" },
   "/richtext-editor.js": { file: "richtext-editor.js", type: "text/javascript; charset=utf-8" },
   "/user-card.js": { file: "user-card.js", type: "text/javascript; charset=utf-8" },
   "/kb.js": { file: "kb.js", type: "text/javascript; charset=utf-8" },
   "/logs.js": { file: "logs.js", type: "text/javascript; charset=utf-8" },
+  "/tokens.js": { file: "tokens.js", type: "text/javascript; charset=utf-8" },
 };
 
 /** 读 web/ 下静态文件并响应，不存在返回 false */
@@ -810,12 +923,31 @@ function homeHtml(user: UserAccount): string {
   return raw.replace("</body>", `${inject}\n</body>`);
 }
 
-/** 渲染员工个人主页：读静态 profile.html，注入当前用户 + 目标用户 */
+/** 员工主页文章视图：标题 / 可见性 / 更新时间（用于列表展示，不含正文） */
+interface ProfileKbItem {
+  id: string;
+  title: string;
+  visibility: KbVisibility;
+  updatedAt: string;
+}
+
+/** 渲染员工个人主页：读静态 profile.html，注入当前用户 + 目标用户 + TA 写的知识库文章（按视角过滤） */
 function profileHtml(user: UserAccount, target: UserAccount): string {
   const raw = readFileSync(join(WEB_DIR, "profile.html"), "utf8");
+  // 目标用户写的文章 → 再过一道当前用户可见性过滤（private 仅本人/主管可见）
+  const targetArticles = filterKbByUser(loadKbArticles(), user)
+    .filter((a) => a.authorEmail === target.email)
+    .sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""))
+    .map((a): ProfileKbItem => ({
+      id: a.id,
+      title: a.title,
+      visibility: a.visibility,
+      updatedAt: a.updatedAt,
+    }));
   const boot = {
     user: toUserView(user),
     target: toUserView(target),
+    articles: targetArticles,
     isSupervisor: user.role === "supervisor",
   };
   const inject = `<script>window.__PROFILE__ = ${jsonForScript(boot)};</script>\n<script src="/profile.js" defer></script>`;
@@ -1149,8 +1281,9 @@ function updateNode(id: string, mutate: (n: NodeState) => void): void {
 }
 
 /** 节点 03（AI 代码评审）执行器：在目标仓库上跑完整评审链
- *  diff 采集 → LLM 评审 → 门禁 → 报告落盘，返回报告页链接与门禁结果 */
-async function runAiReviewNode(repo: string): Promise<{
+ *  diff 采集 → LLM 评审 → 门禁 → 报告落盘，返回报告页链接与门禁结果。
+ *  email 为执行人邮箱，仅用于把评审的 token 用量归到本人。 */
+async function runAiReviewNode(repo: string, email?: string): Promise<{
   id: string;
   reportUrl: string;
   passed: boolean;
@@ -1163,7 +1296,7 @@ async function runAiReviewNode(repo: string): Promise<{
   // 评审配置随目标仓库走（与其 pre-push hook 行为一致）
   const cfg = loadConfig(join(repo, "ai-review.config.json"));
   const files = await collectDiff(cfg.diff, repo);
-  const result = await reviewBatch(files, cfg.model);
+  const result = await reviewBatch(files, cfg.model, { email });
   const gate = decideGate(result, cfg);
 
   const id = `review-${Date.now().toString(36)}`;
@@ -1968,6 +2101,7 @@ export async function startPlatformServer(
                   n.progressLabel = label;
                 });
               },
+              email: user.email,
             },
             loadSkillModelConfig(repo).model
           )
@@ -2091,7 +2225,7 @@ export async function startPlatformServer(
           busy.add(node.id);
           saveNodes(nodes);
           sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
-          runAiReviewNode(repo)
+          runAiReviewNode(repo, user.email)
             .then((r) => {
               updateNode(node.id, (n) => {
                 n.status = "running";
@@ -2524,6 +2658,66 @@ export async function startPlatformServer(
       return;
     }
 
+    // Token 面板页（未登录重定向到登录页；所有登录用户可看自己的消耗）
+    if (path === "/tokens" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        res.statusCode = 302;
+        res.setHeader("Location", "/login");
+        res.end();
+        return;
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(tokensHtml(user));
+      return;
+    }
+
+    // Token 用量统计：员工看本人；主管额外看全团队（含无归属的「外部触发」）
+    if (path === "/api/tokens" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const records = loadTokenUsage();
+      const users = loadUsers();
+      const nameOf = (email: string): string =>
+        users.find((x) => x.email === email)?.name || (email ? email.split("@")[0] : "外部触发");
+      const mine = records.filter((r) => r.email === user.email);
+      const me = {
+        email: user.email,
+        name: nameOf(user.email),
+        department: user.department,
+        tokens: summarizeTokenUsage(mine),
+      };
+      let team: {
+        email: string;
+        name: string;
+        department: string;
+        tokens: TokenSummary;
+      }[] = [];
+      if (user.role === "supervisor") {
+        team = users.map((u) => ({
+          email: u.email,
+          name: nameOf(u.email),
+          department: u.department ?? "",
+          tokens: summarizeTokenUsage(records.filter((r) => r.email === u.email)),
+        }));
+        // 无归属用量（外部 run / hook 触发的评审）单列一行，避免统计口径漏账
+        const external = records.filter((r) => !r.email);
+        if (external.length) {
+          team.push({
+            email: "",
+            name: "外部触发",
+            department: "程序中台",
+            tokens: summarizeTokenUsage(external),
+          });
+        }
+      }
+      sendJson(res, 200, { scope: user.role === "supervisor" ? "team" : "self", me, team });
+      return;
+    }
+
     // 知识库页（未登录重定向到登录页）
     if (path === "/kb" && req.method === "GET") {
       const user = currentUser(req);
@@ -2621,6 +2815,14 @@ export async function startPlatformServer(
         updatedByEmail: user.email,
       };
       appendKbArticle(article);
+      // 给正文里 @提及到的人发消息
+      notifyMentioned(content, user.email, authorName, {
+        type: "kb_mention",
+        title: `${authorName} 在知识库「${title}」中@了你`,
+        body: htmlToPlainText(content).slice(0, 120),
+        refType: "kb",
+        refId: article.id,
+      });
       sendJson(res, 201, { article: toKbView(article, user) });
       return;
     }
@@ -2706,6 +2908,15 @@ export async function startPlatformServer(
         a.updatedByName = user.name?.trim() || user.email.split("@")[0];
         a.updatedByEmail = user.email;
       });
+      // 给正文里 @提及到的人发消息（编辑时新增的 @ 也通知）
+      const editorName = user.name?.trim() || user.email.split("@")[0];
+      notifyMentioned(content, user.email, editorName, {
+        type: "kb_mention",
+        title: `${editorName} 在知识库「${title}」中@了你`,
+        body: htmlToPlainText(content).slice(0, 120),
+        refType: "kb",
+        refId: article.id,
+      });
       sendJson(res, 200, { article: toKbView(updated as KbArticle, user) });
       return;
     }
@@ -2775,6 +2986,14 @@ export async function startPlatformServer(
         comments: [],
       };
       appendTicket(record);
+      // 给正文里 @提及到的人发消息
+      notifyMentioned(content, user.email, record.authorName, {
+        type: "ticket_mention",
+        title: `${record.authorName} 在工单「${title}」中@了你`,
+        body: htmlToPlainText(content).slice(0, 120),
+        refType: "ticket",
+        refId: record.id,
+      });
       sendJson(res, 201, { ticket: toTicketView(record, user) });
       return;
     }
@@ -2978,6 +3197,15 @@ export async function startPlatformServer(
         t.comments = [...(t.comments ?? []), comment];
         t.updatedAt = comment.at;
       });
+      // 给评论里 @提及到的人发消息（自己不会收到）
+      const senderName = user.name?.trim() || user.email.split("@")[0];
+      notifyMentioned(content, user.email, senderName, {
+        type: "ticket_mention",
+        title: `${senderName} 在工单「${ticket.title}」中@了你`,
+        body: htmlToPlainText(content).slice(0, 120),
+        refType: "ticket",
+        refId: ticket.id,
+      });
       sendJson(res, 201, { ticket: toTicketView(updated as TicketRecord, user) });
       return;
     }
@@ -3035,6 +3263,15 @@ export async function startPlatformServer(
         t.content = content;
         t.images = collectTicketImages(content);
         t.updatedAt = now;
+      });
+      // 给正文里 @提及到的人发消息（编辑时新增的 @ 也通知）
+      const editorName = user.name?.trim() || user.email.split("@")[0];
+      notifyMentioned(content, user.email, editorName, {
+        type: "ticket_mention",
+        title: `${editorName} 在工单「${title}」中@了你`,
+        body: htmlToPlainText(content).slice(0, 120),
+        refType: "ticket",
+        refId: ticket.id,
       });
       sendJson(res, 200, { ticket: toTicketView(updated as TicketRecord, user) });
       return;
@@ -3363,7 +3600,20 @@ export async function startPlatformServer(
           const summaryText = await callModelOnce(
             chatModelToModelConfig(chatModel),
             compressMessages,
-            { maxTokens: 600, signal: ac.signal }
+            {
+              maxTokens: 600,
+              signal: ac.signal,
+              // 压缩也是一次模型请求，token 用量记到当前用户名下
+              onUsage: (usg) =>
+                recordTokenUsage({
+                  email: user.email,
+                  source: "chat",
+                  model: modelCfg.model,
+                  promptTokens: usg.promptTokens,
+                  completionTokens: usg.completionTokens,
+                  totalTokens: usg.totalTokens,
+                }),
+            }
           );
           compressOk = true;
           compressReply = summaryText.length;
@@ -3426,6 +3676,7 @@ export async function startPlatformServer(
           const roundStarted = Date.now();
           let roundOk = false;
           let roundError: string | undefined;
+          let roundUsage: { promptTokens: number; completionTokens: number; totalTokens: number } | undefined;
           try {
             for await (const chunk of callModelStream(modelCfg, working, {
               maxTokens: chatCfg.maxTokens,
@@ -3438,6 +3689,7 @@ export async function startPlatformServer(
                 fullContent += chunk.delta;
                 res.write(`event: delta\ndata: ${JSON.stringify({ content: chunk.delta })}\n\n`);
               } else if (chunk.type === "usage" && chunk.usage) {
+                roundUsage = chunk.usage;
                 totalTokens = chunk.usage.totalTokens;
                 res.write(`event: usage\ndata: ${JSON.stringify({ totalTokens })}\n\n`);
               } else if (chunk.type === "tool_call" && chunk.toolCalls) {
@@ -3459,6 +3711,17 @@ export async function startPlatformServer(
               replyChars: roundText.length,
               error: roundError,
             });
+            // 每轮请求的 token 用量记到当前用户名下（工具调用会带来多轮，逐轮各记一条）
+            if (roundOk && roundUsage && roundUsage.totalTokens > 0) {
+              recordTokenUsage({
+                email: user.email,
+                source: "chat",
+                model: modelCfg.model,
+                promptTokens: roundUsage.promptTokens,
+                completionTokens: roundUsage.completionTokens,
+                totalTokens: roundUsage.totalTokens,
+              });
+            }
           }
           if (!toolCalls.length || !skillTool || round === CHAT_SKILL_ROUNDS) break;
 

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -77,6 +77,16 @@
     .tk-content h2 { font-size: 20px; }
     .tk-content h3 { font-size: 17px; }
     .tk-content h4 { font-size: 15px; }
+    .tk-content table { border-collapse: collapse; width: 100%; margin: 10px 0;
+      font-size: 12.5px; }
+    .tk-content th, .tk-content td { border: 1px solid var(--glass-line); padding: 6px 10px;
+      text-align: left; vertical-align: top; }
+    .tk-content th { background: var(--paper-2); font-weight: 600; color: var(--ink-soft); }
+    .tk-content tr:nth-child(even) td { background: rgba(241,245,249,.5); }
+    .tk-content pre { background: #0f172a; color: #e2e8f0; border-radius: 8px;
+      padding: 12px 14px; margin: 10px 0; overflow-x: auto; font-family: var(--font-mono);
+      font-size: 12px; line-height: 1.6; }
+    .tk-content pre code { background: none; padding: 0; font-size: inherit; color: inherit; }
     /* 图片左右环绕时不让浮动溢出容器 */
     .tk-content::after { content: ""; display: block; clear: both; }
 
@@ -105,7 +115,6 @@
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="dot" aria-hidden="true"></span>
       <h1 class="brand-title">
         <span class="tt-pipeline">AI-FLOWS</span>
         <span class="tt-sep">/</span>

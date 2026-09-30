@@ -192,11 +192,17 @@ function* flushToolCalls(acc: Map<number, ToolCall>): Generator<StreamChunk> {
 /**
  * 非流式调用 chat/completions，一次性返回完整回复文本。
  * 用于记忆压缩（摘要生成）这类内部调用，需要完整文本而非增量流。
+ * opts.onUsage 回调接口回传的真实 token 用量（供 Token 面板统计）。
  */
 export async function callModelOnce(
   model: ModelConfig,
   messages: ChatPromptMessage[],
-  opts: { maxTokens?: number; temperature?: number; signal?: AbortSignal } = {}
+  opts: {
+    maxTokens?: number;
+    temperature?: number;
+    signal?: AbortSignal;
+    onUsage?: (u: { promptTokens: number; completionTokens: number; totalTokens: number }) => void;
+  } = {}
 ): Promise<string> {
   const apiKey = resolveApiKey(model);
   if (!apiKey) {
@@ -226,7 +232,19 @@ export async function callModelOnce(
     throw new Error(`模型接口 ${res.status} ${res.statusText}：${body.slice(0, 500)}`);
   }
 
-  const data = (await res.json()) as { choices?: { message?: { content?: string | null } }[] };
+  const data = (await res.json()) as {
+    choices?: { message?: { content?: string | null } }[];
+    usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+  };
+  if (data.usage && opts.onUsage) {
+    const promptTokens = data.usage.prompt_tokens ?? 0;
+    const completionTokens = data.usage.completion_tokens ?? 0;
+    opts.onUsage({
+      promptTokens,
+      completionTokens,
+      totalTokens: data.usage.total_tokens ?? promptTokens + completionTokens,
+    });
+  }
   return data.choices?.[0]?.message?.content ?? "";
 }
 

@@ -114,6 +114,25 @@ CREATE TABLE IF NOT EXISTS kb_articles (
 );
 
 CREATE INDEX IF NOT EXISTS idx_kb_updated ON kb_articles(updated_at);
+
+/* Token 用量明细（模型请求一次一条）。AI 日志会轮转（只留 500 行）不适合长期统计，
+   故单独存表供 Token 面板按人/时段聚合。
+   故意不加外键：users 行整体替换（saveUsers 先 DELETE 再插）会级联清空用量，
+   归属人靠 email 逻辑匹配（外部触发无账号时 email 为空串）。 */
+CREATE TABLE IF NOT EXISTS token_usage (
+  ord               INTEGER NOT NULL,
+  id                TEXT PRIMARY KEY,
+  at                TEXT NOT NULL,
+  email             TEXT,
+  source            TEXT NOT NULL,
+  model             TEXT NOT NULL,
+  prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+  completion_tokens INTEGER NOT NULL DEFAULT 0,
+  total_tokens      INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_token_usage_at ON token_usage(at);
+CREATE INDEX IF NOT EXISTS idx_token_usage_email ON token_usage(email);
 `;
 
 /** AI 对话与评审库 DDL：会话 / 消息 / 模型配置 / 评审记录。

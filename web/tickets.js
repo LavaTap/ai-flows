@@ -43,6 +43,8 @@
   /* ────────────── 成员与用户卡片（共享实现：/user-card.js） ────────────── */
 
   var members = boot.members || [];
+  /** @提及选中过的成员缓存（姓名 → 用户对象），供 buildCommentHtml 把 @姓名 转成带 email 的链接 */
+  var mentionUserCache = {};
   var UC = window.UserCard;
   UC.setMembers(members);
 
@@ -308,6 +310,13 @@
       byName[nm] = m;
       names.push(nm);
     });
+    // 把 @提及 候选里选过的人也加进来（搜索接口返回的可能不在 members 里）
+    Object.keys(mentionUserCache || {}).forEach(function (nm) {
+      if (!byName[nm]) {
+        byName[nm] = mentionUserCache[nm];
+        names.push(nm);
+      }
+    });
     names.sort(function (a, b) { return b.length - a.length; });
 
     function escText(s) {
@@ -381,10 +390,7 @@
       var row = document.createElement("div");
       row.className = "tk-comment";
 
-      var av = document.createElement("div");
-      av.className = "tk-avatar";
-      av.style.background = colorOf(c.email);
-      av.textContent = firstChar(c.author, c.email);
+      var av = makeAvatar(memberByEmail(c.email), c.email, "tk-avatar");
       row.appendChild(av);
 
       var main = document.createElement("div");
@@ -614,21 +620,26 @@
 
     var meta = byId("dMeta");
     meta.innerHTML = "";
-    // 提交人：可点击跳转到个人主页，悬停出用户卡片
+    // 提交人：头像 + 名字胶囊（悬停出用户卡片、点击跳主页）
     var authorSpan = document.createElement("span");
     var authorB = document.createElement("b");
     authorB.textContent = "提交人 ";
     authorSpan.appendChild(authorB);
-    var authorLink = document.createElement("a");
-    authorLink.href = profileUrl(t.authorEmail);
-    authorLink.className = "author-link";
-    authorLink.textContent = t.authorName + (t.mine ? "（我）" : "");
-    authorLink.addEventListener("click", function (e) {
+    var authorChip = document.createElement("a");
+    authorChip.className = "mention-chip";
+    authorChip.href = profileUrl(t.authorEmail);
+    authorChip.setAttribute("data-email", t.authorEmail);
+    var authorAv = makeAvatar(memberByEmail(t.authorEmail), t.authorEmail, "mc-av");
+    authorChip.appendChild(authorAv);
+    var authorNm = document.createElement("span");
+    authorNm.textContent = t.authorName + (t.mine ? "（我）" : "");
+    authorChip.appendChild(authorNm);
+    authorChip.addEventListener("click", function (e) {
       e.preventDefault();
       goProfile(t.authorEmail, t.authorName, t.department);
     });
-    bindUserCard(authorLink, t.authorEmail);
-    authorSpan.appendChild(authorLink);
+    bindUserCard(authorChip, t.authorEmail);
+    authorSpan.appendChild(authorChip);
     meta.appendChild(authorSpan);
     meta.appendChild(renderAssignee(t));
     meta.appendChild(metaItem("部门 ", t.department));
@@ -767,12 +778,25 @@
     pop.hidden = true;
     box.appendChild(pop);
 
-    function filterMembers(q) {
-      var ql = (q || "").trim().toLowerCase();
-      var hit = !ql ? members : members.filter(function (u) {
-        return ((u.name || "") + " " + u.email).toLowerCase().indexOf(ql) !== -1;
-      });
-      return hit.slice(0, 8);
+    /** 调用全局搜索接口搜员工（姓名 / 邮箱 / 部门 / 职位都能命中） */
+    var searchTimer = null;
+    function searchUsers(q, cb) {
+      if (searchTimer) { clearTimeout(searchTimer); searchTimer = null; }
+      var ql = (q || "").trim();
+      if (!ql) {
+        cb(members.slice(0, 8));
+        return;
+      }
+      searchTimer = setTimeout(function () {
+        fetch("/api/search?type=user&q=" + encodeURIComponent(ql),
+          { headers: { Accept: "application/json" } })
+          .then(function (r) { return r.json().catch(function () { return {}; }); })
+          .then(function (d) {
+            var results = (d && d.results) ? d.results : [];
+            cb(results);
+          })
+          .catch(function () { cb([]); });
+      }, 200);
     }
 
     function cmRender() {
@@ -820,13 +844,24 @@
       cm.active = true;
       cm.start = pos - m[2].length - 1;
       cm.query = m[2];
-      cm.list = filterMembers(m[2]);
       cm.idx = 0;
+      // 先本地快速渲染一版，接口返回后再替换
+      cm.list = (m[2] ? members.filter(function (u) {
+        return ((u.name || "") + " " + u.email).toLowerCase().indexOf(m[2].toLowerCase()) !== -1;
+      }) : members).slice(0, 8);
       cmRender();
+      searchUsers(m[2], function (results) {
+        if (!cm.active) return;
+        cm.list = results.slice(0, 8);
+        cm.idx = 0;
+        cmRender();
+      });
     }
 
     function cmInsert(u) {
       var nm = u.name || u.email.split("@")[0];
+      // 把选中的人缓存起来，buildCommentHtml 用它把 @姓名 转成带 email 的链接
+      if (nm && u.email) mentionUserCache[nm] = u;
       var pos = input.selectionStart;
       var v = input.value;
       input.value = v.slice(0, cm.start) + "@" + nm + " " + v.slice(pos);

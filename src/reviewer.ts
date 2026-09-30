@@ -8,6 +8,7 @@ import type { CommitInfo } from "./git.js";
 import type { PushResult } from "./publisher.js";
 import { maskSecrets } from "./redact.js";
 import { recordAi } from "./log.js";
+import { recordTokenUsage } from "./db.js";
 
 const SEVERITY_DEF = `- "blocker": 阻塞级。会造成 bug / 崩溃 / 安全问题 / 明显逻辑错误，或与本次变更直接相关的严重缺陷。
 - "warning": 需要注意。潜在风险、可维护性差、命名混乱、遗漏边界处理，但不必然导致故障。
@@ -57,11 +58,11 @@ function buildPrompt(file: DiffFile): string {
 
 /** 调用 OpenAI/DeepSeek 兼容的 chat/completions 接口。
  *  opts.json=false 时关闭 JSON 模式（自由文本，供 skill 生成复用）；opts.system 追加 system 消息；
- *  opts.source/target 仅用于写模型请求日志（评审缺省 source=review）。 */
+ *  opts.source/target/email 仅用于写模型请求日志与 token 用量归属（评审缺省 source=review）。 */
 export async function callModel(
   model: ModelConfig,
   userPrompt: string,
-  opts: { json?: boolean; system?: string; source?: "review" | "skill"; target?: string } = {}
+  opts: { json?: boolean; system?: string; source?: "review" | "skill"; target?: string; email?: string } = {}
 ): Promise<string> {
   const apiKey = resolveApiKey(model);
   if (!apiKey) {
@@ -81,6 +82,8 @@ export async function callModel(
   let ok = false;
   let replyChars = 0;
   let error: string | undefined;
+  // 接口回传的真实 token 用量（非流式响应默认带 usage），用于 Token 面板统计
+  let usage: { prompt: number; completion: number; total: number } | undefined;
   try {
     const res = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
@@ -103,6 +106,12 @@ export async function callModel(
     }
     const data: any = await res.json();
     const content = String(data?.choices?.[0]?.message?.content ?? "");
+    const u = data?.usage;
+    if (u) {
+      const prompt = Number(u.prompt_tokens) || 0;
+      const completion = Number(u.completion_tokens) || 0;
+      usage = { prompt, completion, total: Number(u.total_tokens) || prompt + completion };
+    }
     ok = true;
     replyChars = content.length;
     return content;
@@ -120,6 +129,16 @@ export async function callModel(
       replyChars,
       error,
     });
+    if (ok && usage && usage.total > 0) {
+      recordTokenUsage({
+        email: opts.email ?? "",
+        source: opts.source ?? "review",
+        model: model.model,
+        promptTokens: usage.prompt,
+        completionTokens: usage.completion,
+        totalTokens: usage.total,
+      });
+    }
   }
 }
 
@@ -178,8 +197,8 @@ function normalizeIssues(parsed: any, path: string): ReviewIssue[] {
 }
 
 /** 评审单个文件，返回该文件的结果 */
-async function reviewFile(model: ModelConfig, file: DiffFile): Promise<ReviewResult> {
-  const text = await callModel(model, buildPrompt(file), { target: file.path });
+async function reviewFile(model: ModelConfig, file: DiffFile, email?: string): Promise<ReviewResult> {
+  const text = await callModel(model, buildPrompt(file), { target: file.path, email });
   const parsed = extractJson(text);
   const summary =
     (parsed && typeof parsed === "object" && typeof (parsed as any).summary === "string"
@@ -304,12 +323,14 @@ export function writeReviewLog(result: ReviewResult, files: number): string | un
   }
 }
 
-/** 对整批文件评审，合并为一条结果（并落一份时间戳评审日志） */
+/** 对整批文件评审，合并为一条结果（并落一份时间戳评审日志）。
+ *  opts.email 为触发人邮箱，仅用于把本次 token 用量归到本人（外部触发缺省不归属）。 */
 export async function reviewBatch(
   files: DiffFile[],
-  model: ModelConfig
+  model: ModelConfig,
+  opts: { email?: string } = {}
 ): Promise<ReviewResult> {
-  const perFile = await mapConcurrent(files, 3, (f) => reviewFile(model, f));
+  const perFile = await mapConcurrent(files, 3, (f) => reviewFile(model, f, opts.email));
   const issues = perFile
     .flatMap((r) => r.issues)
     .map((i) => ({

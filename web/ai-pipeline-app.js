@@ -71,13 +71,19 @@
     ".d-roles{margin-top:12px;border-top:1px solid var(--glass-line);padding-top:10px;}",
     ".d-roles-head{font:600 12px/18px var(--font-sans);color:var(--ink-soft);margin-bottom:8px;display:flex;align-items:center;gap:6px;position:relative;}",
     ".d-roles-list{display:flex;gap:8px;flex-wrap:wrap;}",
-    ".role-chip{position:relative;display:inline-flex;align-items:center;gap:6px;padding:4px 10px 4px 4px;",
+    ".role-chip{position:relative;display:inline-flex;align-items:center;gap:6px;padding:4px 4px 4px 4px;",
     "border:1px solid var(--glass-line);border-radius:999px;background:var(--glass-fill);cursor:pointer;white-space:nowrap;}",
     ".role-chip:hover{background:var(--paper-2);}",
     ".rc-chip-avatar{width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;",
     "color:#fff;font:600 11px/1 var(--font-sans);flex:none;box-shadow:0 1px 3px rgba(20,20,20,.15);cursor:pointer;overflow:hidden;}",
     ".rc-chip-avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%;}",
-    ".rc-chip-name{font:500 12px/18px var(--font-sans);color:var(--ink-soft);cursor:pointer;}",
+    ".rc-chip-name{font:500 12px/18px var(--font-sans);color:var(--ink-soft);cursor:pointer;padding-right:2px;}",
+    /* 执行角色 chip 上的删除图标（主管可见） */
+    ".rc-chip-del{flex:none;width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;",
+    "background:transparent;border:none;color:var(--muted);cursor:pointer;padding:0;font-size:12px;line-height:1;",
+    "transition:background .12s ease,color .12s ease;margin-right:4px;}",
+    ".rc-chip-del:hover{background:rgba(229,72,77,.14);color:#e5484d;}",
+    ".rc-chip-del:disabled{opacity:.5;cursor:not-allowed;}",
     /* hover 弹出的完整长方形卡片（即时显示 + 淡入位移过渡，鼠标可移入卡片） */
     ".role-card{position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%) translateY(-4px);",
     "display:flex;flex-wrap:wrap;width:352px;padding:12px 14px;border:1px solid var(--glass-line-strong);",
@@ -469,6 +475,41 @@
       chipNm.textContent = displayName(m);
       chip.appendChild(chipAv);
       chip.appendChild(chipNm);
+
+      /* chip 上的删除图标（主管直接可见，hover 变红，点了移除该执行角色） */
+      if (isSuper) {
+        var chipDel = document.createElement("button");
+        chipDel.type = "button";
+        chipDel.className = "rc-chip-del";
+        chipDel.title = "移出执行角色：" + displayName(m);
+        chipDel.textContent = "×";
+        chipDel.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!window.confirm("确定把 " + displayName(m) + " 移出本节点的执行角色？")) return;
+          chipDel.disabled = true;
+          fetch("/api/nodes/" + encodeURIComponent(node.id) + "/executors/" + encodeURIComponent(m.email), {
+            method: "DELETE"
+          }).then(function (res) {
+            if (res.status === 401) { location.href = "/login"; return null; }
+            return res.json().then(function (d) { return { ok: res.ok, data: d }; });
+          }).then(function (r) {
+            if (!r) return;
+            if (!r.ok) {
+              chipDel.disabled = false;
+              window.alert((r.data && r.data.error) || "移除失败");
+              return;
+            }
+            chip.remove();
+            refreshNodes();
+          }).catch(function () {
+            chipDel.disabled = false;
+            window.alert("网络异常");
+          });
+        });
+        chip.appendChild(chipDel);
+      }
+
       /* hover 弹出的完整长方形卡片：头像点击 → 展开移出按钮（仅主管） */
       var card = document.createElement("span");
       card.className = "role-card";

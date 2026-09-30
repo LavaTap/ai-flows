@@ -63,6 +63,18 @@ export function logFilePath(kind: LogKind): string {
   return join(LOG_DIR, kind === "ai" ? "ai.log" : "web.log");
 }
 
+/** 本地时间戳：ISO 形态 + 时区偏移（如 2026-09-30T22:11:46+08:00）
+    用本地时间而非 toISOString()（后者恒为 UTC，日志页会差一个时区） */
+export function localIso(d: Date = new Date()): string {
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  const offMin = -d.getTimezoneOffset(); // 东半球为正
+  const sign = offMin >= 0 ? "+" : "-";
+  const abs = Math.abs(offMin);
+  const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  return `${date}T${time}${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+}
+
 /** 行序列化：单行 JSON（换行符被 JSON 转义，天然防换行注入） */
 export function formatEntry(entry: LogEntry): string {
   return JSON.stringify(entry);
@@ -109,18 +121,18 @@ function rotate(file: string): void {
   }
 }
 
-/** 记一条模型请求日志（时间由本函数补） */
+/** 记一条模型请求日志（时间由本函数补，按本地时区） */
 export function recordAi(entry: Omit<AiLogEntry, "at">): void {
   appendLog("ai", {
-    at: new Date().toISOString(),
+    at: localIso(),
     ...entry,
     ...(entry.error ? { error: maskSecrets(entry.error) } : {}),
   });
 }
 
-/** 记一条网页访问日志（时间由本函数补） */
+/** 记一条网页访问日志（时间由本函数补，按本地时区） */
 export function recordWeb(entry: Omit<WebLogEntry, "at">): void {
-  appendLog("web", { at: new Date().toISOString(), ...entry });
+  appendLog("web", { at: localIso(), ...entry });
 }
 
 /** 读某个日志文件末尾若干条（新的在后）。文件不存在或无有效行返回空数组 */
