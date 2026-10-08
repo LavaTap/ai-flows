@@ -25,6 +25,21 @@
 
 `run` 缺省**不推送**：评审通过后需在评审页面输入 commit 信息并点「确认提交」，或加 `--push` 由命令行直接推送。
 
+### pre-push 评审拦截与取消
+
+`install-hook` 会在目标仓库写入 `<repo>/.git/hooks/pre-push`，即「仓库评审拦截机制」：每次 `git push` 先跑 AI 评审并**始终拦截本次 push**，引导用户去评审页面点「确认提交」，由评审服务代为推送；当环境变量 `AI_REVIEW_INTERNAL_PUSH=1` 时直接放行（防止评审服务内部推送被 hook 循环拦截）。hook 生效要求仓库根目录存在 `ai-review.config.json`。
+
+| 操作 | 做法 |
+|---|---|
+| 安装 | `npx tsx src/index.ts install-hook`（已有 hook 会先备份为 `pre-push.bak-<时间戳>`） |
+| 取消（停用） | 把 `.git/hooks/pre-push` 改名为 `pre-push.disabled`，内容原样保留，随时可恢复 |
+| 恢复 | 把 `pre-push.disabled` 改名回 `pre-push` |
+| 查有没有装 | `Test-Path <repo>/.git/hooks/pre-push` |
+
+取消拦截**只影响** git push 的自动评审与拦截；`run` / `serve` / `platform` 等命令与评审链本身不受影响。
+
+当前已装 hook 的仓库：`d:/code/ai-flows`（已停用为 `pre-push.disabled`）、`d:/code/private/text-code`、`d:/code/private/Research-Crawler`、`d:/code/others/crepper`。
+
 ## 3. 退出码契约（不可改）
 
 | 码 | 含义 |

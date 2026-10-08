@@ -44,12 +44,13 @@ CREATE TABLE IF NOT EXISTS users (
 /* 仓库登记表：仓库管理页登记的本机目录（path 为绝对路径）+ 可选 GitHub 链接。
    管线通过 repo_id 引用，多个管线可复用同一仓库。 */
 CREATE TABLE IF NOT EXISTS repos (
-  ord        INTEGER NOT NULL,
-  id         TEXT PRIMARY KEY,
-  name       TEXT NOT NULL,
-  path       TEXT NOT NULL,
-  github_url TEXT,
-  created_at TEXT NOT NULL
+  ord         INTEGER NOT NULL,
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  path        TEXT NOT NULL,
+  github_url  TEXT,
+  owner_email TEXT,
+  created_at  TEXT NOT NULL
 );
 
 /* 管线表：每条管线独立（各自一套节点，节点通过 nodes.pipeline_id 归属）。

@@ -10,6 +10,7 @@
   var kind = "ai";
   var timer = null;
   var mounted = false;
+  var terminated = false;
 
   function byId(id) { return document.getElementById(id); }
 
@@ -89,13 +90,15 @@
   }
 
   function load() {
+    if (terminated) return;
     fetch("/api/logs?kind=" + kind + "&limit=200", { headers: { Accept: "application/json" } })
       .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
       .then(function (d) {
+        if (terminated) return;
         render(d.entries || []);
         byId("logUpdated").textContent = "更新于 " + new Date().toLocaleTimeString();
       })
-      .catch(function () { byId("logUpdated").textContent = "读取失败"; });
+      .catch(function () { if (!terminated) byId("logUpdated").textContent = "读取失败"; });
   }
 
   function setAuto(on) {
@@ -106,8 +109,57 @@
     byId("termLiveText").textContent = on ? "实时" : "已暂停";
   }
 
+  /** 终止平台服务（等价于启动脚本输入 quit）；成功后页面停更并提示重启 */
+  function terminate() {
+    if (!window.confirm(
+      "确定终止平台服务？\n\n这会立即关闭评审服务、平台服务和日志跟随进程（等价于启动脚本输入 quit），" +
+      "当前页面将无法再刷新。"
+    )) return;
+    var btn = byId("terminateBtn");
+    btn.disabled = true;
+    btn.textContent = "正在终止…";
+    fetch("/api/system/terminate", { method: "POST", headers: { Accept: "application/json" } })
+      .then(function (r) {
+        if (r.status === 403) throw new Error("仅主管可终止服务");
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(onTerminated)
+      .catch(function (e) {
+        btn.disabled = false;
+        btn.textContent = "终止服务";
+        window.alert("终止失败：" + e.message);
+      });
+  }
+
+  /** 终止成功后的收尾：停自动刷新、禁用交互、终端追加提示行 */
+  function onTerminated() {
+    terminated = true;
+    if (timer) { clearInterval(timer); timer = null; }
+    var autoBox = byId("autoRefresh");
+    if (autoBox) { autoBox.checked = false; autoBox.disabled = true; }
+    var refresh = byId("refreshBtn");
+    if (refresh) refresh.disabled = true;
+    var btn = byId("terminateBtn");
+    btn.disabled = true;
+    btn.textContent = "已终止";
+    byId("logUpdated").textContent = "服务已终止";
+    var live = byId("termLive");
+    if (live) live.classList.add("off");
+    byId("termLiveText").textContent = "已终止";
+    var line = document.createElement("div");
+    line.className = "term-line";
+    line.innerHTML = '<span class="t-err">平台服务已终止（等价于启动脚本 quit）。重新运行 start-platform.bat 可再次启动。</span>';
+    byId("termBody").appendChild(line);
+  }
+
   function init() {
     if (isSuper) byId("teamLink").style.display = "inline-block";
+    if (isSuper) {
+      var tbtn = byId("terminateBtn");
+      tbtn.hidden = false;
+      tbtn.addEventListener("click", terminate);
+    }
 
     var seg = byId("kindSeg");
     seg.addEventListener("click", function (e) {

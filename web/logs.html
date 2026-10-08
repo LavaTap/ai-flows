@@ -28,6 +28,10 @@
     .btn { padding: 7px 16px; border-radius: 8px; font: 500 12px/18px var(--font-sans); cursor: pointer;
       border: 1px solid var(--glass-line); background: var(--glass-fill); color: var(--ink-soft); white-space: nowrap; }
     .btn:hover { background: var(--paper-2); }
+    /* 终止服务：危险操作，红字红边 */
+    .btn.danger { color: var(--block); border-color: rgba(239,68,68,.45); }
+    .btn.danger:hover { background: rgba(239,68,68,.10); }
+    .btn.danger:disabled { opacity: .5; cursor: not-allowed; }
 
     /* ---- 终端面板 ---- */
     .term { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; overflow: hidden;
@@ -130,6 +134,7 @@
         <span class="logs-grow"></span>
         <label class="logs-auto"><input type="checkbox" id="autoRefresh" checked> 自动刷新（3 秒）</label>
         <button class="btn" id="refreshBtn" type="button">刷新</button>
+        <button class="btn danger" id="terminateBtn" type="button" hidden>终止服务</button>
         <span class="logs-updated" id="logUpdated"></span>
       </div>
       <div class="term">

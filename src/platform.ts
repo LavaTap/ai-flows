@@ -1,5 +1,6 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomBytes, randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname, basename, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -153,6 +154,28 @@ function pipelineGithub(pipeline: PipelineRecord | null | undefined): string {
   if (!repoId) return "";
   const gh = parseGithubRepo(loadRepo(repoId)?.githubUrl ?? "");
   return gh ? `${gh.owner}/${gh.repo}` : "";
+}
+
+/** 终止平台相关进程（等价于启动脚本 start-platform.bat 里输入 quit）：
+ *  杀掉所有 `src/index.ts serve|platform` 服务进程与 `src/index.ts logs --kind` 日志跟随进程。
+ *  本进程也在匹配范围内，故调用方必须先响应、再延时调用；用 detached PowerShell 执行，
+ *  脱离被杀的父进程后仍能完成全部清理（与 bat 的兜底清理口径一致）。 */
+function terminatePlatformProcesses(): void {
+  const ps =
+    "$ErrorActionPreference='SilentlyContinue';" +
+    "Get-CimInstance Win32_Process | Where-Object {" +
+    " ($_.CommandLine -match 'src/index\\.ts (serve|platform)(\\s|$)')" +
+    " -or ($_.CommandLine -match 'src/index\\.ts logs --kind')" +
+    " } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }";
+  try {
+    spawn("powershell", ["-NoProfile", "-Command", ps], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    }).unref();
+  } catch {
+    process.exit(0);
+  }
 }
 
 /** 解析管线 id 参数：缺省 / 无效时回退到第一条管线（管线列表非空） */
@@ -3316,6 +3339,23 @@ export async function startPlatformServer(
       const limitRaw = Number(u.searchParams.get("limit"));
       const limit = Math.min(Math.max(Number.isFinite(limitRaw) ? Math.floor(limitRaw) : 200, 1), 500);
       sendJson(res, 200, { kind, entries: readLogTail(kind, limit) });
+      return;
+    }
+
+    // 终止平台：等价于启动脚本输入 quit（杀掉 serve / platform / 日志跟随进程）。仅主管可操作。
+    if (path === "/api/system/terminate" && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      if (!canApprove(user)) {
+        sendJson(res, 403, { error: "仅主管可终止服务" });
+        return;
+      }
+      sendJson(res, 200, { ok: true });
+      // 先让响应 flush，再延时清理（清理会连本进程一起杀掉，故不能立即执行）
+      setTimeout(terminatePlatformProcesses, 300);
       return;
     }
 
