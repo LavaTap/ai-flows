@@ -1,0 +1,42 @@
+{
+  "name": "text-flow",
+  "nodes": [
+    {
+      "id": "01",
+      "department": "用户研究部",
+      "step": "产品调研",
+      "ready": true,
+      "status": "todo",
+      "runner": "research-crawler",
+      "requirementText": "爬取哔哩哔哩的“学生管理系统”视频top1 10条评论",
+      "outputDir": "ppt",
+      "lastResult": "平台重启导致执行中断，请重新执行"
+    },
+    {
+      "id": "02",
+      "department": "用户研究部",
+      "step": "产品策划案",
+      "ready": true,
+      "status": "todo",
+      "runner": "skill:product-manager",
+      "requirementText": ""
+    },
+    {
+      "id": "03",
+      "department": "程序中台",
+      "step": "AI 代码评审",
+      "ready": true,
+      "status": "todo",
+      "runner": "ai-review",
+      "lastResult": "平台重启导致执行中断，请重新执行",
+      "reportUrl": "http://127.0.0.1:4310/reports/review-mukzcdgf"
+    },
+    {
+      "id": "04",
+      "department": "平台运营部",
+      "step": "运营",
+      "ready": false,
+      "status": "todo"
+    }
+  ]
+}

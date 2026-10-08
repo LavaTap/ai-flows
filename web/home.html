@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>首页 · AI-FLOWS 平台</title>
+  <link rel="stylesheet" href="/ai-pipeline.css">
+  <script src="/user-menu.js" defer></script>
+  <style>
+    body { background: var(--paper); }
+
+    /* 搜索区：居中 */
+    .home-hero { text-align: center; margin-bottom: 28px; }
+    .home-title { font: 300 30px/40px var(--font-sans); color: var(--ink-soft); margin: 0 0 8px; }
+    .home-sub { font: 400 13px/20px var(--font-sans); color: var(--muted); margin: 0 0 26px; }
+
+    .type-seg { display: inline-flex; gap: 4px; background: var(--paper-2); border-radius: 999px; padding: 3px; margin-top: 12px; }
+    .type-seg button { border: 0; background: transparent; border-radius: 999px; cursor: pointer; padding: 6px 16px;
+      font: 500 12px/18px var(--font-sans); color: var(--muted); transition: background 150ms ease, color 150ms ease; }
+    .type-seg button:hover { color: var(--ink-soft); }
+    .type-seg button.on { background: var(--glass-fill); color: var(--led); box-shadow: 0 1px 2px rgba(15,23,42,.08); }
+
+    .search-box { display: flex; gap: 10px; align-items: center; }
+    .search-input { flex: 1; padding: 13px 18px; border: 1px solid var(--glass-line); border-radius: 12px;
+      background: var(--glass-fill); font: 400 14px/22px var(--font-sans); color: var(--ink); box-sizing: border-box;
+      transition: border-color 150ms ease, box-shadow 150ms ease; }
+    .search-input:focus { outline: none; border-color: var(--led); box-shadow: 0 0 0 3px var(--led-soft); }
+    .search-btn { padding: 13px 26px; border-radius: 12px; border: 1px solid var(--led); background: var(--led); color: #fff;
+      font: 500 13px/22px var(--font-sans); cursor: pointer; white-space: nowrap; }
+    .search-btn:hover { background: #4338ca; }
+
+    /* 结果区：固定高度，超出内部滚动，不撑开页面 */
+    .home-results { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px;
+      margin-top: 16px; overflow-y: auto; padding-right: 4px; }
+    .home-results::-webkit-scrollbar { width: 6px; }
+    .home-results::-webkit-scrollbar-thumb { background: var(--glass-line); border-radius: 3px; }
+    .home-results::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+    .home-wrap { max-width: 760px; margin: 0 auto; padding: 40px 24px 32px;
+      height: calc(100vh - 56px); display: flex; flex-direction: column; box-sizing: border-box; }
+    .home-hint { text-align: center; font: 400 13px/22px var(--font-sans); color: var(--muted-2); padding: 40px 0; }
+    .res-count { font: 400 12px/18px var(--font-sans); color: var(--muted); margin: 4px 2px 6px; text-align: left; }
+    .res-section-title { font: 600 12px/18px var(--font-sans); color: var(--muted); margin: 8px 2px 6px; text-transform: none;
+      display: flex; align-items: center; gap: 6px; }
+    .res-section-title .clear-hist { margin-left: auto; font: 400 11px/18px var(--font-sans); color: var(--muted);
+      cursor: pointer; background: none; border: none; padding: 0; }
+    .res-section-title .clear-hist:hover { color: var(--led); }
+
+    .res-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--glass-line);
+      border-radius: 12px; background: var(--glass-fill); text-decoration: none; transition: border-color 150ms ease; }
+    .res-row:hover { border-color: var(--led); }
+    .res-avatar { width: 38px; height: 38px; border-radius: 50%; flex: none; display: inline-flex; align-items: center;
+      justify-content: center; color: #fff; font: 600 15px/1 var(--font-sans); overflow: hidden;
+      box-shadow: 0 1px 3px rgba(20,20,20,.15); }
+    .res-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .res-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+    .res-title { font: 600 13.5px/20px var(--font-sans); color: var(--ink-soft); overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap; }
+    .res-meta { font: 400 11.5px/17px var(--font-sans); color: var(--muted); overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap; }
+    .res-meta .mono { font-family: var(--font-mono); color: var(--led); }
+    .res-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font: 500 11px/16px var(--font-sans); flex: none; }
+    .res-badge.open { background: var(--amber-soft); color: var(--amber); }
+    .res-badge.doing { background: var(--led-soft); color: var(--led); }
+    .res-badge.resolved { background: var(--teal-soft); color: var(--teal); }
+    .res-badge.role { background: var(--led-soft); color: var(--led); }
+    .res-badge.kb { background: var(--paper-2); color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <h1 class="brand-title">
+        <span class="tt-pipeline">AI-FLOWS</span>
+        <span class="tt-sep">/</span>
+        <span>首页</span>
+      </h1>
+    </div>
+    <div class="top-right">
+      <a class="nav-link active" href="/home">首页</a>
+      <a class="nav-link" href="/pipeline" target="_blank" rel="noopener">AI 管线</a>
+      <a class="nav-link" href="/tickets" target="_blank" rel="noopener">工单</a>
+      <a class="nav-link" href="/kb" target="_blank" rel="noopener">知识库</a>
+
+      <a class="nav-link" href="/team" id="teamLink" style="display:none;">团队管理</a>
+      <a class="nav-link" href="/chat" target="_blank" rel="noopener">AI 对话</a>
+      <div class="user-menu">
+        <span class="user-chip" id="userChip" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"><span class="avatar" aria-hidden="true"></span><span id="userName">未登录</span></span>
+        <div class="user-panel" id="userPanel" hidden>
+          <div class="user-panel-head">
+            <span class="avatar" aria-hidden="true"></span>
+            <div class="user-panel-meta">
+              <strong id="userPanelName">未登录</strong>
+              <span class="user-panel-email" id="userPanelEmail"></span>
+            </div>
+          </div>
+          <div class="user-panel-sep"></div>
+          <a class="user-panel-item" href="/account"><span class="user-panel-ico" aria-hidden="true">⚙</span>设置</a>
+          <div class="user-panel-sep"></div>
+          <button class="user-panel-item user-panel-logout" type="button"><span class="user-panel-ico" aria-hidden="true">⏻</span>退出登录</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="home-wrap">
+    <section class="home-hero">
+      <h2 class="home-title">搜索平台内容</h2>
+      <p class="home-sub">查员工、工单或知识库内容</p>
+      <div class="search-box">
+        <input id="q" class="search-input" type="search" placeholder="输入关键词搜索…" autocomplete="off">
+        <button id="go" class="search-btn" type="button">搜索</button>
+      </div>
+      <div class="type-seg" id="typeSeg">
+        <button type="button" data-type="all" class="on">全部</button>
+        <button type="button" data-type="user">员工</button>
+        <button type="button" data-type="ticket">工单</button>
+        <button type="button" data-type="kb">知识库</button>
+      </div>
+    </section>
+    <section class="home-results" id="results"></section>
+  </main>
+</body>
+</html>

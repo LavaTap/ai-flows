@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Token 面板 · AI-FLOWS 平台</title>
+  <link rel="stylesheet" href="/ai-pipeline.css">
+  <script src="/user-menu.js" defer></script>
+  <style>
+    /* 页面壳：左侧栏 + 主内容（与账号管理页一致） */
+    .page-shell{display:grid;grid-template-columns:220px 1fr;min-height:calc(100vh - 56px);}
+    .sidebar{position:sticky;top:56px;height:calc(100vh - 56px);overflow-y:auto;
+      border-right:1px solid var(--glass-line);background:var(--paper-1);padding:20px 12px;box-sizing:border-box;}
+    .side-title{font:700 11px/18px var(--font-sans);color:var(--muted);letter-spacing:1px;
+      text-transform:uppercase;padding:0 10px 8px;}
+    .side-nav{display:flex;flex-direction:column;gap:2px;}
+    .side-nav a{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;
+      font:500 13px/20px var(--font-sans);color:var(--copy);text-decoration:none;transition:all 120ms ease;}
+    .side-nav a:hover{background:var(--paper-2);color:var(--ink-soft);}
+    .side-nav a.active{background:var(--led-soft);color:var(--led);}
+    .main-content{padding:24px 36px 80px;min-width:0;}
+
+    .breadcrumb{display:flex;align-items:center;gap:8px;font:400 12px/18px var(--font-sans);color:var(--muted);margin-bottom:20px;}
+    .breadcrumb a{color:var(--muted);text-decoration:none;}
+    .breadcrumb a:hover{color:var(--led);}
+    .breadcrumb .sep{opacity:.5;}
+    .breadcrumb .current{color:var(--ink-soft);font-weight:500;}
+    .page-title{margin:0;font:700 22px/30px var(--font-sans);color:var(--ink);}
+    .page-title em{font-style:normal;color:var(--led);}
+    .page-sub{margin:6px 0 8px;font:400 13px/20px var(--font-sans);color:var(--muted);}
+
+    /* 去卡片化：分区用分隔线 + 标题（与账号/团队页一致） */
+    .section{padding:20px 0;border-bottom:1px solid var(--glass-line);}
+    .section:first-of-type{padding-top:4px;}
+    .section:last-of-type{border-bottom:none;}
+    .section h2{margin:0 0 16px;font:600 14px/22px var(--font-sans);color:var(--ink-soft);}
+
+    /* ---- 我的消耗：四张统计卡 ---- */
+    .stat-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;}
+    .stat{background:var(--glass-fill);border:1px solid var(--glass-line);border-radius:var(--radius-card);
+      padding:16px 18px;box-shadow:0 1px 2px rgba(15,23,42,.05),0 1px 3px rgba(15,23,42,.05);}
+    .stat-label{font:500 12px/18px var(--font-sans);color:var(--muted);}
+    .stat-num{margin-top:8px;font:700 26px/32px var(--font-mono);color:var(--ink);letter-spacing:-.5px;}
+    .stat-unit{margin-left:4px;font:500 12px/18px var(--font-sans);color:var(--muted-2);}
+    .stat.accent .stat-num{color:var(--led);}
+    .stat-note{margin-top:12px;font:400 12px/18px var(--font-sans);color:var(--muted-2);}
+
+    /* ---- 团队消耗：成员行 + 比例条 ---- */
+    .team-head{display:grid;grid-template-columns:220px 1fr 92px 92px 92px 100px;gap:12px;
+      padding:0 4px 8px;border-bottom:1px solid var(--glass-line);
+      font:600 11px/16px var(--font-sans);color:var(--muted);letter-spacing:.3px;}
+    .team-head span:not(:first-child){text-align:right;}
+    .team-row{display:grid;grid-template-columns:220px 1fr 92px 92px 92px 100px;gap:12px;align-items:center;
+      padding:10px 4px;border-bottom:1px solid var(--glass-line);}
+    .team-row:last-child{border-bottom:none;}
+    .team-row:hover{background:var(--paper-2);}
+    .team-who{display:flex;align-items:center;gap:10px;min-width:0;}
+    .team-avatar{width:28px;height:28px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
+      background:var(--led-soft);color:var(--led);font:600 12px/1 var(--font-sans);
+      background-size:cover;background-position:center;}
+    .team-meta{min-width:0;}
+    .team-name{font:600 13px/18px var(--font-sans);color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .team-dept{font:400 11px/16px var(--font-sans);color:var(--muted-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .team-bar{height:8px;border-radius:999px;background:var(--paper-2);overflow:hidden;}
+    .team-bar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--led),#7c6cf6);}
+    .team-num{text-align:right;font:500 12px/18px var(--font-mono);color:var(--copy);}
+    .team-num.total{color:var(--ink);font-weight:700;}
+    .team-empty{padding:20px 4px;font:400 13px/20px var(--font-sans);color:var(--muted-2);}
+
+    @media (max-width:900px){
+      .stat-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+      .team-head,.team-row{grid-template-columns:170px 1fr 80px 80px;}
+      .team-head span:nth-child(1),.team-row .team-bar{display:none;}
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <h1 class="brand-title">
+        <span class="tt-pipeline">AI-FLOWS</span>
+        <span class="tt-sep">/</span>
+        <span>Token 面板</span>
+      </h1>
+    </div>
+    <div class="top-right">
+      <a class="nav-link" href="/home">首页</a>
+      <a class="nav-link" href="/pipeline" target="_blank" rel="noopener">AI 管线</a>
+      <a class="nav-link" href="/tickets">工单</a>
+      <a class="nav-link" href="/kb" target="_blank" rel="noopener">知识库</a>
+
+      <a class="nav-link" href="/team" id="teamLink" style="display:none;">团队管理</a>
+      <a class="nav-link" href="/chat" target="_blank" rel="noopener">AI 对话</a>
+      <div class="user-menu">
+        <span class="user-chip" id="userChip" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"><span class="avatar" aria-hidden="true"></span><span id="userName">未登录</span></span>
+        <div class="user-panel" id="userPanel" hidden>
+          <div class="user-panel-head">
+            <span class="avatar" aria-hidden="true"></span>
+            <div class="user-panel-meta">
+              <strong id="userPanelName">未登录</strong>
+              <span class="user-panel-email" id="userPanelEmail"></span>
+            </div>
+          </div>
+          <div class="user-panel-sep"></div>
+          <a class="user-panel-item" href="/account"><span class="user-panel-ico" aria-hidden="true">⚙</span>设置</a>
+          <div class="user-panel-sep"></div>
+          <button class="user-panel-item user-panel-logout" type="button"><span class="user-panel-ico" aria-hidden="true">⏻</span>退出登录</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="page-shell">
+    <!-- 左侧设置栏 -->
+    <aside class="sidebar">
+      <div class="side-title">设置</div>
+      <nav class="side-nav">
+        <a href="/account/repo">管线设置</a>
+        <a href="/account/repos">仓库管理</a>
+        <a href="/account">账号管理</a>
+        <a href="/account/security">账号安全</a>
+        <a href="/logs">日志</a>
+        <a href="/tokens" class="active">Token 面板</a>
+      </nav>
+    </aside>
+
+    <!-- 主内容 -->
+    <div class="main-content">
+      <div class="breadcrumb">
+        <a href="/pipeline">管线</a>
+        <span class="sep">›</span>
+        <a href="/account">设置</a>
+        <span class="sep">›</span>
+        <span class="current">Token 面板</span>
+      </div>
+
+      <h1 class="page-title"><em>Token 消耗</em></h1>
+      <p class="page-sub">AI 调用（评审 / 对话 / 技能）的模型 token 用量，按接口回传的真实 usage 统计</p>
+
+      <!-- 我的消耗 -->
+      <div class="section">
+        <h2>我的消耗量</h2>
+        <div class="stat-grid" id="myStats"></div>
+        <div class="stat-note" id="myNote">加载中…</div>
+      </div>
+
+      <!-- 团队消耗（仅主管可见） -->
+      <div class="section" id="teamSection" hidden>
+        <h2>团队消耗量</h2>
+        <div class="team-head">
+          <span>成员</span>
+          <span>占比</span>
+          <span>今天</span>
+          <span>近 7 天</span>
+          <span>近 30 天</span>
+          <span>累计</span>
+        </div>
+        <div id="teamList"></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

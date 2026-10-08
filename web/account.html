@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>账号管理 · AI-FLOWS 平台</title>
+  <link rel="stylesheet" href="/ai-pipeline.css">
+  <script src="/user-menu.js" defer></script>
+  <style>
+    /* 页面壳：左侧栏 + 主内容 */
+    .page-shell{display:grid;grid-template-columns:220px 1fr;min-height:calc(100vh - 56px);}
+    .sidebar{position:sticky;top:56px;height:calc(100vh - 56px);overflow-y:auto;
+      border-right:1px solid var(--glass-line);background:var(--paper-1);padding:20px 12px;box-sizing:border-box;}
+    .side-title{font:700 11px/18px var(--font-sans);color:var(--muted);letter-spacing:1px;
+      text-transform:uppercase;padding:0 10px 8px;}
+    .side-nav{display:flex;flex-direction:column;gap:2px;}
+    .side-nav a{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;
+      font:500 13px/20px var(--font-sans);color:var(--copy);text-decoration:none;transition:all 120ms ease;}
+    .side-nav a:hover{background:var(--paper-2);color:var(--ink-soft);}
+    .side-nav a.active{background:var(--led-soft);color:var(--led);}
+    .main-content{padding:24px 36px 80px;min-width:0;}
+    .breadcrumb{display:flex;align-items:center;gap:8px;font:400 12px/18px var(--font-sans);color:var(--muted);margin-bottom:20px;}
+    .breadcrumb a{color:var(--muted);text-decoration:none;}
+    .breadcrumb a:hover{color:var(--led);}
+    .breadcrumb .sep{opacity:.5;}
+    .breadcrumb .current{color:var(--ink-soft);font-weight:500;}
+
+    /* 去卡片化：分区用分隔线 + 标题，无边框背景 */
+    .section{padding:20px 0;border-bottom:1px solid var(--glass-line);}
+    .section:first-of-type{padding-top:4px;}
+    .section:last-of-type{border-bottom:none;}
+    .section h2{margin:0 0 16px;font:600 14px/22px var(--font-sans);color:var(--ink-soft);}
+
+    /* 个人资料 */
+    .profile-row{display:flex;align-items:center;gap:20px;}
+    .profile-avatar{width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+      color:#fff;font:600 28px/1 var(--font-sans);box-shadow:0 4px 12px rgba(20,20,20,.15);flex:none;
+      background-size:cover;background-position:center;cursor:pointer;position:relative;overflow:hidden;}
+    .profile-avatar:hover::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,.35);}
+    .profile-avatar .cam{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.5);color:#fff;
+      font:500 10px/18px var(--font-sans);text-align:center;opacity:0;transition:opacity .15s;z-index:1;}
+    .profile-avatar:hover .cam{opacity:1;}
+    .profile-avatar img{width:100%;height:100%;object-fit:cover;}
+    .profile-info{flex:1;min-width:0;}
+    .profile-name{font:700 20px/28px var(--font-sans);color:var(--ink-soft);}
+    .profile-email{font:400 13px/20px var(--font-sans);color:var(--muted);margin-top:2px;}
+    .profile-meta{display:flex;gap:16px;margin-top:10px;flex-wrap:wrap;}
+    .meta-item{font:400 12px/18px var(--font-sans);color:var(--copy);}
+    .meta-item b{font-weight:600;color:var(--ink-soft);margin-right:4px;}
+    .badge{display:inline-block;padding:2px 8px;border-radius:999px;font:500 11px/16px var(--font-sans);}
+    .badge.supervisor{background:var(--led-soft);color:var(--led);}
+    .badge.staff{background:var(--teal-soft);color:var(--teal);}
+    .gh-section{display:flex;flex-direction:column;gap:12px;}
+    .gh-row{display:flex;align-items:center;gap:12px;}
+    .gh-icon{width:28px;height:28px;border-radius:50%;background:#24292f;display:flex;align-items:center;justify-content:center;
+      color:#fff;font:700 14px/1 var(--font-sans);flex:none;}
+    .gh-info{flex:1;min-width:0;}
+    .gh-label{font:600 13px/20px var(--font-sans);color:var(--ink-soft);}
+    .gh-value{font:400 12px/18px var(--font-sans);color:var(--muted);}
+    .gh-pending{background:var(--amber-soft);color:var(--amber);border:1px solid var(--amber-line);
+      border-radius:8px;padding:8px 12px;font:400 12px/18px var(--font-sans);}
+    .gh-input-row{display:flex;gap:8px;}
+    .gh-input-row input{flex:1;padding:8px 12px;border:1px solid var(--glass-line);border-radius:8px;
+      background:#ffffff;font:400 13px/20px var(--font-sans);color:var(--ink);font-family:var(--font-mono);}
+    .gh-input-row input:focus{outline:none;border-color:var(--led);box-shadow:0 0 0 3px var(--led-soft);}
+    .btn{padding:8px 16px;border-radius:8px;font:500 12px/18px var(--font-sans);cursor:pointer;
+      border:1px solid var(--glass-line);background:var(--glass-fill);color:var(--ink-soft);white-space:nowrap;}
+    .btn:hover{background:var(--paper-2);}
+    .btn.primary{background:var(--teal);color:#fff;border-color:var(--teal);}
+    .btn.primary:hover{background:#059669;}
+    .btn.danger{background:var(--block-soft);color:var(--block);border-color:rgba(239,68,68,.2);}
+    .btn.danger:hover{background:rgba(239,68,68,.18);}
+    .btn:disabled{opacity:.5;cursor:not-allowed;}
+    .breadcrumb{display:flex;align-items:center;gap:8px;font:400 12px/18px var(--font-sans);color:var(--muted);margin-bottom:16px;}
+    .breadcrumb a{color:var(--muted);text-decoration:none;}
+    .breadcrumb a:hover{color:var(--led);}
+    .breadcrumb .sep{opacity:.5;}
+    .breadcrumb .current{color:var(--ink-soft);font-weight:500;}
+
+    /* 头像裁剪弹窗 */
+    .crop-mask{position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;align-items:center;
+      justify-content:center;z-index:100;}
+    .crop-mask.show{display:flex;}
+    .crop-box{background:var(--glass-fill);border:1px solid var(--glass-line);border-radius:var(--radius-card);
+      padding:24px;width:420px;box-shadow:0 12px 40px rgba(15,23,42,.25);}
+    .crop-box h3{margin:0 0 16px;font:600 15px/22px var(--font-sans);color:var(--ink-soft);}
+    .crop-stage{position:relative;width:100%;height:320px;background:#0f172a;border-radius:10px;overflow:hidden;
+      margin-bottom:16px;display:flex;align-items:center;justify-content:center;}
+    .crop-stage canvas{max-width:100%;max-height:100%;display:block;}
+    .crop-preview{display:flex;align-items:center;gap:16px;margin-bottom:16px;}
+    .crop-preview .circle{width:56px;height:56px;border-radius:50%;overflow:hidden;border:2px solid var(--glass-line);
+      flex:none;background:#0f172a;}
+    .crop-preview .circle img{width:100%;height:100%;object-fit:cover;}
+    .crop-preview .tip{font:400 12px/18px var(--font-sans);color:var(--muted);}
+    .crop-actions{display:flex;gap:8px;justify-content:flex-end;}
+
+    /* GitHub 只读展示 */
+    .gh-ro{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--glass-line);
+      border-radius:10px;background:var(--paper-2);}
+    .gh-ro .gh-icon{width:32px;height:32px;}
+    .gh-ro-link{margin-left:auto;font:500 12px/18px var(--font-sans);color:var(--led);text-decoration:none;}
+    .gh-ro-link:hover{text-decoration:underline;}
+  </style>
+</head>
+<body>
+  <!-- 顶栏 -->
+  <header class="topbar">
+    <div class="brand">
+      <h1 class="brand-title">
+        <span class="tt-pipeline">AI-FLOWS</span>
+        <span class="tt-sep">/</span>
+        <span>账号管理</span>
+      </h1>
+    </div>
+    <div class="top-right">
+      <a href="/home" class="nav-link">首页</a>
+      <a href="/pipeline" class="nav-link" target="_blank" rel="noopener">AI 管线</a>
+      <a href="/tickets" class="nav-link" target="_blank" rel="noopener">工单</a>
+      <a href="/kb" class="nav-link" target="_blank" rel="noopener">知识库</a>
+
+      <a href="/team" id="teamLink" class="nav-link" style="display:none;">团队管理</a>
+      <a href="/chat" class="nav-link" target="_blank" rel="noopener">AI 对话</a>
+      <div class="user-menu">
+        <span class="user-chip" id="userChip" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"><span class="avatar" aria-hidden="true"></span><span id="userName">未登录</span></span>
+        <div class="user-panel" id="userPanel" hidden>
+          <div class="user-panel-head">
+            <span class="avatar" aria-hidden="true"></span>
+            <div class="user-panel-meta">
+              <strong id="userPanelName">未登录</strong>
+              <span class="user-panel-email" id="userPanelEmail"></span>
+            </div>
+          </div>
+          <div class="user-panel-sep"></div>
+          <a class="user-panel-item" href="/account"><span class="user-panel-ico" aria-hidden="true">⚙</span>设置</a>
+          <div class="user-panel-sep"></div>
+          <button class="user-panel-item user-panel-logout" type="button"><span class="user-panel-ico" aria-hidden="true">⏻</span>退出登录</button>
+    </div>
+  </header>
+
+  <div class="page-shell">
+    <!-- 左侧设置栏 -->
+    <aside class="sidebar">
+      <div class="side-title">设置</div>
+      <nav class="side-nav">
+        <a href="/account/repo">管线设置</a>
+        <a href="/account/repos">仓库管理</a>
+        <a href="/account" class="active">账号管理</a>
+        <a href="/account/security">账号安全</a>
+        <a href="/logs">日志</a>
+        <a href="/tokens">Token 面板</a>
+      </nav>
+    </aside>
+
+    <!-- 主内容 -->
+    <div class="main-content">
+      <div class="breadcrumb">
+        <a href="/pipeline">管线</a>
+        <span class="sep">›</span>
+        <span class="current">账号管理</span>
+      </div>
+
+      <h1 class="page-title"><em>我的账号</em></h1>
+      <p class="page-sub">管理你的个人资料与 GitHub 绑定</p>
+
+      <!-- 个人资料 -->
+      <div class="section">
+        <h2>个人资料</h2>
+        <div class="profile-row">
+          <div class="profile-avatar" id="avatar" title="点击更换头像">
+            <span class="cam">更换</span>
+          </div>
+          <div class="profile-info">
+            <div class="profile-name" id="nameEl"></div>
+            <div class="profile-email" id="emailEl"></div>
+            <div class="profile-meta">
+              <span class="meta-item"><b>部门</b><span id="deptEl"></span></span>
+              <span class="meta-item"><b>职位</b><span id="titleEl"></span></span>
+              <span class="meta-item"><span class="badge" id="roleBadge"></span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- GitHub 绑定（只读展示，操作去 /github-audit） -->
+      <div class="section">
+        <h2>GitHub 绑定</h2>
+        <div class="gh-ro" id="ghRo">
+          <div class="gh-icon">GH</div>
+          <div class="gh-info">
+            <div class="gh-label" id="ghLabel"></div>
+            <div class="gh-value" id="ghValue"></div>
+          </div>
+          <a href="/github-audit" class="gh-ro-link">去管理 →</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 隐藏文件选择 -->
+  <input type="file" id="avatarFile" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none">
+
+  <!-- 头像裁剪弹窗 -->
+  <div class="crop-mask" id="cropMask">
+    <div class="crop-box">
+      <h3>裁剪头像</h3>
+      <div class="crop-stage"><canvas id="cropCanvas"></canvas></div>
+      <div class="crop-preview">
+        <div class="circle"><img id="cropPreview" alt=""></div>
+        <span class="tip">拖动滑块缩放，圆形为最终效果</span>
+      </div>
+      <input type="range" id="cropScale" min="1" max="3" step="0.01" value="1" style="width:100%;margin-bottom:16px;">
+      <div class="crop-actions">
+        <button class="btn" id="cropCancel">取消</button>
+        <button class="btn primary" id="cropConfirm">确认上传</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

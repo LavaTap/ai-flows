@@ -1,3 +1,4 @@
+# 项目依赖
 node_modules/
 dist/
 .npm-cache/
@@ -5,7 +6,28 @@ dist/
 .DS_Store
 ai-review.config.json
 .env
+.ai-review-reports/
+review-report.md
+venv/
 
-# 其他的agents
-.agents/ui-ux-pro-max/
-.agents/writing-claude-md/
+# 运行期日志（AI 请求日志 / 网页访问日志，本地实时写入，不入版本库）
+logs/
+
+# 运行时数据：SQLite 三库（含 WAL/SHM 日志）与上传二进制，均不入版本库
+# 注意：db/*.json 是 SQLite 首次导入的种子数据，仍需跟踪，勿忽略
+db/*.sqlite
+db/*.sqlite-wal
+db/*.sqlite-shm
+db/*.sqlite-journal
+db/chat-uploads/
+db/ticket-uploads/
+db/avatars/
+
+# 其他借用的非原创agents
+.agents/skills/writing-claude-md/
+.agents/skills/skill-creator/
+.agents/skills/ui-ux-pro-max/
+
+.tmp-pptx-old/
+.tmp-pptx-export/
+ppt/

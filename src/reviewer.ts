@@ -1,13 +1,30 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { resolveApiKey, type ModelConfig, type TargetRemote } from "./config.js";
 import type { DiffFile } from "./collector.js";
 import type { ReviewIssue, ReviewResult, Severity } from "./gate.js";
 import type { CommitInfo } from "./git.js";
 import type { PushResult } from "./publisher.js";
 import { maskSecrets } from "./redact.js";
+import { recordAi } from "./log.js";
+import { recordTokenUsage } from "./db.js";
 
 const SEVERITY_DEF = `- "blocker": 阻塞级。会造成 bug / 崩溃 / 安全问题 / 明显逻辑错误，或与本次变更直接相关的严重缺陷。
 - "warning": 需要注意。潜在风险、可维护性差、命名混乱、遗漏边界处理，但不必然导致故障。
-- "info": 仅建议。风格、优化空间，不影响合入。`;
+- "info": 仅INFO。风格、优化空间，不影响合入。`;
+
+/** 允许的严重级别白名单：输出格式由代码强约束，不依赖 prompt 自觉 */
+const SEVERITIES: readonly Severity[] = ["blocker", "warning", "info"];
+/** 模型给出非法 severity 时的兜底级别（避免脏级别穿透门禁） */
+const SEVERITY_FALLBACK: Severity = "warning";
+/** 模型未给 category 时的兜底 */
+const CATEGORY_FALLBACK = "其他";
+
+/** 评审输出契约：字段定义由代码持有，prompt 仅引用；实际归一以 normalizeIssues 为准 */
+const OUTPUT_CONTRACT = `{"summary": "<本文件改动的一句话总结>", "issues": [
+  {"file": "<相对路径>", "lineStart": <起始行号>, "lineEnd": <结束行号>, "severity": "blocker|warning|info", "category": "<所属维度>", "message": "<问题描述>", "suggestion": "<修改INFO>"}
+]}`;
 
 /** 生成单个文件的评审 prompt */
 function buildPrompt(file: DiffFile): string {
@@ -27,10 +44,8 @@ function buildPrompt(file: DiffFile): string {
     ``,
     `要求：`,
     `- 只输出一个合法的 JSON，不要任何其他文字、代码块标记或解释。`,
-    `- JSON 结构：`,
-    `{"summary": "<本文件改动的一句话总结>", "issues": [`,
-    `  {"file": "<相对路径>", "lineStart": <起始行号>, "lineEnd": <结束行号>, "severity": "blocker|warning|info", "category": "<所属维度>", "message": "<问题描述>", "suggestion": "<修改建议>"}`,
-    `]}`,
+    `- JSON 结构（字段契约见代码常量 OUTPUT_CONTRACT，格式由下游归一器兜底）：`,
+    OUTPUT_CONTRACT,
     `- 行号取「变更后（新文件）」的行号。问题若跨多行，lineStart/lineEnd 表示起止行号；单行问题二者相等。`,
     `- 没有问题时 issues 返回空数组。没把握就别说，宁缺毋滥，降低误报。`,
     degradedNote,
@@ -41,10 +56,13 @@ function buildPrompt(file: DiffFile): string {
   ].join("\n");
 }
 
-/** 调用 OpenAI/DeepSeek 兼容的 chat/completions 接口 */
-async function callModel(
+/** 调用 OpenAI/DeepSeek 兼容的 chat/completions 接口。
+ *  opts.json=false 时关闭 JSON 模式（自由文本，供 skill 生成复用）；opts.system 追加 system 消息；
+ *  opts.source/target/email 仅用于写模型请求日志与 token 用量归属（评审缺省 source=review）。 */
+export async function callModel(
   model: ModelConfig,
-  userPrompt: string
+  userPrompt: string,
+  opts: { json?: boolean; system?: string; source?: "review" | "skill"; target?: string; email?: string } = {}
 ): Promise<string> {
   const apiKey = resolveApiKey(model);
   if (!apiKey) {
@@ -55,28 +73,73 @@ async function callModel(
   }
 
   const baseUrl = model.baseUrl.replace(/\/+$/, "");
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    signal: AbortSignal.timeout(model.timeoutMs ?? 120000),
-    body: JSON.stringify({
-      model: model.model,
-      messages: [{ role: "user", content: userPrompt }],
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-    }),
-  });
+  const messages: { role: string; content: string }[] = [];
+  if (opts.system) messages.push({ role: "system", content: opts.system });
+  messages.push({ role: "user", content: userPrompt });
+  // 模型请求日志：只记元数据（耗时 / 字数 / 成败），不落 prompt 正文
+  const started = Date.now();
+  const promptChars = userPrompt.length + (opts.system?.length ?? 0);
+  let ok = false;
+  let replyChars = 0;
+  let error: string | undefined;
+  // 接口回传的真实 token 用量（非流式响应默认带 usage），用于 Token 面板统计
+  let usage: { prompt: number; completion: number; total: number } | undefined;
+  try {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      signal: AbortSignal.timeout(model.timeoutMs ?? 120000),
+      body: JSON.stringify({
+        model: model.model,
+        messages,
+        temperature: 0.2,
+        ...(opts.json === false ? {} : { response_format: { type: "json_object" } }),
+      }),
+    });
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`模型接口 ${res.status} ${res.statusText}：${body.slice(0, 500)}`);
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`模型接口 ${res.status} ${res.statusText}：${body.slice(0, 500)}`);
+    }
+    const data: any = await res.json();
+    const content = String(data?.choices?.[0]?.message?.content ?? "");
+    const u = data?.usage;
+    if (u) {
+      const prompt = Number(u.prompt_tokens) || 0;
+      const completion = Number(u.completion_tokens) || 0;
+      usage = { prompt, completion, total: Number(u.total_tokens) || prompt + completion };
+    }
+    ok = true;
+    replyChars = content.length;
+    return content;
+  } catch (err: any) {
+    error = String(err?.message ?? err);
+    throw err;
+  } finally {
+    recordAi({
+      source: opts.source ?? "review",
+      model: model.model,
+      target: opts.target,
+      ms: Date.now() - started,
+      ok,
+      promptChars,
+      replyChars,
+      error,
+    });
+    if (ok && usage && usage.total > 0) {
+      recordTokenUsage({
+        email: opts.email ?? "",
+        source: opts.source ?? "review",
+        model: model.model,
+        promptTokens: usage.prompt,
+        completionTokens: usage.completion,
+        totalTokens: usage.total,
+      });
+    }
   }
-  const data: any = await res.json();
-  const content = data?.choices?.[0]?.message?.content ?? "";
-  return String(content);
 }
 
 /** 从模型输出中尽力提取 JSON */
@@ -111,26 +174,31 @@ function normalizeIssues(parsed: any, path: string): ReviewIssue[] {
   return arr
     .map((raw: any) => {
       if (!raw || typeof raw !== "object") return null;
-      const sev = String(raw.severity || "warning") as Severity;
-      // 兼容 lineStart/lineEnd 与旧 line 字段
+      // severity 走白名单小写归一：非法值兜底为 warning，避免脏级别穿透门禁
+      const sevRaw = String(raw.severity ?? "").trim().toLowerCase();
+      const severity = (SEVERITIES as readonly string[]).includes(sevRaw)
+        ? (sevRaw as Severity)
+        : SEVERITY_FALLBACK;
+      // 兼容 lineStart/lineEnd 与旧 line 字段，并保证 lineEnd 不小于 lineStart
       const lineStart = Number(raw.lineStart ?? raw.line) || 0;
-      const lineEnd = Number(raw.lineEnd ?? raw.lineStart ?? raw.line) || lineStart;
+      const lineEndRaw = Number(raw.lineEnd ?? raw.lineStart ?? raw.line) || lineStart;
+      const lineEnd = lineEndRaw >= lineStart ? lineEndRaw : lineStart;
       return {
         file: raw.file || path,
         line: lineStart,
         lineEnd: lineEnd !== lineStart ? lineEnd : undefined,
-        severity: sev,
-        category: raw.category || "其他",
-        message: String(raw.message || ""),
-        suggestion: raw.suggestion ? String(raw.suggestion) : undefined,
+        severity,
+        category: String(raw.category ?? "").trim() || CATEGORY_FALLBACK,
+        message: String(raw.message ?? "").trim(),
+        suggestion: raw.suggestion ? String(raw.suggestion).trim() : undefined,
       } as ReviewIssue;
     })
     .filter((i: ReviewIssue | null): i is ReviewIssue => i !== null && !!i.message);
 }
 
 /** 评审单个文件，返回该文件的结果 */
-async function reviewFile(model: ModelConfig, file: DiffFile): Promise<ReviewResult> {
-  const text = await callModel(model, buildPrompt(file));
+async function reviewFile(model: ModelConfig, file: DiffFile, email?: string): Promise<ReviewResult> {
+  const text = await callModel(model, buildPrompt(file), { target: file.path, email });
   const parsed = extractJson(text);
   const summary =
     (parsed && typeof parsed === "object" && typeof (parsed as any).summary === "string"
@@ -192,12 +260,77 @@ function buildSummary(files: DiffFile[], perFile: ReviewResult[]): string {
   return `共 ${files.length} 个文件参与评审：\n${lines.join("\n")}`;
 }
 
-/** 对整批文件评审，合并为一条结果 */
+/** 对数位补零（本地时区时间格式化用） */
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/** 本地时区时间戳，精确到秒：YYYYMMDDHHmmss（与 normalize-review.mjs 命名一致） */
+export function logStamp(d: Date = new Date()): string {
+  return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+}
+
+/** 评审日志目录：默认 ai-flows 仓库内 .agents/skills/ai-flows/log/code-review，可用 AI_REVIEW_LOG_DIR 覆盖。
+ *  按模块自身定位，不受 cwd 影响——评审其他仓库时日志仍落在 ai-flows skill 目录，不污染目标仓库。 */
+export function reviewLogDir(): string {
+  const override = process.env.AI_REVIEW_LOG_DIR;
+  if (override) return override;
+  // src/reviewer.ts → 上级即仓库根；dist/reviewer.js → 上级同样是仓库根
+  const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+  return join(repoRoot, ".agents", "skills", "ai-flows", "log", "code-review");
+}
+
+/** 写一份评审日志（时间戳命名，精确到秒）。失败不阻断评审，返回日志路径或 undefined。 */
+export function writeReviewLog(result: ReviewResult, files: number): string | undefined {
+  try {
+    const counts = { blocker: 0, warning: 0, info: 0 };
+    for (const i of result.issues) counts[i.severity]++;
+    const now = new Date();
+    const dir = reviewLogDir();
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, `${logStamp(now)}.log`);
+    const body = [
+      "# ai-review 评审规范输出日志",
+      `# 时间：${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())} ${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`,
+      `# 参与文件：${files}`,
+      `# 统计：total=${result.issues.length} blocker=${counts.blocker} warning=${counts.warning} info=${counts.info}`,
+      "--- 标准评审 JSON ---",
+      JSON.stringify(
+        {
+          summary: result.summary,
+          // 落盘用标准契约字段名（lineStart/lineEnd），与 normalize-review.mjs 一致
+          issues: result.issues.map((i) => ({
+            file: i.file,
+            lineStart: i.line,
+            lineEnd: i.lineEnd ?? i.line,
+            severity: i.severity,
+            category: i.category,
+            message: i.message,
+            ...(i.suggestion ? { suggestion: i.suggestion } : {}),
+          })),
+          counts,
+          total: result.issues.length,
+        },
+        null,
+        2
+      ),
+      "",
+    ].join("\n");
+    writeFileSync(file, body, "utf8");
+    return file;
+  } catch {
+    return undefined; // 日志失败不影响评审主流程
+  }
+}
+
+/** 对整批文件评审，合并为一条结果（并落一份时间戳评审日志）。
+ *  opts.email 为触发人邮箱，仅用于把本次 token 用量归到本人（外部触发缺省不归属）。 */
 export async function reviewBatch(
   files: DiffFile[],
-  model: ModelConfig
+  model: ModelConfig,
+  opts: { email?: string } = {}
 ): Promise<ReviewResult> {
-  const perFile = await mapConcurrent(files, 3, (f) => reviewFile(model, f));
+  const perFile = await mapConcurrent(files, 3, (f) => reviewFile(model, f, opts.email));
   const issues = perFile
     .flatMap((r) => r.issues)
     .map((i) => ({
@@ -205,7 +338,7 @@ export async function reviewBatch(
       message: maskSecrets(i.message),
       suggestion: i.suggestion ? maskSecrets(i.suggestion) : undefined,
     }));
-  return {
+  const result: ReviewResult = {
     passed: !issues.some((i) => i.severity === "blocker"),
     summary: maskSecrets(buildSummary(files, perFile)),
     issues,
@@ -214,6 +347,8 @@ export async function reviewBatch(
       degradedCount: perFile.reduce((n, r) => n + r.stats.degradedCount, 0),
     },
   };
+  writeReviewLog(result, files.length);
+  return result;
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -260,6 +395,16 @@ export interface DiffFileView {
   hunks: DiffHunkView[];
 }
 
+/** 仓库目录树节点（来自 GitHub Trees API 或本地 fs 递归） */
+export interface RepoTreeNode {
+  /** 相对仓库根的路径（目录含尾斜杠，文件不含） */
+  path: string;
+  /** "tree" 目录 / "blob" 文件 */
+  type: "tree" | "blob";
+  /** 文件大小（字节），目录恒为 0 */
+  size?: number;
+}
+
 /** 评审报告视图模型：模板渲染的唯一输入 */
 export interface ReportView {
   passed: boolean;
@@ -288,6 +433,8 @@ export interface ReportView {
   head?: CommitInfo;
   /** 代码变更视图：按文件拆分的 hunks，供右侧 diff 面板渲染 */
   diffFiles: DiffFileView[];
+  /** 仓库目录树（GitHub Trees API 优先，失败回退本地 fs 递归），供左侧目录树面板渲染；可能缺省 */
+  repoTree?: RepoTreeNode[];
 }
 
 function formatTime(d: Date): string {
@@ -363,7 +510,7 @@ export function formatReport(
   result: ReviewResult,
   files: DiffFile[],
   gate: { passed: boolean; blockers: ReviewIssue[] },
-  meta: { repo?: string; ref?: string; generatedAt?: Date; pushes?: PushResult[]; repoCwd?: string; targets?: TargetRemote[] } = {}
+  meta: { repo?: string; ref?: string; generatedAt?: Date; pushes?: PushResult[]; repoCwd?: string; targets?: TargetRemote[]; repoTree?: RepoTreeNode[] } = {}
 ): ReportView {
   const counts = { blocker: 0, warning: 0, info: 0 };
   for (const i of result.issues) {
@@ -397,5 +544,6 @@ export function formatReport(
     repoCwd: meta.repoCwd,
     targets: meta.targets,
     diffFiles: files.map((f) => ({ path: f.path, hunks: parseDiff(f.diff) })),
+    repoTree: meta.repoTree,
   };
 }

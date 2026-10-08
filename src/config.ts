@@ -40,6 +40,45 @@ export interface DiffConfig {
   maxFileLines?: number;
 }
 
+export interface ReviewsConfig {
+  /** 评审记录聚合扫描根目录列表（相对当前仓库根或绝对路径），递归查找 .ai-review-reports/ 下的报告 JSON */
+  scanRoots?: string[];
+  /** GitHub token 所在环境变量名（用于 Trees API 拉取仓库目录树，缺省 GH_TOKEN） */
+  gitHubTokenEnv?: string;
+}
+
+/** AI 对话页（/chat）的配置 */
+export interface ChatConfig {
+  /** 系统提示词，缺省为平台默认助手设定 */
+  systemPrompt?: string;
+  /** 拼进 prompt 的最近历史消息条数上限，缺省 50 */
+  maxHistory?: number;
+  /** 单次回复最大 token 数，缺省 2000 */
+  maxTokens?: number;
+  /** 采样温度，缺省 0.7 */
+  temperature?: number;
+  /** 未压缩历史原文累计字数超过该值时触发记忆压缩（调模型生成摘要落库），缺省 400 */
+  compressChars?: number;
+}
+
+/** 节点 01「产品调研」调用的外部调研 agent（Research-Crawler）配置 */
+export interface CrawlerConfig {
+  /** agent 项目根目录（绝对路径，或相对当前工作目录）；agent 在该目录内运行 */
+  root?: string;
+  /** 含脚本 skill 的执行根覆盖：键为 skill 目录名，缺省用仓库根 */
+  skillRoots?: Record<string, string>;
+  /** agent CLI 可执行文件，缺省 claude */
+  command?: string;
+  /** 传给 agent CLI 的参数；需求文本经 stdin 传入，不拼进命令行 */
+  args?: string[];
+  /** agent 产出目录名（相对 root），打包成 zip 的对象，缺省 output */
+  outputDir?: string;
+  /** agent 执行超时毫秒，缺省 600000（10 分钟） */
+  timeoutMs?: number;
+  /** 7-Zip 可执行文件路径；缺省空即按 PATH 与常见安装路径自动探测，找不到回退零依赖内置压缩 */
+  zipCommand?: string;
+}
+
 export interface ReviewConfig {
   diff: DiffConfig;
   model: ModelConfig;
@@ -48,6 +87,12 @@ export interface ReviewConfig {
   targets: TargetRemote[];
   /** 自定义评审规则（预留，后续可扩展） */
   rules?: Record<string, unknown>;
+  /** 评审平台相关配置（聚合扫描、目录树数据源等） */
+  reviews?: ReviewsConfig;
+  /** 节点 01 产品调研的调研 agent 配置 */
+  crawler?: CrawlerConfig;
+  /** AI 对话页（/chat）配置 */
+  chat?: ChatConfig;
 }
 
 const DEFAULT_CONFIG_PATH = "ai-review.config.json";
@@ -76,5 +121,24 @@ export function loadConfig(configPath?: string): ReviewConfig {
   cfg.diff.scope = cfg.diff.scope ?? "staged";
   cfg.diff.exclude = cfg.diff.exclude ?? [];
   cfg.diff.maxFileLines = cfg.diff.maxFileLines ?? 500;
+  cfg.reviews = cfg.reviews ?? {};
+  cfg.reviews.scanRoots = cfg.reviews.scanRoots ?? ["."];
+  cfg.reviews.gitHubTokenEnv = cfg.reviews.gitHubTokenEnv ?? "GH_TOKEN";
+  cfg.crawler = cfg.crawler ?? {};
+  cfg.crawler.root = cfg.crawler.root ?? "";
+  cfg.crawler.skillRoots = cfg.crawler.skillRoots ?? {};
+  cfg.crawler.command = cfg.crawler.command ?? "claude";
+  cfg.crawler.args = cfg.crawler.args ?? ["-p", "--permission-mode", "bypassPermissions"];
+  cfg.crawler.outputDir = cfg.crawler.outputDir ?? "output";
+  cfg.crawler.timeoutMs = cfg.crawler.timeoutMs ?? 600000;
+  cfg.crawler.zipCommand = cfg.crawler.zipCommand ?? "";
+  cfg.chat = cfg.chat ?? {};
+  cfg.chat.systemPrompt =
+    cfg.chat.systemPrompt ??
+    "你是 ai-flows 平台的 AI 助手，擅长代码评审、产品规划与技术方案。回答简洁专业，必要时给出代码示例。";
+  cfg.chat.maxHistory = cfg.chat.maxHistory ?? 50;
+  cfg.chat.maxTokens = cfg.chat.maxTokens ?? 2000;
+  cfg.chat.temperature = cfg.chat.temperature ?? 0.7;
+  cfg.chat.compressChars = cfg.chat.compressChars ?? 400;
   return cfg;
 }

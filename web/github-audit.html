@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GitHub 绑定 · AI-FLOWS 平台</title>
+  <link rel="stylesheet" href="/ai-pipeline.css">
+  <script src="/user-menu.js" defer></script>
+  <style>
+    /* 页面壳：左侧栏 + 主内容 */
+    .page-shell{display:grid;grid-template-columns:220px 1fr;min-height:calc(100vh - 56px);}
+    .sidebar{position:sticky;top:56px;height:calc(100vh - 56px);overflow-y:auto;
+      border-right:1px solid var(--glass-line);background:var(--paper-1);padding:20px 12px;box-sizing:border-box;}
+    .side-title{font:700 11px/18px var(--font-sans);color:var(--muted);letter-spacing:1px;
+      text-transform:uppercase;padding:0 10px 8px;}
+    .side-nav{display:flex;flex-direction:column;gap:2px;}
+    .side-nav a{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;
+      font:500 13px/20px var(--font-sans);color:var(--copy);text-decoration:none;transition:all 120ms ease;}
+    .side-nav a:hover{background:var(--paper-2);color:var(--ink-soft);}
+    .side-nav a.active{background:var(--led-soft);color:var(--led);}
+    .main-content{padding:24px 36px 80px;min-width:0;}
+    .breadcrumb{display:flex;align-items:center;gap:8px;font:400 12px/18px var(--font-sans);color:var(--muted);margin-bottom:20px;}
+    .breadcrumb a{color:var(--muted);text-decoration:none;}
+    .breadcrumb a:hover{color:var(--led);}
+    .breadcrumb .sep{opacity:.5;}
+    .breadcrumb .current{color:var(--ink-soft);font-weight:500;}
+
+    /* 去卡片化：分区用分隔线 + 标题 */
+    .section{padding:20px 0;border-bottom:1px solid var(--glass-line);}
+    .section:first-of-type{padding-top:4px;}
+    .section:last-of-type{border-bottom:none;}
+    .section h2{margin:0 0 16px;font:600 14px/22px var(--font-sans);color:var(--ink-soft);
+      display:flex;align-items:center;gap:8px;}
+    .section h2 .count{margin-left:auto;font:400 12px/18px var(--font-sans);color:var(--muted);font-weight:400;}
+
+    .btn{padding:8px 16px;border-radius:8px;font:500 12px/18px var(--font-sans);cursor:pointer;
+      border:1px solid var(--glass-line);background:var(--glass-fill);color:var(--ink-soft);white-space:nowrap;}
+    .btn:hover{background:var(--paper-2);}
+    .btn.primary{background:var(--teal);color:#fff;border-color:var(--teal);}
+    .btn.primary:hover{background:#059669;}
+    .btn.danger{background:var(--block-soft);color:var(--block);border-color:rgba(239,68,68,.2);}
+    .btn.danger:hover{background:rgba(239,68,68,.18);}
+    .btn:disabled{opacity:.5;cursor:not-allowed;}
+
+    /* 我的 GitHub 绑定 */
+    .gh-row{display:flex;align-items:center;gap:12px;}
+    .gh-icon{width:32px;height:32px;border-radius:50%;background:#24292f;display:flex;align-items:center;justify-content:center;
+      color:#fff;font:700 14px/1 var(--font-sans);flex:none;}
+    .gh-info{flex:1;min-width:0;}
+    .gh-label{font:600 13px/20px var(--font-sans);color:var(--ink-soft);}
+    .gh-value{font:400 12px/18px var(--font-sans);color:var(--muted);}
+    .gh-pending{background:var(--amber-soft);color:var(--amber);border:1px solid var(--amber-line);
+      border-radius:8px;padding:8px 12px;font:400 12px/18px var(--font-sans);margin-top:12px;}
+    .gh-input-row{display:flex;gap:8px;margin-top:12px;}
+    .gh-input-row input{flex:1;padding:8px 12px;border:1px solid var(--glass-line);border-radius:8px;
+      background:#ffffff;font:400 13px/20px var(--font-sans);color:var(--ink);font-family:var(--font-mono);}
+    .gh-input-row input:focus{outline:none;border-color:var(--led);box-shadow:0 0 0 3px var(--led-soft);}
+    .gh-unbind-row{display:flex;justify-content:flex-end;margin-top:12px;}
+
+    /* 待审核列表 */
+    .pending-list{display:flex;flex-direction:column;gap:10px;}
+    .pending-item{display:flex;align-items:center;gap:14px;padding:12px 16px;
+      border:1px solid var(--amber-line);border-radius:12px;background:var(--amber-soft);}
+    .pending-avatar{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+      color:#fff;font:600 16px/1 var(--font-sans);flex:none;box-shadow:0 2px 6px rgba(20,20,20,.15);overflow:hidden;}
+    .pending-avatar img{width:100%;height:100%;object-fit:cover;}
+    .pending-info{flex:1;min-width:0;}
+    .pending-name{font:600 13px/20px var(--font-sans);color:var(--ink-soft);}
+    .pending-meta{font:400 12px/18px var(--font-sans);color:var(--muted);}
+    .pending-gh{font-family:var(--font-mono);color:var(--amber);font-weight:600;}
+    .pending-actions{display:flex;gap:8px;}
+    .empty-tip{padding:24px;text-align:center;color:var(--muted);font:400 13px/20px var(--font-sans);}
+
+    /* 成员 GitHub 表 */
+    .member-table{width:100%;border-collapse:separate;border-spacing:0;}
+    .member-table th{text-align:left;font:600 12px/18px var(--font-sans);color:var(--muted);
+      padding:8px 12px;border-bottom:1px solid var(--glass-line);font-weight:600;}
+    .member-table td{padding:10px 12px;border-bottom:1px solid var(--glass-line);
+      font:400 13px/20px var(--font-sans);color:var(--copy);vertical-align:middle;}
+    .member-table tr:last-child td{border-bottom:none;}
+    .m-cell-avatar{display:flex;align-items:center;gap:10px;}
+    .m-avatar-sm{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+      color:#fff;font:600 13px/1 var(--font-sans);flex:none;box-shadow:0 1px 4px rgba(20,20,20,.15);overflow:hidden;}
+    .m-avatar-sm img{width:100%;height:100%;object-fit:cover;}
+    .m-name{font:600 13px/20px var(--font-sans);color:var(--ink-soft);}
+    .m-email{font:400 11px/16px var(--font-sans);color:var(--muted);}
+    .gh-link{color:var(--teal);text-decoration:none;font-family:var(--font-mono);font-size:12px;}
+    .gh-link:hover{text-decoration:underline;}
+    .gh-pending-tag{display:inline-block;padding:2px 6px;border-radius:6px;
+      background:var(--amber-soft);color:var(--amber);font:500 11px/16px var(--font-sans);
+      border:1px solid var(--amber-line);}
+  </style>
+</head>
+<body>
+  <!-- 顶栏 -->
+  <header class="topbar">
+    <div class="brand">
+      <h1 class="brand-title">
+        <span class="tt-pipeline">AI-FLOWS</span>
+        <span class="tt-sep">/</span>
+        <span>GitHub 绑定</span>
+      </h1>
+    </div>
+    <div class="top-right">
+      <a href="/home" class="nav-link">首页</a>
+      <a href="/pipeline" class="nav-link" target="_blank" rel="noopener">AI 管线</a>
+      <a href="/tickets" class="nav-link" target="_blank" rel="noopener">工单</a>
+      <a href="/kb" class="nav-link" target="_blank" rel="noopener">知识库</a>
+
+      <a href="/team" id="teamLink" class="nav-link" style="display:none;">团队管理</a>
+      <a href="/chat" class="nav-link" target="_blank" rel="noopener">AI 对话</a>
+      <div class="user-menu">
+        <span class="user-chip" id="userChip" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"><span class="avatar" aria-hidden="true"></span><span id="userName">未登录</span></span>
+        <div class="user-panel" id="userPanel" hidden>
+          <div class="user-panel-head">
+            <span class="avatar" aria-hidden="true"></span>
+            <div class="user-panel-meta">
+              <strong id="userPanelName">未登录</strong>
+              <span class="user-panel-email" id="userPanelEmail"></span>
+            </div>
+          </div>
+          <div class="user-panel-sep"></div>
+          <a class="user-panel-item" href="/account"><span class="user-panel-ico" aria-hidden="true">⚙</span>设置</a>
+          <div class="user-panel-sep"></div>
+          <button class="user-panel-item user-panel-logout" type="button"><span class="user-panel-ico" aria-hidden="true">⏻</span>退出登录</button>
+    </div>
+  </header>
+
+  <div class="page-shell">
+    <!-- 左侧团队栏 -->
+    <aside class="sidebar">
+      <div class="side-title">团队</div>
+      <nav class="side-nav">
+        <a href="/team">团队管理</a>
+        <a href="/github-audit" class="active">GitHub 绑定</a>
+      </nav>
+    </aside>
+
+    <!-- 主内容 -->
+    <div class="main-content">
+      <div class="breadcrumb">
+        <a href="/pipeline">管线</a>
+        <span class="sep">›</span>
+        <span class="current">GitHub 绑定</span>
+      </div>
+
+      <h1 class="page-title"><em>GitHub 绑定管理</em></h1>
+      <p class="page-sub">绑定你的 GitHub 账号，或审核团队成员的绑定申请</p>
+
+      <!-- 我的 GitHub 绑定 -->
+      <div class="section">
+        <h2>我的 GitHub</h2>
+        <div id="myGh"></div>
+      </div>
+
+      <!-- 主管：待审核列表 -->
+      <div class="section" id="pendingCard" style="display:none;">
+        <h2>
+          待审核绑定
+          <span class="count" id="pendingCount"></span>
+        </h2>
+        <div class="pending-list" id="pendingList"></div>
+      </div>
+
+      <!-- 主管：成员 GitHub 一览 -->
+      <div class="section" id="membersCard" style="display:none;">
+        <h2>
+          团队成员 GitHub
+          <span class="count" id="memberCount"></span>
+        </h2>
+        <table class="member-table">
+          <thead>
+            <tr>
+              <th style="width:40%;">成员</th>
+              <th style="width:30%;">部门</th>
+              <th style="width:30%;">GitHub</th>
+            </tr>
+          </thead>
+          <tbody id="memberTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
