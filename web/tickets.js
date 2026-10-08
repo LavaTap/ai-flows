@@ -618,6 +618,15 @@
       editBtn.style.display = "none";
     }
 
+    // 删除按钮：提交人本人或主管可见
+    var delBtn = byId("delBtn");
+    if (t.authorEmail === user.email || isSuper) {
+      delBtn.style.display = "";
+      delBtn.onclick = function () { removeTicket(t); };
+    } else {
+      delBtn.style.display = "none";
+    }
+
     var meta = byId("dMeta");
     meta.innerHTML = "";
     // 提交人：头像 + 名字胶囊（悬停出用户卡片、点击跳主页）
@@ -754,6 +763,24 @@
         });
         renderDetail(ticket);
       });
+  }
+
+  /** 删除工单（提交人本人或主管；服务端二次校验权限） */
+  function removeTicket(t) {
+    if (!t) return;
+    if (!window.confirm("确定删除工单「" + t.title + "」？删除后不可恢复。")) return;
+    request("DELETE", "/api/tickets/" + encodeURIComponent(t.id))
+      .then(function (r) {
+        if (!r.ok) {
+          alert((r.data && r.data.error) || "删除失败");
+          return;
+        }
+        state.tickets = state.tickets.filter(function (x) { return x.id !== t.id; });
+        state.current = null;
+        showPanel("empty");
+        renderList();
+      })
+      .catch(function () { alert("删除失败，请稍后重试"); });
   }
 
   /* ────────────── 纯文本评论输入（@提及成员） ────────────── */

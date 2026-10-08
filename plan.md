@@ -46,6 +46,7 @@
 |---|---|---|
 | 查看管线全流程 | ✅ | ✅ |
 | 编辑本节点需求文本 / 上传附件 | ✅（限本部门） | ✅ |
+| 编辑 / 新建 / 挂载 / 删除节点需求工单 | ✅（限本部门） | ✅ |
 | 执行本部门节点（触发工作流 / skill） | ✅（限本部门） | ✅ |
 | 提交验收（执行中 → 待验收） | ✅（限本部门） | ✅ |
 | 通过验收 / 驳回（待验收 → 已执行 / 执行中） | ❌ | ✅（全部节点） |
@@ -53,12 +54,14 @@
 | 提交 bug 单 | ✅ | ✅ |
 | 查看 / 流转状态 / 评论工单 | ✅（限本部门） | ✅（全部部门） |
 | 指派工单负责人 | ✅（可见范围内） | ✅ |
+| 删除工单 | ✅（仅自己提交的） | ✅（全部部门） |
 | 查看 / 删除节点执行角色 | ❌ | ✅（全部节点） |
 | 撰写 / 编辑知识库文章 | ✅（自己的；主管可改全部） | ✅ |
+| 删除知识库文章 | ✅（仅自己撰写的） | ✅（全部） |
 | 查看知识库文章 | ✅（按撰写人设定的可见范围：全体 / 指定部门 / 仅自己） | ✅（全量） |
 | 查看本人消息（未读小红点） | ✅（仅本人） | ✅（仅本人） |
 
-> 判定只走 `platform.ts` 的 `canExecute` / `canApprove` / `canEditRequirement`；工单可见与操作判定走 `canAccessTicket` / `filterTicketsByUser`；知识库可见与编辑判定走 `canViewKb` / `filterKbByUser`；前端按钮显隐仅是展示。
+> 判定只走 `platform.ts` 的 `canExecute` / `canApprove` / `canEditRequirement`；工单可见与操作判定走 `canAccessTicket` / `filterTicketsByUser`；知识库可见与编辑判定走 `canViewKb` / `filterKbByUser`；删除判定在可见 / 编辑判定之后追加「提交人 / 撰写人本人 或 部门主管（`canApprove`）」；前端按钮显隐仅是展示。
 
 ## 6. 管线节点模型
 
@@ -124,6 +127,8 @@ ai-flows/
 14. **P13 运行日志 + 启动脚本多窗口**（已完成）：新增 `src/log.ts` 统一日志模块（零依赖）：`logs/ai.log`（模型请求）+ `logs/web.log`（网页访问）两本，JSON Lines 单行格式 `appendFileSync` 追加、超 1MB 轮转保留最后 500 行、坏行跳过；`LOG_DIR` 基于 `import.meta.url` 定位仓库根 `logs/`（src / dist 一致），serve / platform / CLI 多进程共写同一文件。埋点两类：① AI 请求日志在底层 `reviewer.callModel` 统一记录（评审 / skill / 对话全覆盖），字段含来源 `review|chat|skill`、模型、触发对象、耗时、成功与否、提示与回复字数、错误（经 `maskSecrets` 打码），不落 prompt 正文；对话侧流式每轮 + 记忆压缩各记一条（提示字数经纯函数 `countPromptChars` 只算文本段，多模态图片不计）。② 网页访问日志在 `platform.ts` / `serve.ts` 的 `res.on("finish")` 记录方法 / 路径 / 状态码 / 耗时 / 登录邮箱，`shouldLogWeb` 过滤静态资源与日志页自身轮询。CLI 新增 `logs` 子命令（`--kind ai|web|all`、`--lines N`、`--follow` 按字节偏移增量跟读，轮转自动归零）。平台新增 `/logs` 页（`web/logs.html` + `web/logs.js`：AI 请求 / 网页访问两档切换 + 自动刷新，仅登录可见，入口挂账号设置侧栏）+ `GET /api/logs?kind=&limit=`（尾部读取 + 解析容错）。`start-platform.bat` 重写为一键起 4 个进程：评审服务 4310 / 管线平台 4311（两个可见窗口）+ AI 请求日志跟读 / 网页访问日志跟读（隐性窗口 `start /B` 后台运行、不弹窗，输出丢空设备，日志统一在平台 `/logs` 页看）（退出按窗口标题 taskkill + 端口兜底 + 按命令行特征 PowerShell 兜底清理）；`logs/` 已 gitignore。冒烟全过（tsc 类型检查 / 单测 78 项 / 未登录 `/logs` 302、`/api/logs` 401 / 登录后日志页与接口 / CLI 三种 kind / 启动脚本试跑（2 可见窗口 + 2 隐性日志进程）+ quit 后无残留）。
 
 15. **P14 Token 面板**（已完成）：主库新增 `token_usage` 表（`email` / `source` / `model` / `prompt_tokens` / `completion_tokens` / `total_tokens` / `at`，按 `at` 与 `email` 建索引；故意不加外键——`saveUsers` 整表替换会级联清空用量，归属人靠 email 逻辑匹配，外部触发无账号时为空串），`src/db.ts` 增 `TokenUsageRecord` / `appendTokenUsage` / `recordTokenUsage`（自带 id 与 `localIso()` 时间戳、写失败静默）/ `loadTokenUsage`。用量只取模型接口回传的真实 `usage`（不按字符数估算），写入点三处：`reviewer.callModel`（评审 / skill，`opts.email` 归属）+ 平台对话流式轮次（`chunk.type === "usage"`）与记忆压缩（`callModelOnce` 的 `onUsage` 回调）。平台新增 Token 面板页 `/tokens`（`web/tokens.html` + `web/tokens.js`，注入 `window.__TOKENS__`，入口挂账号设置侧栏，与「账号管理」「日志」并列）+ `GET /api/tokens`（员工只回本人 `me` 且 `scope=self`、`team` 为空；主管回 `me` + 全员 `team`（`scope=team`），无归属记录单列「外部触发 / 程序中台」）。聚合口径走纯函数 `platform.ts` 的 `summarizeTokenUsage`：今天按本地日历日、近 7 天 / 近 30 天为滚动窗口、另附累计，非法时间戳只计累计。页面展示 4 张统计卡（今天 / 近 7 天 / 近 30 天 / 累计）+ 主管可见的团队表（成员 / 占比条 / 各时段 / 累计）。冒烟全过（tsc 类型检查 / 单测 88 项含新增 2 项 `summarizeTokenUsage` 用例 / 未登录 `/tokens` 302、`/api/tokens` 401 / 主管 `scope=team` 全员列表 / 员工 `scope=self` 且 team 为空 / 页面 HTML 注入与静态白名单）。
+
+16. **P15 节点需求工单管理 + 工单 / 知识库删除**（已完成）：节点面板「需求工单」行由只读链接升级为可管理：`node.canEdit`（= `canEditRequirement`，本部门员工 + 主管）时显示「编辑 / 新建 / 挂已有 / 删除」四个小按钮。接口四条：`GET /api/nodes/<id>/ticket/candidates?q=`（搜本部门视角可挂的工单，排除已指派与当前挂单，取 30 条）、`PUT /api/nodes/<id>/ticket`（编辑当前挂单：标题 + 富文本正文，`parseTicketBody` 统一校验标题非空 ≤100 字、正文经 `normalizeRichField` 净化且非空，改后通知 @提及的人）、`POST /api/nodes/<id>/ticket`（新建 `kind=requirement` 工单并挂单）、`DELETE /api/nodes/<id>/ticket`（删当前挂单后立刻 `ensureNodeRequirementTicket` 补一张空白单，守住「每节点必挂一张需求工单」不变量）、`POST /api/nodes/<id>/ticket/link`（把工单系统里已有的工单挂到节点）。挂单为替换式（`linkTicketToNode` 先把该节点旧挂单的 `nodeId` 清空再挂新的，避免一节点多单）；节点需求单识别口径放宽为 `findRequirementTicket` = `nodeId` 命中且无 `assigneeEmail`（`[执行] xxx` 指派单归执行人，不算节点需求单），因此「挂一张已有 bug 单」也能被正确识别、不会重复补单。工单系统 `/tickets` 与知识库 `/kb` 各加「删除」按钮：`DELETE /api/tickets/<id>`（`canAccessTicket` 后要求提交人本人或主管，评论随 `tickets.ticket_comments` 外键级联清理）、`DELETE /api/kb/<id>`（`canViewKb` 后要求撰写人本人或主管）；同时把工单编辑权限由「仅提交人」放宽为「提交人或部门主管」。前端：`web/ai-pipeline.html` 补引 `/richtext-editor.js`（节点工单编辑弹窗用 `window.RichEditor`），`ai-pipeline-app.js` 新增 `renderTicketRow` / `openNodeTicketEditor` / `openNodeTicketPicker` / `deleteNodeTicket` 与配套样式；`tickets.html|js`、`kb.html|js` 各加删除按钮与确认流程。冒烟全过（tsc 类型检查 / 单测 96 项 / 端口 4399 实跑：挂已有 → 还原、新建 → 编辑 → 删除补空白单 → 重新挂回原单、临时工单与临时知识库文章的删除后列表不再命中，测试数据全部清理、节点挂单恢复原 id）。
 
 ## 8. 待确认事项（实施时已按默认处理）
 

@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS users (
   department     TEXT,
   github         TEXT,
   github_pending TEXT,
-  avatar         TEXT
+  avatar         TEXT,
+  password_changed_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS nodes (
@@ -314,6 +315,8 @@ export function getDb(): Database.Database {
   // 老库补列（工单关联管线节点 / 指派给员工）
   ensureColumn(c, TICKETS_SCHEMA, "tickets", "node_id", "node_id TEXT");
   ensureColumn(c, TICKETS_SCHEMA, "tickets", "assignee_email", "assignee_email TEXT");
+  // 老库补列（账号密码上次修改时间，用于 10 天有效期提醒）
+  ensureColumn(c, "main", "users", "password_changed_at", "password_changed_at TEXT");
   // 老库补列（节点执行角色：显式添加名单 / 显式排除名单）
   ensureColumn(c, "main", "nodes", "executors", "executors TEXT");
   ensureColumn(c, "main", "nodes", "removed_executors", "removed_executors TEXT");

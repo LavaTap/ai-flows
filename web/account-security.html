@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>账号安全 · AI-FLOWS 平台</title>
+  <link rel="stylesheet" href="./ai-pipeline.css">
+  <script src="/user-menu.js" defer></script>
+  <style>
+    /* 页面壳：左侧栏 + 主内容（与账号管理页一致） */
+    .page-shell{display:grid;grid-template-columns:220px 1fr;min-height:calc(100vh - 56px);}
+    .sidebar{position:sticky;top:56px;height:calc(100vh - 56px);overflow-y:auto;
+      border-right:1px solid var(--glass-line);background:var(--paper-1);padding:20px 12px;box-sizing:border-box;}
+    .side-title{font:700 11px/18px var(--font-sans);color:var(--muted);letter-spacing:1px;
+      text-transform:uppercase;padding:0 10px 8px;}
+    .side-nav{display:flex;flex-direction:column;gap:2px;}
+    .side-nav a{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;
+      font:500 13px/20px var(--font-sans);color:var(--copy);text-decoration:none;transition:all 120ms ease;}
+    .side-nav a:hover{background:var(--paper-2);color:var(--ink-soft);}
+    .side-nav a.active{background:var(--led-soft);color:var(--led);}
+    .main-content{padding:24px 36px 80px;min-width:0;}
+    .breadcrumb{display:flex;align-items:center;gap:8px;font:400 12px/18px var(--font-sans);color:var(--muted);margin-bottom:16px;}
+    .breadcrumb a{color:var(--muted);text-decoration:none;}
+    .breadcrumb a:hover{color:var(--led);}
+    .breadcrumb .sep{opacity:.5;}
+    .breadcrumb .current{color:var(--ink-soft);font-weight:500;}
+
+    /* 去卡片化：分区用分隔线 + 标题 */
+    .section{padding:20px 0;border-bottom:1px solid var(--glass-line);}
+    .section:first-of-type{padding-top:4px;}
+    .section:last-of-type{border-bottom:none;}
+    .section h2{margin:0 0 16px;font:600 14px/22px var(--font-sans);color:var(--ink-soft);}
+
+    /* 密码状态条 */
+    .pw-state{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:10px;
+      border:1px solid var(--glass-line);background:var(--paper-2);}
+    .pw-state .led{width:8px;height:8px;border-radius:50%;background:var(--teal);flex:none;}
+    .pw-state.warn{border-color:var(--amber-line);background:var(--amber-soft);}
+    .pw-state.warn .led{background:var(--amber);}
+    .pw-state-text{flex:1;min-width:0;}
+    .pw-state-title{font:600 13px/20px var(--font-sans);color:var(--ink-soft);}
+    .pw-state-sub{font:400 12px/18px var(--font-sans);color:var(--muted);margin-top:2px;}
+
+    /* 表单 */
+    .form-row{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;max-width:360px;}
+    .form-row label{font:500 12px/18px var(--font-sans);color:var(--copy);}
+    .form-row input{padding:9px 12px;border:1px solid var(--glass-line);border-radius:8px;
+      background:var(--glass-fill);box-shadow:inset 0 1px 2px rgba(15,23,42,.04);
+      font:400 13px/20px var(--font-sans);color:var(--ink);font-family:var(--font-mono);}
+    .form-row input:focus{outline:none;border-color:var(--led);box-shadow:0 0 0 3px var(--led-soft);}
+    .form-hint{font:400 11px/17px var(--font-sans);color:var(--muted-2);}
+    .btn{padding:8px 16px;border-radius:8px;font:500 12px/18px var(--font-sans);cursor:pointer;
+      border:1px solid var(--glass-line);background:var(--glass-fill);color:var(--ink-soft);white-space:nowrap;}
+    .btn:hover{background:var(--paper-2);}
+    .btn.primary{background:var(--teal);color:#fff;border-color:var(--teal);}
+    .btn.primary:hover{background:#059669;}
+    .btn:disabled{opacity:.5;cursor:not-allowed;}
+    .form-msg{font:400 12px/18px var(--font-sans);margin-top:10px;min-height:18px;}
+    .form-msg.ok{color:var(--teal);}
+    .form-msg.err{color:var(--block);}
+  </style>
+</head>
+<body>
+  <!-- 顶栏 -->
+  <header class="topbar">
+    <div class="brand">
+      <h1 class="brand-title">
+        <span class="tt-pipeline">AI-FLOWS</span>
+        <span class="tt-sep">/</span>
+        <span>账号安全</span>
+      </h1>
+    </div>
+    <div class="top-right">
+      <a href="/home" class="nav-link">首页</a>
+      <a href="/pipeline" class="nav-link" target="_blank" rel="noopener">AI 管线</a>
+      <a href="/tickets" class="nav-link" target="_blank" rel="noopener">工单</a>
+      <a href="/kb" class="nav-link" target="_blank" rel="noopener">知识库</a>
+      <a href="/github-audit" class="nav-link">GitHub</a>
+      <a href="/team" id="teamLink" class="nav-link" style="display:none;">团队管理</a>
+      <a href="/chat" class="nav-link" target="_blank" rel="noopener">AI 对话</a>
+      <div class="user-menu">
+        <span class="user-chip" id="userChip" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"><span class="avatar" aria-hidden="true"></span><span id="userName">未登录</span></span>
+        <div class="user-panel" id="userPanel" hidden>
+          <div class="user-panel-head">
+            <span class="avatar" aria-hidden="true"></span>
+            <div class="user-panel-meta">
+              <strong id="userPanelName">未登录</strong>
+              <span class="user-panel-email" id="userPanelEmail"></span>
+            </div>
+          </div>
+          <div class="user-panel-sep"></div>
+          <a class="user-panel-item" href="/account"><span class="user-panel-ico" aria-hidden="true">⚙</span>设置</a>
+          <div class="user-panel-sep"></div>
+          <button class="user-panel-item user-panel-logout" type="button"><span class="user-panel-ico" aria-hidden="true">⏻</span>退出登录</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="page-shell">
+    <!-- 左侧设置栏 -->
+    <aside class="sidebar">
+      <div class="side-title">设置</div>
+      <nav class="side-nav">
+        <a href="/account">账号管理</a>
+        <a href="/account/security" class="active">账号安全</a>
+        <a href="/logs">日志</a>
+        <a href="/tokens">Token 面板</a>
+      </nav>
+    </aside>
+
+    <!-- 主内容 -->
+    <div class="main-content">
+      <div class="breadcrumb">
+        <a href="/pipeline">管线</a>
+        <span class="sep">›</span>
+        <span class="current">账号安全</span>
+      </div>
+
+      <h1 class="page-title"><em>账号安全</em></h1>
+      <p class="page-sub">管理你的登录密码，平台要求每 10 天更换一次</p>
+
+      <!-- 密码有效期 -->
+      <div class="section">
+        <h2>密码有效期</h2>
+        <div class="pw-state" id="pwState">
+          <span class="led" aria-hidden="true"></span>
+          <div class="pw-state-text">
+            <div class="pw-state-title" id="pwStateTitle">加载中…</div>
+            <div class="pw-state-sub" id="pwStateSub"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 修改密码 -->
+      <div class="section">
+        <h2>修改密码</h2>
+        <form id="pwForm" autocomplete="off">
+          <div class="form-row">
+            <label for="oldPassword">当前密码</label>
+            <input type="password" id="oldPassword" autocomplete="current-password" placeholder="请输入当前密码">
+          </div>
+          <div class="form-row">
+            <label for="newPassword">新密码</label>
+            <input type="password" id="newPassword" autocomplete="new-password" placeholder="请输入新密码">
+            <span class="form-hint" id="newHint"></span>
+          </div>
+          <div class="form-row">
+            <label for="confirmPassword">确认新密码</label>
+            <input type="password" id="confirmPassword" autocomplete="new-password" placeholder="再次输入新密码">
+          </div>
+          <button class="btn primary" type="submit" id="pwSubmit">保存新密码</button>
+          <div class="form-msg" id="pwMsg"></div>
+        </form>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

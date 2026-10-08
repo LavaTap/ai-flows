@@ -156,6 +156,15 @@
       editBtn.style.display = "none";
     }
 
+    // 删除按钮：撰写人本人或主管可见
+    var delBtn = byId("delBtn");
+    if (a.canEdit) {
+      delBtn.style.display = "";
+      delBtn.onclick = function () { removeArticle(a); };
+    } else {
+      delBtn.style.display = "none";
+    }
+
     var meta = byId("dMeta");
     meta.innerHTML = "";
     var authorSpan = document.createElement("span");
@@ -334,6 +343,24 @@
       err.textContent = "保存失败，请稍后重试";
       err.hidden = false;
     });
+  }
+
+  /** 删除文章（撰写人本人或主管；服务端二次校验权限） */
+  function removeArticle(a) {
+    if (!a) return;
+    if (!window.confirm("确定删除文章「" + a.title + "」？删除后不可恢复。")) return;
+    request("DELETE", "/api/kb/" + encodeURIComponent(a.id))
+      .then(function (r) {
+        if (!r.ok) {
+          alert((r.data && r.data.error) || "删除失败");
+          return;
+        }
+        state.articles = state.articles.filter(function (x) { return x.id !== a.id; });
+        state.current = null;
+        showPanel("empty");
+        renderList();
+      })
+      .catch(function () { alert("删除失败，请稍后重试"); });
   }
 
   function onCancelEdit() {

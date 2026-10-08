@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DB_DIR, getDb } from "./sqlite.js";
 import { localIso } from "./log.js";
+import { hashPassword, verifyPassword } from "./password.js";
 
 export { DB_DIR };
 
@@ -39,6 +40,8 @@ export interface UserAccount {
   githubPending?: string;
   /** 自定义头像文件名（落 db/avatars/<file>，缺省用首字头像） */
   avatar?: string;
+  /** 上次修改密码时间（ISO；为空表示从未改过，按「从今天起算」处理） */
+  passwordChangedAt?: string;
 }
 
 /** AI 对话账号投影（表 chat_accounts，email 主键并外键指向 users.email）。
@@ -527,6 +530,7 @@ interface UserRow {
   github: string | null;
   github_pending: string | null;
   avatar: string | null;
+  password_changed_at: string | null;
 }
 
 function rowToUser(r: UserRow): UserAccount {
@@ -541,6 +545,7 @@ function rowToUser(r: UserRow): UserAccount {
   if (r.github != null) u.github = r.github;
   if (r.github_pending != null) u.githubPending = r.github_pending;
   if (r.avatar != null) u.avatar = r.avatar;
+  if (r.password_changed_at != null) u.passwordChangedAt = r.password_changed_at;
   return u;
 }
 
@@ -783,6 +788,7 @@ function userParams(u: UserAccount, ord: number): Record<string, unknown> {
     github: u.github ?? null,
     githubPending: u.githubPending ?? null,
     avatar: u.avatar ?? null,
+    passwordChangedAt: u.passwordChangedAt ?? null,
   };
 }
 
@@ -1092,12 +1098,39 @@ export function setUserProfile(
   return loadUsers().find((u) => u.email === email) ?? null;
 }
 
-/** 邮箱 + 密码校验，命中返回账号，否则 null */
+/** 邮箱 + 密码校验，命中返回账号，否则 null（兼容旧明文与新 scrypt 哈希） */
 export function authenticate(email: string, password: string): UserAccount | null {
   const target = email.trim().toLowerCase();
   const user = loadUsers().find((u) => u.email === target);
-  if (!user || user.password !== password) return null;
+  if (!user || !verifyPassword(user.password, password)) return null;
   return user;
+}
+
+/** 修改本人密码：落加盐 scrypt 哈希并记录修改时刻；账号不存在返回 null */
+export function setPassword(email: string, newPassword: string): UserAccount | null {
+  const c = db();
+  const row = c.prepare("SELECT * FROM users WHERE email = ?").get(email) as UserRow | undefined;
+  if (!row) return null;
+  const hashed = hashPassword(newPassword);
+  const changedAt = new Date().toISOString();
+  c.prepare("UPDATE users SET password = ?, password_changed_at = ? WHERE email = ?").run(
+    hashed,
+    changedAt,
+    email
+  );
+  return loadUsers().find((u) => u.email === email) ?? null;
+}
+
+/** 为从未改过密码的账号补基线时间戳（登录时调用，「从今天起算」有效期）。
+ *  已有基线则不再改动；账号不存在返回 null */
+export function ensurePasswordBaseline(email: string): UserAccount | null {
+  const c = db();
+  const row = c.prepare("SELECT * FROM users WHERE email = ?").get(email) as UserRow | undefined;
+  if (!row) return null;
+  if (row.password_changed_at) return rowToUser(row);
+  const at = new Date().toISOString();
+  c.prepare("UPDATE users SET password_changed_at = ? WHERE email = ?").run(at, email);
+  return { ...rowToUser(row), passwordChangedAt: at };
 }
 
 // ============ 管线 ============

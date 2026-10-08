@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname, basename, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, loadTickets, appendTicket, updateTicket, deleteTicket, loadPlatformMessages, appendPlatformMessage, markMessageRead, markAllMessagesRead, loadKbArticles, appendKbArticle, updateKbArticle, deleteKbArticle, TICKET_IMAGES_DIR, AVATARS_DIR, CHAT_UPLOADS_DIR, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, recordTokenUsage, loadTokenUsage, type TokenUsageRecord, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel, type ChatAttachment, type ChatRef, type ChatSkillCall, type PlatformMessage, type MessageType, type KbArticle, type KbVisibility } from "./db.js";
+import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, setPassword, ensurePasswordBaseline, loadTickets, appendTicket, updateTicket, deleteTicket, loadPlatformMessages, appendPlatformMessage, markMessageRead, markAllMessagesRead, loadKbArticles, appendKbArticle, updateKbArticle, deleteKbArticle, TICKET_IMAGES_DIR, AVATARS_DIR, CHAT_UPLOADS_DIR, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, recordTokenUsage, loadTokenUsage, type TokenUsageRecord, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel, type ChatAttachment, type ChatRef, type ChatSkillCall, type PlatformMessage, type MessageType, type KbArticle, type KbVisibility } from "./db.js";
 import {
   callModelStream,
   callModelOnce,
@@ -21,6 +21,7 @@ import {
   type ToolCall,
 } from "./chat.js";
 import { createSession, destroySession, currentUser, sessionCookie, clearCookie, SESSION_COOKIE, parseCookies } from "./auth.js";
+import { passwordStatus, PASSWORD_MIN_LENGTH, PASSWORD_MAX_AGE_DAYS } from "./password.js";
 import { loadConfig, type CrawlerConfig, type ReviewConfig } from "./config.js";
 import { collectDiff } from "./collector.js";
 import { reviewBatch } from "./reviewer.js";
@@ -338,6 +339,20 @@ function linkTicketToNode(node: NodeState, ticketId: string): TicketRecord | nul
   });
 }
 
+/** 解析并校验工单标题 / 正文（新建 / 编辑 / 节点挂单共用）。成功返回 {title,content}，否则 {error} */
+async function parseTicketBody(
+  body: { title?: unknown; content?: unknown }
+): Promise<{ title: string; content: string } | { error: string }> {
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  if (!title || title.length > TICKET_TITLE_MAX) {
+    return { error: `标题不能为空且不超过 ${TICKET_TITLE_MAX} 字` };
+  }
+  const content = await normalizeRichField(body.content);
+  if (content === null) return { error: `正文过长（上限 ${TICKET_CONTENT_MAX} 字）` };
+  if (isEmptyRichHtml(content)) return { error: "正文不能为空" };
+  return { title, content };
+}
+
 /** 自动生成工单 id（t- 前缀 + 时间戳 + 随机串，与手动工单同形） */
 function newTicketId(): string {
   return `t-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`;
@@ -611,6 +626,7 @@ function toMessageView(m: PlatformMessage): MessageView & { link?: string } {
   if (m.refType === "ticket" && m.refId) link = `/tickets?id=${encodeURIComponent(m.refId)}`;
   else if (m.refType === "kb" && m.refId) link = `/kb?id=${encodeURIComponent(m.refId)}`;
   else if (m.refType === "node" && m.refId) link = `/pipeline#node-${encodeURIComponent(m.refId)}`;
+  else if (m.refType === "account" && m.refId) link = `/account/${encodeURIComponent(m.refId)}`;
   return {
     id: m.id,
     type: m.type,
@@ -769,6 +785,7 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   "/ai-review-report.css": { file: "ai-review-report.css", type: "text/css; charset=utf-8" },
   "/ai-review-report.js": { file: "ai-review-report.js", type: "text/javascript; charset=utf-8" },
   "/account.js": { file: "account.js", type: "text/javascript; charset=utf-8" },
+  "/account-security.js": { file: "account-security.js", type: "text/javascript; charset=utf-8" },
   "/team.js": { file: "team.js", type: "text/javascript; charset=utf-8" },
   "/tickets.js": { file: "tickets.js", type: "text/javascript; charset=utf-8" },
   "/github-audit.js": { file: "github-audit.js", type: "text/javascript; charset=utf-8" },
@@ -826,6 +843,39 @@ function accountHtml(user: UserAccount): string {
     isSupervisor: user.role === "supervisor",
   };
   const inject = `<script>window.__ACCOUNT__ = ${jsonForScript(boot)};</script>\n<script src="/account.js" defer></script>`;
+  return raw.replace("</body>", `${inject}\n</body>`);
+}
+
+/** 密码到期提醒：为账号补基线时间戳，超期则投递一条站内消息（同一到期周期只投一次） */
+function remindPasswordExpiry(user: UserAccount): void {
+  const fresh = ensurePasswordBaseline(user.email) ?? user;
+  const st = passwordStatus(fresh.passwordChangedAt);
+  if (!st.expired) return;
+  const id = `pwdex-${user.email}-${st.dueAt.slice(0, 10)}`;
+  if (loadPlatformMessages().some((m) => m.id === id)) return;
+  const msg: PlatformMessage = {
+    id,
+    email: user.email,
+    type: "system",
+    title: `登录密码已超过 ${PASSWORD_MAX_AGE_DAYS} 天未更换，请及时修改`,
+    body: `为保障账号安全，请前往「设置 › 账号安全」修改密码（到期日 ${st.dueAt.slice(0, 10)}）。`,
+    refType: "account",
+    refId: "security",
+    at: new Date().toISOString(),
+  };
+  appendPlatformMessage(msg);
+}
+
+/** 渲染账号安全页：读静态 account-security.html，注入登录用户 + 密码有效期状态 */
+function accountSecurityHtml(user: UserAccount): string {
+  const raw = readFileSync(join(WEB_DIR, "account-security.html"), "utf8");
+  const st = passwordStatus(user.passwordChangedAt);
+  const boot = {
+    user: toUserView(user),
+    isSupervisor: user.role === "supervisor",
+    security: { ...st, maxAgeDays: PASSWORD_MAX_AGE_DAYS, minLength: PASSWORD_MIN_LENGTH },
+  };
+  const inject = `<script>window.__ACCOUNT_SECURITY__ = ${jsonForScript(boot)};</script>\n<script src="/account-security.js" defer></script>`;
   return raw.replace("</body>", `${inject}\n</body>`);
 }
 
@@ -1542,6 +1592,12 @@ export async function startPlatformServer(
       }
       const token = createSession(user.email);
       res.setHeader("Set-Cookie", sessionCookie(token));
+      // 登录即对「密码超期未换」的账号投递站内提醒，并为其补有效期基线
+      try {
+        remindPasswordExpiry(user);
+      } catch {
+        /* 提醒失败不影响登录 */
+      }
       sendJson(res, 200, { ok: true, user: toUserView(user) });
       return;
     }
@@ -1839,6 +1895,73 @@ export async function startPlatformServer(
       return;
     }
 
+    // 账号安全页（修改本人密码；登录即可访问）
+    if (path === "/account/security" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        res.statusCode = 302;
+        res.setHeader("Location", "/login");
+        res.end();
+        return;
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(accountSecurityHtml(user));
+      return;
+    }
+
+    // 修改本人密码：校验旧密码 + 新密码规则，落 scrypt 哈希并重置有效期
+    if (path === "/api/account/password" && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      let oldPassword = "";
+      let newPassword = "";
+      try {
+        const body = JSON.parse(await readBody(req)) as { oldPassword?: unknown; newPassword?: unknown };
+        if (typeof body.oldPassword === "string") oldPassword = body.oldPassword;
+        if (typeof body.newPassword === "string") newPassword = body.newPassword;
+      } catch {
+        sendJson(res, 400, { error: "请求体不是合法 JSON" });
+        return;
+      }
+      if (!authenticate(user.email, oldPassword)) {
+        sendJson(res, 400, { error: "当前密码不正确" });
+        return;
+      }
+      if (newPassword.length < PASSWORD_MIN_LENGTH) {
+        sendJson(res, 400, { error: `新密码至少 ${PASSWORD_MIN_LENGTH} 位` });
+        return;
+      }
+      if (newPassword.length > 64) {
+        sendJson(res, 400, { error: "新密码不能超过 64 位" });
+        return;
+      }
+      if (newPassword === oldPassword) {
+        sendJson(res, 400, { error: "新密码不能与当前密码相同" });
+        return;
+      }
+      const updated = setPassword(user.email, newPassword);
+      if (!updated) {
+        sendJson(res, 404, { error: "账号不存在" });
+        return;
+      }
+      // 改密即把到期的未读提醒标记已读（同一周期不再提示）
+      for (const m of loadPlatformMessages()) {
+        if (m.email === user.email && !m.readAt && m.refType === "account" && m.refId === "security") {
+          markMessageRead(m.id, user.email);
+        }
+      }
+      const st = passwordStatus(updated.passwordChangedAt);
+      sendJson(res, 200, {
+        ok: true,
+        user: toUserView(updated),
+        security: { ...st, maxAgeDays: PASSWORD_MAX_AGE_DAYS, minLength: PASSWORD_MIN_LENGTH },
+      });
+      return;
+    }
+
     // 团队管理页（仅主管可访问）
     if (path === "/team" && req.method === "GET") {
       const user = currentUser(req);
@@ -1961,6 +2084,212 @@ export async function startPlatformServer(
       node.requirementText = text;
       saveNodes(nodes);
       sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
+      return;
+    }
+
+    // 节点需求工单候选：本部门视角可选的工单（排除已指派 / 当前挂单），供「挂已有工单」搜索
+    const ntc = path.match(/^\/api\/nodes\/([^/\\]+)\/ticket\/candidates$/);
+    if (ntc && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const node = loadNodes().find((n) => n.id === ntc[1]);
+      if (!node) {
+        sendJson(res, 404, { error: "节点不存在" });
+        return;
+      }
+      if (!canEditRequirement(user, node)) {
+        sendJson(res, 403, { error: "仅本部门员工或部门主管可管理节点需求工单" });
+        return;
+      }
+      const q = (u.searchParams.get("q") ?? "").trim().toLowerCase();
+      const cur = findRequirementTicket(node.id);
+      const names = userNameMap();
+      const nameOf = (e: string) => names.get(e) ?? e;
+      const list = filterTicketsByUser(loadTickets(), user)
+        .filter((t) => !t.assigneeEmail && (!cur || t.id !== cur.id))
+        .filter(
+          (t) =>
+            !q ||
+            [t.title, t.authorName, t.authorEmail].some((v) =>
+              (v ?? "").toLowerCase().includes(q)
+            )
+        )
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .slice(0, 30)
+        .map((t) => toTicketListItem(t, nameOf));
+      sendJson(res, 200, { tickets: list });
+      return;
+    }
+
+    // 节点需求工单：编辑标题/正文 / 新建并挂单 / 删除挂单（主管 + 本部门员工，与需求编辑同权限）
+    const ntm = path.match(/^\/api\/nodes\/([^/\\]+)\/ticket$/);
+    if (ntm) {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const node = loadNodes().find((n) => n.id === ntm[1]);
+      if (!node) {
+        sendJson(res, 404, { error: "节点不存在" });
+        return;
+      }
+      if (!canEditRequirement(user, node)) {
+        sendJson(res, 403, { error: "仅本部门员工或部门主管可管理节点需求工单" });
+        return;
+      }
+
+      // 编辑当前挂单工单
+      if (req.method === "PUT") {
+        const ticket = findRequirementTicket(node.id);
+        if (!ticket) {
+          sendJson(res, 404, { error: "该节点尚未挂需求工单" });
+          return;
+        }
+        let body: { title?: unknown; content?: unknown } = {};
+        try {
+          body = JSON.parse(await readBody(req, 64 * 1024)) as { title?: unknown; content?: unknown };
+        } catch {
+          sendJson(res, 400, { error: "请求体过大或不是合法 JSON" });
+          return;
+        }
+        const parsed = await parseTicketBody(body);
+        if ("error" in parsed) {
+          sendJson(res, 400, { error: parsed.error });
+          return;
+        }
+        const updated = updateTicket(ticket.id, (t) => {
+          t.title = parsed.title;
+          t.content = parsed.content;
+          t.images = collectTicketImages(parsed.content);
+          t.updatedAt = new Date().toISOString();
+        });
+        const senderName = user.name?.trim() || user.email.split("@")[0];
+        notifyMentioned(parsed.content, user.email, senderName, {
+          type: "ticket_mention",
+          title: `${senderName} 在工单「${parsed.title}」中@了你`,
+          body: htmlToPlainText(parsed.content).slice(0, 120),
+          refType: "ticket",
+          refId: ticket.id,
+        });
+        const fresh = loadNodes().find((n) => n.id === node.id) ?? node;
+        sendJson(res, 200, {
+          ticket: toTicketView(updated as TicketRecord, user),
+          node: toNodeView(user, fresh),
+        });
+        return;
+      }
+
+      // 新建工单并挂到节点（替换原挂单）
+      if (req.method === "POST") {
+        let body: { title?: unknown; content?: unknown } = {};
+        try {
+          body = JSON.parse(await readBody(req, 64 * 1024)) as { title?: unknown; content?: unknown };
+        } catch {
+          sendJson(res, 400, { error: "请求体过大或不是合法 JSON" });
+          return;
+        }
+        const parsed = await parseTicketBody(body);
+        if ("error" in parsed) {
+          sendJson(res, 400, { error: parsed.error });
+          return;
+        }
+        const now = new Date().toISOString();
+        const authorName = user.name?.trim() || user.email.split("@")[0];
+        const record: TicketRecord = {
+          id: newTicketId(),
+          kind: "requirement",
+          title: parsed.title,
+          content: parsed.content,
+          status: "open",
+          department: node.department,
+          authorName,
+          authorEmail: user.email,
+          createdAt: now,
+          updatedAt: now,
+          images: collectTicketImages(parsed.content),
+          comments: [],
+          nodeId: node.id,
+        };
+        appendTicket(record);
+        linkTicketToNode(node, record.id);
+        notifyMentioned(parsed.content, user.email, authorName, {
+          type: "ticket_mention",
+          title: `${authorName} 在工单「${parsed.title}」中@了你`,
+          body: htmlToPlainText(parsed.content).slice(0, 120),
+          refType: "ticket",
+          refId: record.id,
+        });
+        const fresh = loadNodes().find((n) => n.id === node.id) ?? node;
+        sendJson(res, 201, { ticket: toTicketView(record, user), node: toNodeView(user, fresh) });
+        return;
+      }
+
+      // 删除当前挂单工单（按「每节点必挂一张需求工单」不变量补一张空白单）
+      if (req.method === "DELETE") {
+        const ticket = findRequirementTicket(node.id);
+        if (!ticket) {
+          sendJson(res, 404, { error: "该节点尚未挂需求工单" });
+          return;
+        }
+        deleteTicket(ticket.id);
+        const fresh = ensureNodeRequirementTicket(loadNodes().find((n) => n.id === node.id) ?? node);
+        const reloaded = loadNodes().find((n) => n.id === node.id) ?? node;
+        sendJson(res, 200, {
+          ok: true,
+          deleted: ticket.id,
+          ticket: toTicketView(fresh, user),
+          node: toNodeView(user, reloaded),
+        });
+        return;
+      }
+    }
+
+    // 把工单系统里已有的工单挂到节点（主管 + 本部门员工，替换原挂单）
+    const ntl = path.match(/^\/api\/nodes\/([^/\\]+)\/ticket\/link$/);
+    if (ntl && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const node = loadNodes().find((n) => n.id === ntl[1]);
+      if (!node) {
+        sendJson(res, 404, { error: "节点不存在" });
+        return;
+      }
+      if (!canEditRequirement(user, node)) {
+        sendJson(res, 403, { error: "仅本部门员工或部门主管可管理节点需求工单" });
+        return;
+      }
+      let ticketId = "";
+      try {
+        const body = JSON.parse(await readBody(req)) as { ticketId?: unknown };
+        if (typeof body.ticketId === "string") ticketId = body.ticketId.trim();
+      } catch {
+        sendJson(res, 400, { error: "请求体不是合法 JSON" });
+        return;
+      }
+      const target = loadTickets().find((t) => t.id === ticketId);
+      if (!target) {
+        sendJson(res, 404, { error: "工单不存在" });
+        return;
+      }
+      if (!canAccessTicket(user, target)) {
+        sendJson(res, 403, { error: "仅能挂载本部门视角可见的工单" });
+        return;
+      }
+      if (target.assigneeEmail) {
+        sendJson(res, 400, { error: "已指派负责人的工单不能作为节点需求工单" });
+        return;
+      }
+      linkTicketToNode(node, target.id);
+      const fresh = loadNodes().find((n) => n.id === node.id) ?? node;
+      const updated = loadTickets().find((t) => t.id === target.id) as TicketRecord;
+      sendJson(res, 200, { ticket: toTicketView(updated, user), node: toNodeView(user, fresh) });
       return;
     }
 
@@ -2921,6 +3250,27 @@ export async function startPlatformServer(
       return;
     }
 
+    // 删除知识库文章（撰写人本人或主管；不可见按不存在处理）
+    if (kbm && req.method === "DELETE") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const article = loadKbArticles().find((a) => a.id === kbm[1]);
+      if (!article || !canViewKb(article, user)) {
+        sendJson(res, 404, { error: "文章不存在或不可见" });
+        return;
+      }
+      if (article.authorEmail !== user.email && !canApprove(user)) {
+        sendJson(res, 403, { error: "仅撰写人或部门主管可删除该文章" });
+        return;
+      }
+      deleteKbArticle(article.id);
+      sendJson(res, 200, { ok: true, id: article.id });
+      return;
+    }
+
     // 工单列表：按视角过滤（主管全量 / 员工本部门），按更新时间倒序
     if (path === "/api/tickets" && req.method === "GET") {
       const user = currentUser(req);
@@ -3227,8 +3577,8 @@ export async function startPlatformServer(
         sendJson(res, 403, { error: "仅本部门员工或部门主管可查看该工单" });
         return;
       }
-      if (ticket.authorEmail !== user.email) {
-        sendJson(res, 403, { error: "仅提交人可编辑工单" });
+      if (ticket.authorEmail !== user.email && !canApprove(user)) {
+        sendJson(res, 403, { error: "仅提交人或部门主管可编辑工单" });
         return;
       }
       let title = "";
@@ -3295,6 +3645,31 @@ export async function startPlatformServer(
         return;
       }
       sendJson(res, 200, { ticket: toTicketView(ticket, user) });
+      return;
+    }
+
+    // 删除工单（提交人本人或主管；不可见按不存在处理）
+    if (tdm && req.method === "DELETE") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const ticket = loadTickets().find((t) => t.id === tdm[1]);
+      if (!ticket) {
+        sendJson(res, 404, { error: "工单不存在" });
+        return;
+      }
+      if (!canAccessTicket(user, ticket)) {
+        sendJson(res, 403, { error: "仅本部门员工或部门主管可查看该工单" });
+        return;
+      }
+      if (ticket.authorEmail !== user.email && !canApprove(user)) {
+        sendJson(res, 403, { error: "仅提交人或部门主管可删除该工单" });
+        return;
+      }
+      deleteTicket(ticket.id);
+      sendJson(res, 200, { ok: true, id: ticket.id });
       return;
     }
 

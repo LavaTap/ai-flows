@@ -61,6 +61,7 @@
   }
 
   function linkOf(m) {
+    if (m.link) return m.link;
     if (!m.refId) return "";
     if (m.refType === "ticket") return "/tickets?id=" + encodeURIComponent(m.refId);
     if (m.refType === "kb") return "/kb?id=" + encodeURIComponent(m.refId);

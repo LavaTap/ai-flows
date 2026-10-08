@@ -165,6 +165,24 @@
     "border:1px solid var(--glass-line);background:var(--glass-fill);",
     "font:500 12px/18px var(--font-mono);color:var(--led);text-decoration:none;}",
     ".d-ticket a:hover{border-color:var(--led);}",
+    ".d-ticket-acts{display:inline-flex;gap:4px;margin-left:4px;}",
+    ".tk-mini{padding:2px 10px;border-radius:999px;border:1px solid var(--glass-line);",
+    "background:var(--glass-fill);color:var(--ink-soft);cursor:pointer;font:500 11px/16px var(--font-sans);}",
+    ".tk-mini:hover:not(:disabled){border-color:var(--led);color:var(--led);}",
+    ".tk-mini:disabled{opacity:.5;cursor:not-allowed;}",
+    ".tk-field{font:500 12px/18px var(--font-sans);color:var(--muted);margin:12px 0 6px;}",
+    ".tk-mtitle{width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid var(--glass-line);",
+    "border-radius:8px;background:#fff;font:400 13px/20px var(--font-sans);color:var(--ink);}",
+    ".tk-mtitle:focus{outline:none;border-color:var(--led);box-shadow:0 0 0 3px var(--led-soft);}",
+    ".tk-meditor{margin-top:6px;}",
+    ".tk-mlist{margin-top:8px;display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto;}",
+    ".tk-mrow{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--glass-line);",
+    "border-radius:10px;background:#fff;}",
+    ".tk-mrow:hover{border-color:var(--led);}",
+    ".tk-mmid{flex:1;min-width:0;}",
+    ".tk-mname{font:500 13px/19px var(--font-sans);color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}",
+    ".tk-mmeta{font:400 11px/16px var(--font-sans);color:var(--muted);margin-top:2px;}",
+    ".tk-merr{margin-top:8px;color:var(--block);font:400 12px/18px var(--font-sans);}",
     /* 弹窗（挂在 body，脱离缩放容器） */
     ".ai-modal{position:fixed;inset:0;background:rgba(20,20,20,.35);backdrop-filter:blur(3px);z-index:900;",
     "display:flex;align-items:center;justify-content:center;}",
@@ -264,6 +282,7 @@
   }
   function post(url, body) { return request("POST", url, body); }
   function put(url, body) { return request("PUT", url, body); }
+  function del(url, body) { return request("DELETE", url, body); }
 
   /* 登录失效统一跳登录页 */
   function handleAuth(res) {
@@ -1339,23 +1358,8 @@
     }
     wrap.appendChild(row1);
 
-    /* 工单引用：每个节点必挂一张需求工单，点击可跳转工单系统 */
-    if (node.ticketId) {
-      var tkRow = document.createElement("div");
-      tkRow.className = "d-ticket";
-      var tkLbl = document.createElement("span");
-      tkLbl.className = "lbl";
-      tkLbl.textContent = "需求工单";
-      var tkLink = document.createElement("a");
-      tkLink.href = "/tickets?id=" + encodeURIComponent(node.ticketId);
-      tkLink.target = "_blank";
-      tkLink.rel = "noopener";
-      tkLink.textContent = node.ticketId;
-      tkLink.title = "打开该节点的需求工单";
-      tkRow.appendChild(tkLbl);
-      tkRow.appendChild(tkLink);
-      wrap.appendChild(tkRow);
-    }
+    /* 工单引用：每个节点必挂一张需求工单，可跳转 / 编辑 / 新建 / 挂已有 / 删除 */
+    renderTicketRow(node, idx, wrap);
 
     /* 进度条（执行中且服务端已回报进度） */
     if (node.status === "running" && node.progress != null) {
@@ -1600,6 +1604,280 @@
       rn.textContent = "后台执行中，完成后可提交验收…";
       wrap.appendChild(rn);
     }
+  }
+
+  /* ────────────────────────── 节点需求工单管理 ────────────────────────── */
+
+  /** 判断净化前 HTML 是否为空（去标签后是否有文字） */
+  function plainTextOf(html) {
+    return String(html || "").replace(/<[^>]*>/g, "").replace(/&nbsp;/gi, " ").trim();
+  }
+
+  /** 拉一张工单详情（编辑节点工单前回填标题 / 正文） */
+  function loadTicketDetail(id, cb) {
+    fetch("/api/tickets/" + encodeURIComponent(id))
+      .then(function (r) { return r.json().catch(function () { return {}; }); })
+      .then(function (d) { if (d && d.ticket) cb(d.ticket); })
+      .catch(function () { /* 静默：编辑弹窗保留空白待用户填写 */ });
+  }
+
+  /** 节点需求工单行：链接 + （有编辑权限时）编辑 / 新建 / 挂已有 / 删除 */
+  function renderTicketRow(node, idx, wrap) {
+    var row = document.createElement("div");
+    row.className = "d-ticket";
+    var lbl = document.createElement("span");
+    lbl.className = "lbl";
+    lbl.textContent = "需求工单";
+    row.appendChild(lbl);
+
+    if (node.ticketId) {
+      var link = document.createElement("a");
+      link.href = "/tickets?id=" + encodeURIComponent(node.ticketId);
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.textContent = node.ticketId;
+      link.title = "打开该节点的需求工单";
+      row.appendChild(link);
+    } else {
+      var none = document.createElement("span");
+      none.className = "lbl";
+      none.textContent = "（未挂工单）";
+      row.appendChild(none);
+    }
+
+    if (node.canEdit) {
+      var acts = document.createElement("span");
+      acts.className = "d-ticket-acts";
+      function act(label, fn) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "tk-mini";
+        b.textContent = label;
+        b.addEventListener("click", function () {
+          b.disabled = true;
+          Promise.resolve(fn()).catch(function () {
+            alert("网络异常");
+            b.disabled = false;
+          });
+        });
+        acts.appendChild(b);
+      }
+      if (node.ticketId) act("编辑", function () { return openNodeTicketEditor(node, idx); });
+      act("新建", function () { return openNodeTicketEditor(node, idx, true); });
+      act("挂已有", function () { return openNodeTicketPicker(node, idx); });
+      if (node.ticketId) act("删除", function () { return deleteNodeTicket(node, idx); });
+      row.appendChild(acts);
+    }
+    wrap.appendChild(row);
+  }
+
+  /** 弹窗：编辑当前挂单工单 / 新建工单并挂单（标题 + 富文本正文） */
+  function openNodeTicketEditor(node, idx, isNew) {
+    var m = openModal();
+    var h = document.createElement("h3");
+    h.textContent = isNew ? "新建需求工单" : "编辑需求工单";
+    var sub = document.createElement("div");
+    sub.className = "sub";
+    sub.textContent = "节点「" + node.step + "」（" + node.department + "）· " +
+      (isNew ? "新建后将替换当前挂单" : "修改后立即生效");
+    var titleLabel = document.createElement("div");
+    titleLabel.className = "tk-field";
+    titleLabel.textContent = "标题";
+    var title = document.createElement("input");
+    title.className = "tk-mtitle";
+    title.maxLength = 100;
+    title.placeholder = "一句话说明需求";
+    var host = document.createElement("div");
+    host.className = "tk-meditor";
+    var err = document.createElement("div");
+    err.className = "tk-merr";
+    err.hidden = true;
+    var foot = document.createElement("div");
+    foot.className = "foot";
+    var cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "btn ghost";
+    cancel.textContent = "取消";
+    cancel.addEventListener("click", m.close);
+    var ok = document.createElement("button");
+    ok.type = "button";
+    ok.className = "btn";
+    ok.textContent = isNew ? "新建并挂单" : "保存";
+    foot.appendChild(cancel);
+    foot.appendChild(ok);
+    m.panel.appendChild(h);
+    m.panel.appendChild(sub);
+    m.panel.appendChild(titleLabel);
+    m.panel.appendChild(title);
+    m.panel.appendChild(host);
+    m.panel.appendChild(err);
+    m.panel.appendChild(foot);
+
+    var ed = window.RichEditor.make(host, { placeholder: "需求描述…" });
+    if (!isNew) {
+      loadTicketDetail(node.ticketId, function (t) {
+        title.value = t.title;
+        ed.setHtml(t.content);
+      });
+    }
+
+    ok.addEventListener("click", function () {
+      var ttl = title.value.trim();
+      var html = ed.getHtml();
+      if (!ttl) { err.textContent = "请填写标题"; err.hidden = false; return; }
+      if (!plainTextOf(html)) { err.textContent = "请填写需求描述"; err.hidden = false; return; }
+      ok.disabled = true;
+      var url = "/api/nodes/" + encodeURIComponent(node.id) + "/ticket";
+      request(isNew ? "POST" : "PUT", url, { title: ttl, content: html }).then(function (res) {
+        ok.disabled = false;
+        if (!handleAuth(res)) return;
+        if (res.ok && res.data.node) {
+          m.close();
+          nodes[idx] = res.data.node;
+          renderActions(idx);
+        } else {
+          err.textContent = (res.data && res.data.error) || "保存失败";
+          err.hidden = false;
+        }
+      }).catch(function () {
+        ok.disabled = false;
+        err.textContent = "网络异常，请重试";
+        err.hidden = false;
+      });
+    });
+    title.focus();
+  }
+
+  /** 弹窗：搜索本部门可见的已有工单并挂到节点（替换原挂单） */
+  function openNodeTicketPicker(node, idx) {
+    var m = openModal();
+    var h = document.createElement("h3");
+    h.textContent = "挂已有工单";
+    var sub = document.createElement("div");
+    sub.className = "sub";
+    sub.textContent = "搜索工单系统里的工单挂到「" + node.step + "」，挂上后会替换当前挂单。";
+    var input = document.createElement("input");
+    input.className = "tk-mtitle";
+    input.type = "search";
+    input.placeholder = "搜索标题 / 提交人…";
+    input.maxLength = 60;
+    var list = document.createElement("div");
+    list.className = "tk-mlist";
+    var err = document.createElement("div");
+    err.className = "tk-merr";
+    err.hidden = true;
+    var foot = document.createElement("div");
+    foot.className = "foot";
+    var cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "btn ghost";
+    cancel.textContent = "关闭";
+    cancel.addEventListener("click", m.close);
+    foot.appendChild(cancel);
+    m.panel.appendChild(h);
+    m.panel.appendChild(sub);
+    m.panel.appendChild(input);
+    m.panel.appendChild(list);
+    m.panel.appendChild(err);
+    m.panel.appendChild(foot);
+
+    function renderEmpty(msg) {
+      list.textContent = "";
+      var e = document.createElement("div");
+      e.className = "empty";
+      e.textContent = msg;
+      list.appendChild(e);
+    }
+
+    function renderList(items) {
+      list.textContent = "";
+      if (!items.length) { renderEmpty("没有匹配的工单"); return; }
+      items.forEach(function (t) {
+        var row = document.createElement("div");
+        row.className = "tk-mrow";
+        var mid = document.createElement("div");
+        mid.className = "tk-mmid";
+        var nm = document.createElement("div");
+        nm.className = "tk-mname";
+        nm.textContent = t.title;
+        var mt = document.createElement("div");
+        mt.className = "tk-mmeta";
+        mt.textContent = [t.department, t.authorName, String(t.updatedAt || "").slice(0, 10)]
+          .filter(Boolean).join(" · ");
+        mid.appendChild(nm);
+        mid.appendChild(mt);
+        var add = document.createElement("button");
+        add.type = "button";
+        add.className = "btn";
+        add.textContent = "挂上";
+        add.addEventListener("click", function () {
+          add.disabled = true;
+          add.textContent = "挂载中…";
+          post("/api/nodes/" + encodeURIComponent(node.id) + "/ticket/link", { ticketId: t.id })
+            .then(function (res) {
+              if (!handleAuth(res)) return;
+              if (res.ok && res.data.node) {
+                m.close();
+                nodes[idx] = res.data.node;
+                renderActions(idx);
+              } else {
+                add.disabled = false;
+                add.textContent = "挂上";
+                err.textContent = (res.data && res.data.error) || "挂载失败";
+                err.hidden = false;
+              }
+            })
+            .catch(function () {
+              add.disabled = false;
+              add.textContent = "挂上";
+              err.textContent = "网络异常，请重试";
+              err.hidden = false;
+            });
+        });
+        row.appendChild(mid);
+        row.appendChild(add);
+        list.appendChild(row);
+      });
+    }
+
+    var timer = null;
+    function load(q) {
+      list.textContent = "";
+      var loading = document.createElement("div");
+      loading.className = "empty";
+      loading.textContent = "加载中…";
+      list.appendChild(loading);
+      fetch("/api/nodes/" + encodeURIComponent(node.id) + "/ticket/candidates?q=" + encodeURIComponent(q || ""))
+        .then(function (r) { return r.json().catch(function () { return {}; }); })
+        .then(function (d) {
+          if (d && d.error) { renderEmpty(d.error); return; }
+          renderList((d && d.tickets) || []);
+        })
+        .catch(function () { renderEmpty("加载失败，请重试"); });
+    }
+    input.addEventListener("input", function () {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(function () { load(input.value.trim()); }, 200);
+    });
+    load("");
+    input.focus();
+  }
+
+  /** 删除节点当前挂单工单（服务端会按不变量补一张空白需求工单） */
+  function deleteNodeTicket(node, idx) {
+    if (!node.ticketId) return Promise.resolve();
+    if (!window.confirm("确定删除「" + node.step + "」节点的需求工单？\n删除后系统会自动补一张空白需求工单。")) {
+      return Promise.resolve();
+    }
+    return del("/api/nodes/" + encodeURIComponent(node.id) + "/ticket").then(function (res) {
+      if (!handleAuth(res)) return;
+      if (res.ok && res.data.node) {
+        nodes[idx] = res.data.node;
+        renderActions(idx);
+      } else {
+        alert((res.data && res.data.error) || "删除失败");
+      }
+    });
   }
 
   /* ────────────────────────────── 轮询 ────────────────────────────── */

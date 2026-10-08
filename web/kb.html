@@ -21,6 +21,8 @@
     .btn.primary { background: var(--led); color: #fff; border-color: var(--led); }
     .btn.primary:hover { background: #4338ca; }
     .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn.danger { color: var(--block); border-color: rgba(239,68,68,.35); background: rgba(239,68,68,.10); }
+    .btn.danger:hover { background: rgba(239,68,68,.18); border-color: var(--block); }
 
     .tk-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 0;
       height: calc(100vh - 56px); }
@@ -171,6 +173,7 @@
             <h2 id="dTitle"></h2>
             <div style="display:flex;align-items:center;gap:8px;">
               <button class="btn" id="editBtn" type="button" style="display:none;">编辑</button>
+              <button class="btn danger" id="delBtn" type="button" style="display:none;">删除</button>
             </div>
           </div>
           <div class="tk-meta" id="dMeta"></div>
