@@ -21,6 +21,10 @@ set "PROJECT_DIR=%~dp0"
 if "%PROJECT_DIR:~-1%"=="\" set "PROJECT_DIR=%PROJECT_DIR:~0,-1%"
 set "VENV_DIR=%PROJECT_DIR%\venv"
 
+:: "/nogui" = suppress the final pause (used when called from start-platform.bat)
+set "NOPAUSE="
+if /i "%~1"=="/nogui" set "NOPAUSE=1"
+
 echo ============================================
 echo   AI-Flows environment init
 echo   project : %PROJECT_DIR%
@@ -111,12 +115,12 @@ echo.
 echo   Start services : start-platform.bat
 echo   Type-check     : npx tsc --noEmit
 echo.
-pause
+if not defined NOPAUSE pause
 exit /b 0
 
 :fail
 echo.
 echo *** Initialization failed. Fix the issue and re-run. ***
 echo.
-pause
+if not defined NOPAUSE pause
 exit /b 1

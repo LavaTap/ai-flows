@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>账号安全 · AI-FLOWS 平台</title>
+  <title>管线设置 · AI-FLOWS 平台</title>
   <link rel="stylesheet" href="/ai-pipeline.css">
   <script src="/user-menu.js" defer></script>
   <style>
@@ -31,33 +31,59 @@
     .section:last-of-type{border-bottom:none;}
     .section h2{margin:0 0 16px;font:600 14px/22px var(--font-sans);color:var(--ink-soft);}
 
-    /* 密码状态条 */
-    .pw-state{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:10px;
-      border:1px solid var(--glass-line);background:var(--paper-2);}
-    .pw-state .led{width:8px;height:8px;border-radius:50%;background:var(--teal);flex:none;}
-    .pw-state.warn{border-color:var(--amber-line);background:var(--amber-soft);}
-    .pw-state.warn .led{background:var(--amber);}
-    .pw-state-text{flex:1;min-width:0;}
-    .pw-state-title{font:600 13px/20px var(--font-sans);color:var(--ink-soft);}
-    .pw-state-sub{font:400 12px/18px var(--font-sans);color:var(--muted);margin-top:2px;}
+    /* 管线列表 */
+    .pl-list{display:flex;flex-direction:column;gap:10px;}
+    .pl-card{border:1px solid var(--glass-line);border-radius:12px;background:var(--paper-2);padding:14px 16px;}
+    .pl-card-head{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+    .pl-name{font:600 14px/22px var(--font-sans);color:var(--ink);min-width:0;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .pl-actions{margin-left:auto;display:flex;gap:8px;flex:none;}
+    .pl-meta{display:flex;flex-direction:column;gap:8px;}
+    .pl-meta .row{display:flex;align-items:center;gap:10px;}
+    .pl-meta .k{font:500 12px/18px var(--font-sans);color:var(--muted);flex:none;min-width:72px;}
+    .pl-meta .v{font:400 12.5px/20px var(--font-mono);color:var(--ink);min-width:0;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .pl-meta .v.link{color:var(--led);}
+    .pl-meta .v.empty{color:var(--muted-2);font-family:var(--font-sans);}
+
+    /* 下拉选择（自定义小三角 + 内阴影，与输入框一致） */
+    .select-wrap{position:relative;display:inline-block;min-width:280px;max-width:420px;}
+    .select-wrap select{appearance:none;-webkit-appearance:none;width:100%;padding:9px 34px 9px 12px;
+      border:1px solid var(--glass-line);border-radius:8px;background:var(--glass-fill);
+      box-shadow:inset 0 1px 2px rgba(15,23,42,.04);font:400 13px/20px var(--font-sans);
+      color:var(--ink);cursor:pointer;}
+    .select-wrap select:focus{outline:none;border-color:var(--led);box-shadow:0 0 0 3px var(--led-soft);}
+    .select-wrap::after{content:"";position:absolute;right:13px;top:50%;transform:translateY(-50%);
+      width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;
+      border-top:5px solid var(--muted);pointer-events:none;}
+
+    /* 编辑态 */
+    .pl-edit{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+    .pl-edit .full{grid-column:1 / -1;}
+    .pl-edit label{display:block;font:500 11px/17px var(--font-sans);color:var(--muted);margin-bottom:4px;}
 
     /* 表单 */
-    .form-row{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;max-width:360px;}
+    .form-row{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;max-width:520px;}
     .form-row label{font:500 12px/18px var(--font-sans);color:var(--copy);}
-    .form-row input{padding:9px 12px;border:1px solid var(--glass-line);border-radius:8px;
+    input[type=text]{padding:9px 12px;border:1px solid var(--glass-line);border-radius:8px;
       background:var(--glass-fill);box-shadow:inset 0 1px 2px rgba(15,23,42,.04);
-      font:400 13px/20px var(--font-sans);color:var(--ink);font-family:var(--font-mono);}
-    .form-row input:focus{outline:none;border-color:var(--led);box-shadow:0 0 0 3px var(--led-soft);}
+      font:400 13px/20px var(--font-sans);color:var(--ink);width:100%;box-sizing:border-box;}
+    input[type=text]:focus{outline:none;border-color:var(--led);box-shadow:0 0 0 3px var(--led-soft);}
     .form-hint{font:400 11px/17px var(--font-sans);color:var(--muted-2);}
     .btn{padding:8px 16px;border-radius:8px;font:500 12px/18px var(--font-sans);cursor:pointer;
       border:1px solid var(--glass-line);background:var(--glass-fill);color:var(--ink-soft);white-space:nowrap;}
     .btn:hover{background:var(--paper-2);}
     .btn.primary{background:var(--teal);color:#fff;border-color:var(--teal);}
     .btn.primary:hover{background:#059669;}
+    .btn.danger{color:var(--block);}
+    .btn.danger:hover{background:rgba(173,49,77,.10);}
+    .btn.sm{padding:5px 12px;font-size:11.5px;}
     .btn:disabled{opacity:.5;cursor:not-allowed;}
-    .form-msg{font:400 12px/18px var(--font-sans);margin-top:10px;min-height:18px;}
+    .form-actions{display:flex;align-items:center;gap:10px;}
+    .form-msg{font:400 12px/18px var(--font-sans);}
     .form-msg.ok{color:var(--teal);}
     .form-msg.err{color:var(--block);}
+    .empty-tip{font:400 13px/20px var(--font-sans);color:var(--muted);padding:10px 0;}
   </style>
 </head>
 <body>
@@ -67,7 +93,7 @@
       <h1 class="brand-title">
         <span class="tt-pipeline">AI-FLOWS</span>
         <span class="tt-sep">/</span>
-        <span>账号安全</span>
+        <span>管线设置</span>
       </h1>
     </div>
     <div class="top-right">
@@ -75,7 +101,7 @@
       <a href="/pipeline" class="nav-link" target="_blank" rel="noopener">AI 管线</a>
       <a href="/tickets" class="nav-link" target="_blank" rel="noopener">工单</a>
       <a href="/kb" class="nav-link" target="_blank" rel="noopener">知识库</a>
-
+      <a href="/github-audit" class="nav-link">GitHub</a>
       <a href="/team" id="teamLink" class="nav-link" style="display:none;">团队管理</a>
       <a href="/chat" class="nav-link" target="_blank" rel="noopener">AI 对话</a>
       <div class="user-menu">
@@ -102,10 +128,10 @@
     <aside class="sidebar">
       <div class="side-title">设置</div>
       <nav class="side-nav">
-        <a href="/account/repo">管线设置</a>
+        <a href="/account/repo" class="active">管线设置</a>
         <a href="/account/repos">仓库管理</a>
         <a href="/account">账号管理</a>
-        <a href="/account/security" class="active">账号安全</a>
+        <a href="/account/security">账号安全</a>
         <a href="/logs">日志</a>
         <a href="/tokens">Token 面板</a>
       </nav>
@@ -116,43 +142,39 @@
       <div class="breadcrumb">
         <a href="/pipeline">管线</a>
         <span class="sep">›</span>
-        <span class="current">账号安全</span>
+        <span class="current">管线设置</span>
       </div>
 
-      <h1 class="page-title"><em>账号安全</em></h1>
-      <p class="page-sub">管理你的登录密码，平台要求每 10 天更换一次</p>
+      <h1 class="page-title"><em>管线设置</em></h1>
+      <p class="page-sub">每条管线相互独立（各自一套节点）；可给每条管线选择「仓库管理」里已登记的仓库，管线页左侧按仓库的 GitHub 链接展示</p>
 
-      <!-- 密码有效期 -->
+      <!-- 管线列表 -->
       <div class="section">
-        <h2>密码有效期</h2>
-        <div class="pw-state" id="pwState">
-          <span class="led" aria-hidden="true"></span>
-          <div class="pw-state-text">
-            <div class="pw-state-title" id="pwStateTitle">加载中…</div>
-            <div class="pw-state-sub" id="pwStateSub"></div>
-          </div>
-        </div>
+        <h2>管线列表 <span id="plCount" style="color:var(--muted);font-weight:400;"></span></h2>
+        <div class="pl-list" id="plList"></div>
+        <div class="empty-tip" id="plEmpty" style="display:none;">暂无管线</div>
       </div>
 
-      <!-- 修改密码 -->
+      <!-- 新增管线 -->
       <div class="section">
-        <h2>修改密码</h2>
-        <form id="pwForm" autocomplete="off">
+        <h2>新增管线</h2>
+        <form id="plForm" autocomplete="off">
           <div class="form-row">
-            <label for="oldPassword">当前密码</label>
-            <input type="password" id="oldPassword" autocomplete="current-password" placeholder="请输入当前密码">
+            <label for="newName">管线名称</label>
+            <input type="text" id="newName" placeholder="例如 my-flow">
+            <span class="form-hint">新管线会套用默认模板的四个节点（产品调研 / 产品策划案 / AI 代码评审 / 运营），与其他管线完全独立</span>
           </div>
           <div class="form-row">
-            <label for="newPassword">新密码</label>
-            <input type="password" id="newPassword" autocomplete="new-password" placeholder="请输入新密码">
-            <span class="form-hint" id="newHint"></span>
+            <label for="newRepo">绑定仓库（可选）</label>
+            <span class="select-wrap">
+              <select id="newRepo"></select>
+            </span>
+            <span class="form-hint">仓库在「仓库管理」里登记；也可先不绑定，之后再选</span>
           </div>
-          <div class="form-row">
-            <label for="confirmPassword">确认新密码</label>
-            <input type="password" id="confirmPassword" autocomplete="new-password" placeholder="再次输入新密码">
+          <div class="form-actions">
+            <button class="btn primary" type="submit" id="addBtn">新建管线</button>
+            <span class="form-msg" id="addMsg"></span>
           </div>
-          <button class="btn primary" type="submit" id="pwSubmit">保存新密码</button>
-          <div class="form-msg" id="pwMsg"></div>
         </form>
       </div>
     </div>

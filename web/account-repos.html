@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>账号安全 · AI-FLOWS 平台</title>
+  <title>仓库管理 · AI-FLOWS 平台</title>
   <link rel="stylesheet" href="/ai-pipeline.css">
   <script src="/user-menu.js" defer></script>
   <style>
@@ -31,33 +31,52 @@
     .section:last-of-type{border-bottom:none;}
     .section h2{margin:0 0 16px;font:600 14px/22px var(--font-sans);color:var(--ink-soft);}
 
-    /* 密码状态条 */
-    .pw-state{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:10px;
-      border:1px solid var(--glass-line);background:var(--paper-2);}
-    .pw-state .led{width:8px;height:8px;border-radius:50%;background:var(--teal);flex:none;}
-    .pw-state.warn{border-color:var(--amber-line);background:var(--amber-soft);}
-    .pw-state.warn .led{background:var(--amber);}
-    .pw-state-text{flex:1;min-width:0;}
-    .pw-state-title{font:600 13px/20px var(--font-sans);color:var(--ink-soft);}
-    .pw-state-sub{font:400 12px/18px var(--font-sans);color:var(--muted);margin-top:2px;}
+    /* 仓库列表 */
+    .repo-list{display:flex;flex-direction:column;gap:10px;}
+    .repo-card{border:1px solid var(--glass-line);border-radius:12px;background:var(--paper-2);padding:14px 16px;}
+    .repo-card-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+    .repo-card-name{font:600 14px/22px var(--font-sans);color:var(--ink);min-width:0;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .repo-card-actions{margin-left:auto;display:flex;gap:8px;flex:none;}
+    .repo-meta{display:flex;flex-direction:column;gap:6px;}
+    .repo-meta .row{display:flex;align-items:center;gap:10px;}
+    .repo-meta .k{font:500 12px/18px var(--font-sans);color:var(--muted);flex:none;min-width:72px;}
+    .repo-meta .v{font:400 12.5px/20px var(--font-mono);color:var(--ink);min-width:0;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .repo-meta .v.link{color:var(--led);}
+    .repo-meta .v.empty{color:var(--muted-2);font-family:var(--font-sans);}
+    .repo-tags{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
+    .repo-tag{font:500 10.5px/16px var(--font-sans);color:var(--led);background:var(--led-soft);
+      border-radius:999px;padding:2px 9px;white-space:nowrap;}
+    .repo-tag.muted{color:var(--muted);background:var(--paper-1);}
+
+    /* 编辑态 */
+    .repo-edit{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px;}
+    .repo-edit .full{grid-column:1 / -1;}
+    .repo-edit label{display:block;font:500 11px/17px var(--font-sans);color:var(--muted);margin-bottom:4px;}
 
     /* 表单 */
-    .form-row{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;max-width:360px;}
+    .form-row{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;max-width:520px;}
     .form-row label{font:500 12px/18px var(--font-sans);color:var(--copy);}
-    .form-row input{padding:9px 12px;border:1px solid var(--glass-line);border-radius:8px;
+    input[type=text]{padding:9px 12px;border:1px solid var(--glass-line);border-radius:8px;
       background:var(--glass-fill);box-shadow:inset 0 1px 2px rgba(15,23,42,.04);
-      font:400 13px/20px var(--font-sans);color:var(--ink);font-family:var(--font-mono);}
-    .form-row input:focus{outline:none;border-color:var(--led);box-shadow:0 0 0 3px var(--led-soft);}
+      font:400 13px/20px var(--font-mono);color:var(--ink);width:100%;box-sizing:border-box;}
+    input[type=text]:focus{outline:none;border-color:var(--led);box-shadow:0 0 0 3px var(--led-soft);}
     .form-hint{font:400 11px/17px var(--font-sans);color:var(--muted-2);}
     .btn{padding:8px 16px;border-radius:8px;font:500 12px/18px var(--font-sans);cursor:pointer;
       border:1px solid var(--glass-line);background:var(--glass-fill);color:var(--ink-soft);white-space:nowrap;}
     .btn:hover{background:var(--paper-2);}
     .btn.primary{background:var(--teal);color:#fff;border-color:var(--teal);}
     .btn.primary:hover{background:#059669;}
+    .btn.danger{color:var(--block);}
+    .btn.danger:hover{background:rgba(173,49,77,.10);}
+    .btn.sm{padding:5px 12px;font-size:11.5px;}
     .btn:disabled{opacity:.5;cursor:not-allowed;}
-    .form-msg{font:400 12px/18px var(--font-sans);margin-top:10px;min-height:18px;}
+    .form-actions{display:flex;align-items:center;gap:10px;}
+    .form-msg{font:400 12px/18px var(--font-sans);}
     .form-msg.ok{color:var(--teal);}
     .form-msg.err{color:var(--block);}
+    .empty-tip{font:400 13px/20px var(--font-sans);color:var(--muted);padding:10px 0;}
   </style>
 </head>
 <body>
@@ -67,7 +86,7 @@
       <h1 class="brand-title">
         <span class="tt-pipeline">AI-FLOWS</span>
         <span class="tt-sep">/</span>
-        <span>账号安全</span>
+        <span>仓库管理</span>
       </h1>
     </div>
     <div class="top-right">
@@ -75,7 +94,7 @@
       <a href="/pipeline" class="nav-link" target="_blank" rel="noopener">AI 管线</a>
       <a href="/tickets" class="nav-link" target="_blank" rel="noopener">工单</a>
       <a href="/kb" class="nav-link" target="_blank" rel="noopener">知识库</a>
-
+      <a href="/github-audit" class="nav-link">GitHub</a>
       <a href="/team" id="teamLink" class="nav-link" style="display:none;">团队管理</a>
       <a href="/chat" class="nav-link" target="_blank" rel="noopener">AI 对话</a>
       <div class="user-menu">
@@ -103,9 +122,9 @@
       <div class="side-title">设置</div>
       <nav class="side-nav">
         <a href="/account/repo">管线设置</a>
-        <a href="/account/repos">仓库管理</a>
+        <a href="/account/repos" class="active">仓库管理</a>
         <a href="/account">账号管理</a>
-        <a href="/account/security" class="active">账号安全</a>
+        <a href="/account/security">账号安全</a>
         <a href="/logs">日志</a>
         <a href="/tokens">Token 面板</a>
       </nav>
@@ -116,43 +135,41 @@
       <div class="breadcrumb">
         <a href="/pipeline">管线</a>
         <span class="sep">›</span>
-        <span class="current">账号安全</span>
+        <span class="current">仓库管理</span>
       </div>
 
-      <h1 class="page-title"><em>账号安全</em></h1>
-      <p class="page-sub">管理你的登录密码，平台要求每 10 天更换一次</p>
+      <h1 class="page-title"><em>仓库管理</em></h1>
+      <p class="page-sub">登记本机仓库目录，并可给每个仓库绑定 GitHub 链接；管线设置里按仓库选择</p>
 
-      <!-- 密码有效期 -->
+      <!-- 已登记仓库 -->
       <div class="section">
-        <h2>密码有效期</h2>
-        <div class="pw-state" id="pwState">
-          <span class="led" aria-hidden="true"></span>
-          <div class="pw-state-text">
-            <div class="pw-state-title" id="pwStateTitle">加载中…</div>
-            <div class="pw-state-sub" id="pwStateSub"></div>
-          </div>
-        </div>
+        <h2>已登记仓库 <span id="repoCount" style="color:var(--muted);font-weight:400;"></span></h2>
+        <div class="repo-list" id="repoList"></div>
+        <div class="empty-tip" id="repoEmpty" style="display:none;">暂无仓库，请在下方登记一个本机目录</div>
       </div>
 
-      <!-- 修改密码 -->
+      <!-- 新增仓库 -->
       <div class="section">
-        <h2>修改密码</h2>
-        <form id="pwForm" autocomplete="off">
+        <h2>新增仓库</h2>
+        <form id="repoForm" autocomplete="off">
           <div class="form-row">
-            <label for="oldPassword">当前密码</label>
-            <input type="password" id="oldPassword" autocomplete="current-password" placeholder="请输入当前密码">
+            <label for="newPath">本机仓库目录</label>
+            <input type="text" id="newPath" placeholder="例如 D:\code\my-repo">
+            <span class="form-hint">必须是本机真实存在的目录（绝对路径或相对当前工作目录）</span>
           </div>
           <div class="form-row">
-            <label for="newPassword">新密码</label>
-            <input type="password" id="newPassword" autocomplete="new-password" placeholder="请输入新密码">
-            <span class="form-hint" id="newHint"></span>
+            <label for="newName">仓库名称（可选）</label>
+            <input type="text" id="newName" placeholder="留空则取目录名">
           </div>
           <div class="form-row">
-            <label for="confirmPassword">确认新密码</label>
-            <input type="password" id="confirmPassword" autocomplete="new-password" placeholder="再次输入新密码">
+            <label for="newGithub">GitHub 链接（可选）</label>
+            <input type="text" id="newGithub" placeholder="https://github.com/owner/repo">
+            <span class="form-hint">形如 https://github.com/owner/repo（可省略 https:// 前缀，末尾 / 与 .git 会被忽略）</span>
           </div>
-          <button class="btn primary" type="submit" id="pwSubmit">保存新密码</button>
-          <div class="form-msg" id="pwMsg"></div>
+          <div class="form-actions">
+            <button class="btn primary" type="submit" id="addBtn">登记仓库</button>
+            <span class="form-msg" id="addMsg"></span>
+          </div>
         </form>
       </div>
     </div>

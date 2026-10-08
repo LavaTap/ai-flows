@@ -89,8 +89,10 @@ export interface NodeExecutor {
 
 /** 管线节点（db 表 nodes，执行/批准会写回） */
 export interface NodeState {
-  /** 节点编号 01-04 */
+  /** 节点编号（老管线为 01-04；新管线为 <pipelineId>-01 形态，全局唯一） */
   id: string;
+  /** 归属管线 id（nodes.pipeline_id） */
+  pipelineId?: string;
   /** 负责部门名，与账号 department 对应 */
   department: string;
   /** 环节名：产品调研 / 产品策划案 / AI 代码评审 / 运营 */
@@ -153,13 +155,42 @@ export interface ReviewRecord {
   repo?: string;
 }
 
-/** 管线数据（表 settings.pipeline_name + 表 nodes） */
-export interface PipelineData {
-  /** 管线名称 */
-  name?: string;
-  /** 管线节点列表 */
-  nodes: NodeState[];
+/** 仓库登记项（表 repos，主库）。仓库管理页维护本机目录 + 可选 GitHub 链接。 */
+export interface RepoRecord {
+  /** 仓库 id（r- 前缀 + 时间戳 + 随机串） */
+  id: string;
+  /** 仓库名（缺省取目录名） */
+  name: string;
+  /** 本机绝对目录路径 */
+  path: string;
+  /** GitHub 链接（规范化为 https://github.com/owner/repo；未绑定为空串/缺省） */
+  githubUrl?: string;
+  /** ISO 创建时间 */
+  createdAt: string;
 }
+
+/** 管线（表 pipelines，主库）。每条管线独立持有自己的一套节点。 */
+export interface PipelineRecord {
+  /** 管线 id（p- 前缀 + 时间戳 + 随机串） */
+  id: string;
+  /** 管线名称 */
+  name: string;
+  /** 绑定的仓库 id（repos.id；未绑定为空串/缺省） */
+  repoId?: string;
+  /** ISO 创建时间 */
+  createdAt: string;
+}
+
+/** 默认管线 id：老库升级时把存量节点挂到它名下 */
+export const DEFAULT_PIPELINE_ID = "p-default";
+
+/** 新建管线的默认节点模板（与节点 01-04 一致；id 留空由 createPipeline 按管线补前缀） */
+const NODE_TEMPLATE: Omit<NodeState, "id" | "pipelineId">[] = [
+  { department: "用户研究部", step: "产品调研", ready: true, status: "todo", runner: "research-crawler" },
+  { department: "用户研究部", step: "产品策划案", ready: true, status: "todo", runner: "skill:product-manager" },
+  { department: "程序中台", step: "AI 代码评审", ready: true, status: "todo", runner: "ai-review" },
+  { department: "平台运营部", step: "运营", ready: false, status: "todo" },
+];
 
 /** 工单状态：待处理 / 处理中 / 已解决（三态可互相流转） */
 export type TicketStatus = "open" | "doing" | "resolved";
@@ -426,6 +457,8 @@ function db(): Database.Database {
     importLegacyJson(c);
     // 每次进程启动同步一次账号投影表：覆盖「旧库已迁移过、新表还是空」的升级场景
     syncUserAccounts();
+    // 兜底默认管线：把无归属的存量节点挂到它名下（多管线模型上线后的一次性迁移）
+    ensureDefaultPipeline();
   }
   return c;
 }
@@ -507,6 +540,11 @@ function nextOrd(c: Database.Database, table: string): number {
   return row.n;
 }
 
+/** 生成本地主键：<前缀>-<时间戳36进制>-<随机hex> */
+function newId(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`;
+}
+
 /** 安全解析 JSON 数组列（空 / 非法一律按缺省处理） */
 function parseJsonArray<T>(raw: string | null): T[] | undefined {
   if (raw == null) return undefined;
@@ -551,6 +589,7 @@ function rowToUser(r: UserRow): UserAccount {
 
 interface NodeRow {
   id: string;
+  pipeline_id: string | null;
   department: string;
   step: string;
   ready: number;
@@ -577,6 +616,7 @@ function rowToNode(r: NodeRow): NodeState {
     ready: r.ready === 1,
     status: r.status as NodeStatus,
   };
+  if (r.pipeline_id != null) n.pipelineId = r.pipeline_id;
   if (r.runner != null) n.runner = r.runner;
   if (r.requirement_text != null) n.requirementText = r.requirement_text;
   const uploads = parseJsonArray<string>(r.uploads);
@@ -796,6 +836,7 @@ function nodeParams(n: NodeState, ord: number): Record<string, unknown> {
   return {
     ord,
     id: n.id,
+    pipelineId: n.pipelineId ?? null,
     department: n.department,
     step: n.step,
     ready: n.ready ? 1 : 0,
@@ -1133,42 +1174,220 @@ export function ensurePasswordBaseline(email: string): UserAccount | null {
   return { ...rowToUser(row), passwordChangedAt: at };
 }
 
+// ============ 仓库登记 ============
+
+interface RepoRow {
+  id: string;
+  name: string;
+  path: string;
+  github_url: string | null;
+  created_at: string;
+}
+
+function rowToRepo(r: RepoRow): RepoRecord {
+  const rec: RepoRecord = { id: r.id, name: r.name, path: r.path, createdAt: r.created_at };
+  if (r.github_url != null) rec.githubUrl = r.github_url;
+  return rec;
+}
+
+/** 读取全部仓库（按登记顺序） */
+export function loadRepos(): RepoRecord[] {
+  return (db().prepare("SELECT * FROM repos ORDER BY ord").all() as RepoRow[]).map(rowToRepo);
+}
+
+/** 按 id 读取仓库；不存在返回 null */
+export function loadRepo(id: string): RepoRecord | null {
+  const row = db().prepare("SELECT * FROM repos WHERE id = ?").get(id) as RepoRow | undefined;
+  return row ? rowToRepo(row) : null;
+}
+
+/** 追加一个仓库（自动补 id 与创建时间） */
+export function appendRepo(rec: Omit<RepoRecord, "id" | "createdAt"> & { id?: string }): RepoRecord {
+  const c = db();
+  const full: RepoRecord = {
+    id: rec.id ?? newId("r"),
+    name: rec.name,
+    path: rec.path,
+    createdAt: new Date().toISOString(),
+  };
+  if (rec.githubUrl) full.githubUrl = rec.githubUrl;
+  c.prepare(
+    "INSERT INTO repos (ord,id,name,path,github_url,created_at) VALUES (?,?,?,?,?,?)"
+  ).run(nextOrd(c, "repos"), full.id, full.name, full.path, full.githubUrl ?? null, full.createdAt);
+  return full;
+}
+
+/** 按 id 更新仓库（mutate 回调内改字段）；不存在返回 null */
+export function updateRepo(id: string, mutate: (r: RepoRecord) => void): RepoRecord | null {
+  const cur = loadRepo(id);
+  if (!cur) return null;
+  mutate(cur);
+  db()
+    .prepare("UPDATE repos SET name = ?, path = ?, github_url = ? WHERE id = ?")
+    .run(cur.name, cur.path, cur.githubUrl ?? null, id);
+  return cur;
+}
+
+/** 按 id 删除仓库；返回是否命中。已绑该仓库的管线 repo_id 置空 */
+export function deleteRepo(id: string): boolean {
+  const c = db();
+  return c.transaction(() => {
+    c.prepare("UPDATE pipelines SET repo_id = NULL WHERE repo_id = ?").run(id);
+    return c.prepare("DELETE FROM repos WHERE id = ?").run(id).changes > 0;
+  })();
+}
+
 // ============ 管线 ============
 
-/** 读取管线名称（缺省 "text-flow"） */
-export function loadPipelineName(): string {
-  return getSettingWith(db(), "pipeline_name") ?? "text-flow";
+interface PipelineRow {
+  id: string;
+  name: string;
+  repo_id: string | null;
+  created_at: string;
 }
 
-/** 写回管线名称 */
-export function savePipelineName(name: string): void {
-  setSettingWith(db(), "pipeline_name", name);
+function rowToPipeline(r: PipelineRow): PipelineRecord {
+  const rec: PipelineRecord = { id: r.id, name: r.name, createdAt: r.created_at };
+  if (r.repo_id != null) rec.repoId = r.repo_id;
+  return rec;
 }
 
-/** 读取全部管线节点（旧状态 approved 自动迁移为 done 并回写） */
-export function loadNodes(): NodeState[] {
-  const rows = db().prepare("SELECT * FROM nodes ORDER BY ord").all() as NodeRow[];
-  const nodes = rows.map(rowToNode);
-  if (nodes.some((n) => (n as { status?: string }).status === "approved")) {
-    for (const n of nodes) {
-      if ((n as { status?: string }).status === "approved") n.status = "done";
-    }
-    saveNodes(nodes);
-  }
-  return nodes;
+/** 读取全部管线（按创建顺序；无管线时返回空数组，由 ensureDefaultPipeline 兜底建默认管线） */
+export function loadPipelines(): PipelineRecord[] {
+  return (db().prepare("SELECT * FROM pipelines ORDER BY ord").all() as PipelineRow[]).map(
+    rowToPipeline
+  );
 }
 
-/** 写回管线节点（执行/批准后持久化状态） */
-export function saveNodes(nodes: NodeState[]): void {
+/** 按 id 读取管线；不存在返回 null */
+export function loadPipeline(id: string): PipelineRecord | null {
+  const row = db().prepare("SELECT * FROM pipelines WHERE id = ?").get(id) as
+    | PipelineRow
+    | undefined;
+  return row ? rowToPipeline(row) : null;
+}
+
+/** 按名称查管线（重名校验用）；不存在返回 null */
+export function findPipelineByName(name: string): PipelineRecord | null {
+  const row = db().prepare("SELECT * FROM pipelines WHERE name = ?").get(name) as
+    | PipelineRow
+    | undefined;
+  return row ? rowToPipeline(row) : null;
+}
+
+/** 追加一条管线（不含节点；建管线请用 createPipeline） */
+export function appendPipeline(rec: PipelineRecord): void {
   const c = db();
-  const del = c.prepare("DELETE FROM nodes");
+  c.prepare("INSERT INTO pipelines (ord,id,name,repo_id,created_at) VALUES (?,?,?,?,?)").run(
+    nextOrd(c, "pipelines"),
+    rec.id,
+    rec.name,
+    rec.repoId ?? null,
+    rec.createdAt
+  );
+}
+
+/** 按 id 更新管线（mutate 回调内改字段，通常改 name / repoId）；不存在返回 null */
+export function updatePipeline(id: string, mutate: (p: PipelineRecord) => void): PipelineRecord | null {
+  const cur = loadPipeline(id);
+  if (!cur) return null;
+  mutate(cur);
+  db()
+    .prepare("UPDATE pipelines SET name = ?, repo_id = ? WHERE id = ?")
+    .run(cur.name, cur.repoId ?? null, id);
+  return cur;
+}
+
+/** 按 id 删除管线（连同其全部节点）；返回是否命中 */
+export function deletePipeline(id: string): boolean {
+  const c = db();
+  return c.transaction(() => {
+    c.prepare("DELETE FROM nodes WHERE pipeline_id = ?").run(id);
+    return c.prepare("DELETE FROM pipelines WHERE id = ?").run(id).changes > 0;
+  })();
+}
+
+/** 新建管线：建管线行 + 按默认模板补齐一套独立节点（id 形如 <pipelineId>-01）。 */
+export function createPipeline(name: string, repoId?: string): PipelineRecord {
+  const id = newId("p");
+  const rec: PipelineRecord = { id, name, createdAt: new Date().toISOString() };
+  if (repoId) rec.repoId = repoId;
+  appendPipeline(rec);
+  const nodes: NodeState[] = NODE_TEMPLATE.map((t, i) => ({
+    ...t,
+    id: `${id}-${String(i + 1).padStart(2, "0")}`,
+    pipelineId: id,
+  }));
+  saveNodes(id, nodes);
+  return rec;
+}
+
+/** 老库升级兜底：确保至少有一条默认管线，并把无归属的存量节点挂到它名下。
+ *  同时把旧状态 approved 一次性迁移为 done。幂等。 */
+function ensureDefaultPipeline(): void {
+  const c = db();
+  c.prepare("UPDATE nodes SET status = 'done' WHERE status = 'approved'").run();
+  const has = c.prepare("SELECT 1 FROM pipelines LIMIT 1").get();
+  if (!has) {
+    const name = getSettingWith(c, "pipeline_name") || "text-flow";
+    c.prepare("INSERT INTO pipelines (ord,id,name,repo_id,created_at) VALUES (?,?,?,?,?)").run(
+      0,
+      DEFAULT_PIPELINE_ID,
+      name,
+      null,
+      new Date().toISOString()
+    );
+  }
+  const def = loadPipelines()[0];
+  if (def) {
+    c.prepare("UPDATE nodes SET pipeline_id = ? WHERE pipeline_id IS NULL OR pipeline_id = ''").run(
+      def.id
+    );
+  }
+}
+
+// ============ 管线节点 ============
+
+/** 读取某条管线的全部节点（按顺序） */
+export function loadNodes(pipelineId: string): NodeState[] {
+  const rows = db()
+    .prepare("SELECT * FROM nodes WHERE pipeline_id = ? ORDER BY ord")
+    .all(pipelineId) as NodeRow[];
+  return rows.map(rowToNode);
+}
+
+/** 读取全部管线节点（跨管线；供「按节点 id 全局扫描」的场景，如补齐需求工单） */
+export function loadAllNodes(): NodeState[] {
+  return (db().prepare("SELECT * FROM nodes ORDER BY ord").all() as NodeRow[]).map(rowToNode);
+}
+
+/** 按节点 id 读取（节点 id 全局唯一）；不存在返回 null */
+export function loadNodeById(id: string): NodeState | null {
+  const row = db().prepare("SELECT * FROM nodes WHERE id = ?").get(id) as NodeRow | undefined;
+  return row ? rowToNode(row) : null;
+}
+
+/** 写回某条管线的节点（整条管线整体替换，执行/批准后持久化） */
+export function saveNodes(pipelineId: string, nodes: NodeState[]): void {
+  const c = db();
+  const del = c.prepare("DELETE FROM nodes WHERE pipeline_id = ?");
   const ins = c.prepare(
-    "INSERT INTO nodes (ord,id,department,step,ready,status,runner,requirement_text,uploads,artifacts,progress,progress_label,rejection,last_result,report_url,output_dir,executors,removed_executors) VALUES (@ord,@id,@department,@step,@ready,@status,@runner,@requirementText,@uploads,@artifacts,@progress,@progressLabel,@rejection,@lastResult,@reportUrl,@outputDir,@executors,@removedExecutors)"
+    "INSERT INTO nodes (ord,id,pipeline_id,department,step,ready,status,runner,requirement_text,uploads,artifacts,progress,progress_label,rejection,last_result,report_url,output_dir,executors,removed_executors) VALUES (@ord,@id,@pipelineId,@department,@step,@ready,@status,@runner,@requirementText,@uploads,@artifacts,@progress,@progressLabel,@rejection,@lastResult,@reportUrl,@outputDir,@executors,@removedExecutors)"
   );
   c.transaction(() => {
-    del.run();
-    nodes.forEach((n, i) => ins.run(nodeParams(n, i)));
+    del.run(pipelineId);
+    nodes.forEach((n, i) => ins.run({ ...nodeParams(n, i), pipelineId }));
   })();
+}
+
+/** 写回单个节点（保留其所在管线的其他节点顺序）；节点不存在则追加到该管线末尾 */
+export function saveNode(node: NodeState): void {
+  const pid = node.pipelineId ?? DEFAULT_PIPELINE_ID;
+  const nodes = loadNodes(pid);
+  const idx = nodes.findIndex((n) => n.id === node.id);
+  if (idx >= 0) nodes[idx] = node;
+  else nodes.push(node);
+  saveNodes(pid, nodes);
 }
 
 // ============ 评审记录 ============

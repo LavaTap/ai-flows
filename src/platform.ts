@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname, basename, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadNodes, saveNodes, loadPipelineName, savePipelineName, authenticate, loadUsers, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, setPassword, ensurePasswordBaseline, loadTickets, appendTicket, updateTicket, deleteTicket, loadPlatformMessages, appendPlatformMessage, markMessageRead, markAllMessagesRead, loadKbArticles, appendKbArticle, updateKbArticle, deleteKbArticle, TICKET_IMAGES_DIR, AVATARS_DIR, CHAT_UPLOADS_DIR, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, recordTokenUsage, loadTokenUsage, type TokenUsageRecord, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel, type ChatAttachment, type ChatRef, type ChatSkillCall, type PlatformMessage, type MessageType, type KbArticle, type KbVisibility } from "./db.js";
+import { loadNodes, loadAllNodes, loadNodeById, saveNodes, saveNode, loadPipelines, loadPipeline, findPipelineByName, createPipeline, updatePipeline, deletePipeline, loadRepos, loadRepo, appendRepo, updateRepo, deleteRepo, DEFAULT_PIPELINE_ID, authenticate, loadUsers, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, setPassword, ensurePasswordBaseline, loadTickets, appendTicket, updateTicket, deleteTicket, loadPlatformMessages, appendPlatformMessage, markMessageRead, markAllMessagesRead, loadKbArticles, appendKbArticle, updateKbArticle, deleteKbArticle, TICKET_IMAGES_DIR, AVATARS_DIR, CHAT_UPLOADS_DIR, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, recordTokenUsage, loadTokenUsage, type TokenUsageRecord, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel, type ChatAttachment, type ChatRef, type ChatSkillCall, type PlatformMessage, type MessageType, type KbArticle, type KbVisibility, type RepoRecord, type PipelineRecord } from "./db.js";
 import {
   callModelStream,
   callModelOnce,
@@ -119,6 +119,55 @@ export function safeRepoPath(repo: string, rel: string): string | null {
   const abs = resolve(root, rel || ".");
   if (abs !== root && !abs.startsWith(root + sep)) return null;
   return abs;
+}
+
+/** 从 GitHub 链接解析 owner/repo（兼容省略协议、末尾斜杠、.git 后缀）；非 GitHub 链接返回 null */
+export function parseGithubRepo(url: string): { owner: string; repo: string } | null {
+  const raw = (url || "").trim();
+  if (!raw) return null;
+  const m = raw.match(/^(?:https?:\/\/)?(?:www\.)?github\.com\/([^/\s]+)\/([^/\s?#]+?)(?:\.git)?\/?$/i);
+  if (!m) return null;
+  return { owner: m[1], repo: m[2] };
+}
+
+/** 取当前仓库的本地目录名（尾部分隔符先剥掉，Windows 路径也能取到正确 basename） */
+function repoDirName(repo: string): string {
+  return basename(repo.replace(/[\\/]+$/, ""));
+}
+
+/** 管线绑定的仓库路径：未绑仓库 / 仓库已删时回退到平台 CLI 目标仓库 */
+function pipelineRepoPath(pipeline: PipelineRecord | null | undefined, fallback: string): string {
+  const repoId = pipeline?.repoId;
+  if (!repoId) return fallback;
+  return loadRepo(repoId)?.path || fallback;
+}
+
+/** 节点所属管线的仓库路径（节点执行 / 附件 / 产物都落在该仓库上） */
+function repoOfNode(node: NodeState, fallback: string): string {
+  return pipelineRepoPath(node.pipelineId ? loadPipeline(node.pipelineId) : null, fallback);
+}
+
+/** 管线绑定仓库的 GitHub owner/repo 展示串（未绑返回空串） */
+function pipelineGithub(pipeline: PipelineRecord | null | undefined): string {
+  const repoId = pipeline?.repoId;
+  if (!repoId) return "";
+  const gh = parseGithubRepo(loadRepo(repoId)?.githubUrl ?? "");
+  return gh ? `${gh.owner}/${gh.repo}` : "";
+}
+
+/** 解析管线 id 参数：缺省 / 无效时回退到第一条管线（管线列表非空） */
+function resolvePipelineId(raw: string | null): string {
+  const list = loadPipelines();
+  if (raw && list.some((p) => p.id === raw)) return raw;
+  return list[0]?.id ?? DEFAULT_PIPELINE_ID;
+}
+
+/** 管线列表 + 各自绑定的仓库对象（设置页 / 管线页侧栏用） */
+function pipelineListWithRepo(): Array<PipelineRecord & { repo: RepoRecord | null }> {
+  return loadPipelines().map((p) => ({
+    ...p,
+    repo: p.repoId ? loadRepo(p.repoId) : null,
+  }));
 }
 
 /** 节点 03（AI 代码评审）所属部门：外部触发（hook/手动 run）的报告无账号归属，统一归到该部门 */
@@ -387,7 +436,7 @@ function ensureNodeRequirementTicket(node: NodeState): TicketRecord {
 
 /** 为全部节点补齐需求工单（幂等），返回最新工单列表 */
 function ensureNodeRequirementTickets(): TicketRecord[] {
-  for (const node of loadNodes()) ensureNodeRequirementTicket(node);
+  for (const node of loadAllNodes()) ensureNodeRequirementTicket(node);
   return loadTickets();
 }
 
@@ -427,8 +476,7 @@ function nodeExecutors(node: NodeState, users: UserAccount[]): UserAccount[] {
 function addNodeExecutor(node: NodeState, email: string): NodeState | null {
   const target = loadUsers().find((u) => u.email === email);
   if (!target) return null;
-  const nodes = loadNodes();
-  const cur = nodes.find((n) => n.id === node.id);
+  const cur = loadNodeById(node.id);
   if (!cur) return null;
   const executors = cur.executors ?? [];
   const removed = (cur.removedExecutors ?? []).filter((e) => e !== email);
@@ -438,7 +486,7 @@ function addNodeExecutor(node: NodeState, email: string): NodeState | null {
     executors: known ? executors : [...executors, { email, from: target.department }],
     removedExecutors: removed.length ? removed : undefined,
   };
-  saveNodes(nodes.map((n) => (n.id === cur.id ? next : n)));
+  saveNode(next);
   // 对齐部门，保证该员工对本节点有执行权限（canExecute 按部门判定）
   if (target.department !== cur.department) {
     setUserProfile(target.email, { department: cur.department });
@@ -448,8 +496,7 @@ function addNodeExecutor(node: NodeState, email: string): NodeState | null {
 
 /** 从节点执行角色移除员工（显式添加的回滚部门；部门派生的记入排除名单） */
 function removeNodeExecutor(node: NodeState, email: string): NodeState | null {
-  const nodes = loadNodes();
-  const cur = nodes.find((n) => n.id === node.id);
+  const cur = loadNodeById(node.id);
   if (!cur) return null;
   const entry = (cur.executors ?? []).find((e) => e.email === email);
   const executors = (cur.executors ?? []).filter((e) => e.email !== email);
@@ -460,7 +507,7 @@ function removeNodeExecutor(node: NodeState, email: string): NodeState | null {
     executors: executors.length ? executors : undefined,
     removedExecutors: removed.size ? Array.from(removed) : undefined,
   };
-  saveNodes(nodes.map((n) => (n.id === cur.id ? next : n)));
+  saveNode(next);
   // 显式加入的成员：回滚到加入前的部门（若原部门为空则不动）
   if (entry && entry.from && entry.from !== cur.department) {
     setUserProfile(email, { department: entry.from });
@@ -786,6 +833,8 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   "/ai-review-report.js": { file: "ai-review-report.js", type: "text/javascript; charset=utf-8" },
   "/account.js": { file: "account.js", type: "text/javascript; charset=utf-8" },
   "/account-security.js": { file: "account-security.js", type: "text/javascript; charset=utf-8" },
+  "/account-repo.js": { file: "account-repo.js", type: "text/javascript; charset=utf-8" },
+  "/account-repos.js": { file: "account-repos.js", type: "text/javascript; charset=utf-8" },
   "/team.js": { file: "team.js", type: "text/javascript; charset=utf-8" },
   "/tickets.js": { file: "tickets.js", type: "text/javascript; charset=utf-8" },
   "/github-audit.js": { file: "github-audit.js", type: "text/javascript; charset=utf-8" },
@@ -816,17 +865,23 @@ function serveStatic(res: ServerResponse, route: string): boolean {
 }
 
 /** 渲染管线页：读静态 ai-pipeline.html，注入登录用户 + 部门成员 + 节点状态 + 权限 bootstrap，再挂平台脚本 */
-async function pipelineHtml(user: UserAccount, repo: string): Promise<string> {
+async function pipelineHtml(user: UserAccount, fallbackRepo: string, pipelineIdRaw: string | null): Promise<string> {
   const raw = readFileSync(join(WEB_DIR, "ai-pipeline.html"), "utf8");
+  const pipelines = loadPipelines();
+  const activeId = resolvePipelineId(pipelineIdRaw);
+  const active = loadPipeline(activeId);
+  const repo = pipelineRepoPath(active, fallbackRepo);
   const nodesWithUrls = await Promise.all(
-    loadNodes().map((n) => refreshNodeReportUrl(n, repo)),
+    loadNodes(activeId).map((n) => refreshNodeReportUrl(n, repo)),
   );
-  const repoName = repo.replace(/[\\/]/g, "").split(".").slice(-2).join(".") || repo;
   const tickets = ensureNodeRequirementTickets();
   const boot = {
-    pipelineName: loadPipelineName(),
-    repoName: repoName.replace(/^.*[\\/]/, ""),
+    pipelines: pipelines.map((p) => ({ id: p.id, name: p.name })),
+    pipelineId: activeId,
+    pipelineName: active?.name ?? "text-flow",
+    repoName: repoDirName(repo),
     repoPath: repo,
+    repoGithub: pipelineGithub(active),
     user: toUserView(user),
     members: loadUsers().map(toUserView),
     nodes: nodesWithUrls.map((n) => toNodeView(user, n, tickets)),
@@ -876,6 +931,33 @@ function accountSecurityHtml(user: UserAccount): string {
     security: { ...st, maxAgeDays: PASSWORD_MAX_AGE_DAYS, minLength: PASSWORD_MIN_LENGTH },
   };
   const inject = `<script>window.__ACCOUNT_SECURITY__ = ${jsonForScript(boot)};</script>\n<script src="/account-security.js" defer></script>`;
+  return raw.replace("</body>", `${inject}\n</body>`);
+}
+
+/** 渲染管线设置页：读静态 account-repo.html，注入登录用户 + 全部管线 + 全部仓库（供管线选绑仓库） */
+function repoSettingsHtml(user: UserAccount): string {
+  const raw = readFileSync(join(WEB_DIR, "account-repo.html"), "utf8");
+  const boot = {
+    user: toUserView(user),
+    isSupervisor: user.role === "supervisor",
+    pipelines: loadPipelines().map((p) => ({ id: p.id, name: p.name, repoId: p.repoId ?? "" })),
+    repos: loadRepos(),
+  };
+  const inject = `<script>window.__ACCOUNT_REPO__ = ${jsonForScript(boot)};</script>\n<script src="/account-repo.js" defer></script>`;
+  return raw.replace("</body>", `${inject}\n</body>`);
+}
+
+/** 渲染仓库管理页：读静态 account-repos.html，注入登录用户 + 仓库列表 + 管线占用信息 */
+function accountReposHtml(user: UserAccount): string {
+  const raw = readFileSync(join(WEB_DIR, "account-repos.html"), "utf8");
+  const pipelines = loadPipelines();
+  const boot = {
+    user: toUserView(user),
+    isSupervisor: user.role === "supervisor",
+    repos: loadRepos(),
+    pipelines: pipelines.map((p) => ({ id: p.id, name: p.name, repoId: p.repoId ?? "" })),
+  };
+  const inject = `<script>window.__ACCOUNT_REPOS__ = ${jsonForScript(boot)};</script>\n<script src="/account-repos.js" defer></script>`;
   return raw.replace("</body>", `${inject}\n</body>`);
 }
 
@@ -1323,11 +1405,10 @@ function loadCrawlerConfig(): Required<CrawlerConfig> {
 
 /** 重新读库更新单个节点（后台任务完成后回写，避免覆盖期间其他节点的状态变更） */
 function updateNode(id: string, mutate: (n: NodeState) => void): void {
-  const nodes = loadNodes();
-  const n = nodes.find((x) => x.id === id);
+  const n = loadNodeById(id);
   if (!n) return;
   mutate(n);
-  saveNodes(nodes);
+  saveNode(n);
 }
 
 /** 节点 03（AI 代码评审）执行器：在目标仓库上跑完整评审链
@@ -1525,17 +1606,19 @@ export async function startPlatformServer(
   // 后台任务在途的节点 id（防并发重复执行；完成/失败后移除）
   const busy = new Set<string>();
 
-  // 清理上次进程异常退出残留的 running 状态，避免节点永久卡在执行中
-  const bootNodes = loadNodes();
-  let dirty = false;
-  for (const n of bootNodes) {
-    if (n.status === "running") {
-      n.status = "todo";
-      n.lastResult = "平台重启导致执行中断，请重新执行";
-      dirty = true;
+  // 清理上次进程异常退出残留的 running 状态，避免节点永久卡在执行中（逐条管线处理）
+  for (const p of loadPipelines()) {
+    const bootNodes = loadNodes(p.id);
+    let dirty = false;
+    for (const n of bootNodes) {
+      if (n.status === "running") {
+        n.status = "todo";
+        n.lastResult = "平台重启导致执行中断，请重新执行";
+        dirty = true;
+      }
     }
+    if (dirty) saveNodes(p.id, bootNodes);
   }
-  if (dirty) saveNodes(bootNodes);
 
   // 启动即为每个节点补齐需求工单（每节点必须有需求工单才能执行/审核）
   ensureNodeRequirementTickets();
@@ -1775,46 +1858,32 @@ export async function startPlatformServer(
     }
 
     // 节点列表 + 当前用户权限 + 部门成员（角色卡片数据源；登录即可查看全流程）
+    // ?p=<pipelineId> 指定管线，缺省回退第一条管线
     if (path === "/api/nodes" && req.method === "GET") {
       const user = currentUser(req);
       if (!user) {
         sendJson(res, 401, { error: "未登录" });
         return;
       }
+      const activeId = resolvePipelineId(u.searchParams.get("p"));
+      const active = loadPipeline(activeId);
+      const activeRepo = pipelineRepoPath(active, repo);
       const nodesWithUrls = await Promise.all(
-        loadNodes().map((n) => refreshNodeReportUrl(n, repo)),
+        loadNodes(activeId).map((n) => refreshNodeReportUrl(n, activeRepo)),
       );
       const tickets = ensureNodeRequirementTickets();
       sendJson(res, 200, {
-        pipelineName: loadPipelineName(),
+        pipelines: loadPipelines().map((p) => ({ id: p.id, name: p.name })),
+        pipelineId: activeId,
+        pipelineName: active?.name ?? "",
+        repoName: repoDirName(activeRepo),
+        repoPath: activeRepo,
+        repoGithub: pipelineGithub(active),
         user: toUserView(user),
         members: loadUsers().map(toUserView),
         nodes: nodesWithUrls.map((n) => toNodeView(user, n, tickets)),
         busy: [...busy],
       });
-      return;
-    }
-
-    // 重命名管线
-    if (path === "/api/pipeline/rename" && req.method === "POST") {
-      const user = currentUser(req);
-      if (!user) {
-        sendJson(res, 401, { error: "未登录" });
-        return;
-      }
-      try {
-        const body = JSON.parse(await readBody(req)) as { name?: string };
-        const name = (body.name ?? "").trim();
-        if (!name) {
-          sendJson(res, 400, { error: "管线名称不能为空" });
-          return;
-        }
-        savePipelineName(name);
-        sendJson(res, 200, { name });
-      } catch {
-        sendJson(res, 400, { error: "请求格式错误" });
-        return;
-      }
       return;
     }
 
@@ -1877,7 +1946,7 @@ export async function startPlatformServer(
         return;
       }
       res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.end(await pipelineHtml(user, repo));
+      res.end(await pipelineHtml(user, repo, u.searchParams.get("p")));
       return;
     }
 
@@ -1906,6 +1975,34 @@ export async function startPlatformServer(
       }
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.end(accountSecurityHtml(user));
+      return;
+    }
+
+    // 管线设置页（配置管线名称 + 选绑仓库；登录即可访问）
+    if (path === "/account/repo" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        res.statusCode = 302;
+        res.setHeader("Location", "/login");
+        res.end();
+        return;
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(repoSettingsHtml(user));
+      return;
+    }
+
+    // 仓库管理页（登记本机仓库目录 + 绑定 GitHub 链接；登录即可访问）
+    if (path === "/account/repos" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        res.statusCode = 302;
+        res.setHeader("Location", "/login");
+        res.end();
+        return;
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(accountReposHtml(user));
       return;
     }
 
@@ -1959,6 +2056,241 @@ export async function startPlatformServer(
         user: toUserView(updated),
         security: { ...st, maxAgeDays: PASSWORD_MAX_AGE_DAYS, minLength: PASSWORD_MIN_LENGTH },
       });
+      return;
+    }
+
+    // ============ 仓库管理 API（登录即可读写；仓库 = 本机目录 + 可选 GitHub 链接） ============
+
+    // 列出全部仓库
+    if (path === "/api/repos" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      sendJson(res, 200, { repos: loadRepos() });
+      return;
+    }
+
+    // 新增仓库（登记本机目录；目录必须真实存在）
+    if (path === "/api/repos" && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      let name = "";
+      let dirPath = "";
+      let githubUrl = "";
+      try {
+        const body = JSON.parse(await readBody(req)) as {
+          name?: unknown;
+          path?: unknown;
+          githubUrl?: unknown;
+        };
+        if (typeof body.name === "string") name = body.name.trim();
+        if (typeof body.path === "string") dirPath = body.path.trim();
+        if (typeof body.githubUrl === "string") githubUrl = body.githubUrl.trim();
+      } catch {
+        sendJson(res, 400, { error: "请求体不是合法 JSON" });
+        return;
+      }
+      if (!dirPath) {
+        sendJson(res, 400, { error: "请填写本机仓库目录" });
+        return;
+      }
+      const abs = resolve(dirPath);
+      if (!existsSync(abs) || !statSync(abs).isDirectory()) {
+        sendJson(res, 400, { error: `目录不存在：${abs}` });
+        return;
+      }
+      if (loadRepos().some((r) => resolve(r.path) === abs)) {
+        sendJson(res, 409, { error: "该目录已登记" });
+        return;
+      }
+      if (githubUrl && !parseGithubRepo(githubUrl)) {
+        sendJson(res, 400, { error: "请输入形如 https://github.com/owner/repo 的链接" });
+        return;
+      }
+      const gh = parseGithubRepo(githubUrl);
+      const rec = appendRepo({
+        name: name || repoDirName(abs),
+        path: abs,
+        githubUrl: gh ? `https://github.com/${gh.owner}/${gh.repo}` : "",
+      });
+      sendJson(res, 201, { repo: rec });
+      return;
+    }
+
+    // 编辑 / 删除仓库：id 用 [^/\\]+ 限定防路径穿越
+    const rpm = path.match(/^\/api\/repos\/([^/\\]+)$/);
+    if (rpm && (req.method === "PUT" || req.method === "DELETE")) {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const cur = loadRepo(rpm[1]);
+      if (!cur) {
+        sendJson(res, 404, { error: "仓库不存在" });
+        return;
+      }
+      if (req.method === "DELETE") {
+        deleteRepo(cur.id);
+        sendJson(res, 200, { ok: true, deleted: cur.id });
+        return;
+      }
+      let name: string | undefined;
+      let dirPath: string | undefined;
+      let githubUrl: string | undefined;
+      try {
+        const body = JSON.parse(await readBody(req)) as {
+          name?: unknown;
+          path?: unknown;
+          githubUrl?: unknown;
+        };
+        if (typeof body.name === "string") name = body.name.trim();
+        if (typeof body.path === "string") dirPath = body.path.trim();
+        if (typeof body.githubUrl === "string") githubUrl = body.githubUrl.trim();
+      } catch {
+        sendJson(res, 400, { error: "请求体不是合法 JSON" });
+        return;
+      }
+      let abs: string | undefined;
+      if (dirPath !== undefined) {
+        if (!dirPath) {
+          sendJson(res, 400, { error: "仓库目录不能为空" });
+          return;
+        }
+        abs = resolve(dirPath);
+        if (!existsSync(abs) || !statSync(abs).isDirectory()) {
+          sendJson(res, 400, { error: `目录不存在：${abs}` });
+          return;
+        }
+        if (loadRepos().some((r) => r.id !== cur.id && resolve(r.path) === abs)) {
+          sendJson(res, 409, { error: "该目录已登记" });
+          return;
+        }
+      }
+      if (githubUrl !== undefined && githubUrl && !parseGithubRepo(githubUrl)) {
+        sendJson(res, 400, { error: "请输入形如 https://github.com/owner/repo 的链接" });
+        return;
+      }
+      const gh = githubUrl !== undefined ? parseGithubRepo(githubUrl) : null;
+      const updated = updateRepo(cur.id, (r) => {
+        if (name !== undefined) r.name = name || repoDirName(abs ?? r.path);
+        if (abs !== undefined) r.path = abs;
+        if (githubUrl !== undefined) {
+          if (gh) r.githubUrl = `https://github.com/${gh.owner}/${gh.repo}`;
+          else delete r.githubUrl;
+        }
+      });
+      sendJson(res, 200, { repo: updated });
+      return;
+    }
+
+    // ============ 管线管理 API（每条管线独立持有自己一套节点；管线可选绑一个仓库） ============
+
+    // 列出全部管线（附带绑定的仓库对象）
+    if (path === "/api/pipelines" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      sendJson(res, 200, { pipelines: pipelineListWithRepo() });
+      return;
+    }
+
+    // 新增管线（按默认模板补一套独立节点）
+    if (path === "/api/pipelines" && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      let name = "";
+      let repoId = "";
+      try {
+        const body = JSON.parse(await readBody(req)) as { name?: unknown; repoId?: unknown };
+        if (typeof body.name === "string") name = body.name.trim();
+        if (typeof body.repoId === "string") repoId = body.repoId.trim();
+      } catch {
+        sendJson(res, 400, { error: "请求体不是合法 JSON" });
+        return;
+      }
+      if (!name) {
+        sendJson(res, 400, { error: "管线名称不能为空" });
+        return;
+      }
+      if (findPipelineByName(name)) {
+        sendJson(res, 409, { error: "已存在同名管线" });
+        return;
+      }
+      if (repoId && !loadRepo(repoId)) {
+        sendJson(res, 400, { error: "所选仓库不存在" });
+        return;
+      }
+      const rec = createPipeline(name, repoId || undefined);
+      sendJson(res, 201, { pipeline: rec, nodes: loadNodes(rec.id) });
+      return;
+    }
+
+    // 编辑 / 删除管线：id 用 [^/\\]+ 限定防路径穿越
+    const plm = path.match(/^\/api\/pipelines\/([^/\\]+)$/);
+    if (plm && (req.method === "PUT" || req.method === "DELETE")) {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const cur = loadPipeline(plm[1]);
+      if (!cur) {
+        sendJson(res, 404, { error: "管线不存在" });
+        return;
+      }
+      if (req.method === "DELETE") {
+        if (loadPipelines().length <= 1) {
+          sendJson(res, 400, { error: "至少保留一条管线" });
+          return;
+        }
+        deletePipeline(cur.id);
+        sendJson(res, 200, { ok: true, deleted: cur.id });
+        return;
+      }
+      let name: string | undefined;
+      let repoId: string | undefined;
+      try {
+        const body = JSON.parse(await readBody(req)) as { name?: unknown; repoId?: unknown };
+        if (typeof body.name === "string") name = body.name.trim();
+        if (typeof body.repoId === "string") repoId = body.repoId.trim();
+      } catch {
+        sendJson(res, 400, { error: "请求体不是合法 JSON" });
+        return;
+      }
+      if (name !== undefined) {
+        if (!name) {
+          sendJson(res, 400, { error: "管线名称不能为空" });
+          return;
+        }
+        const dup = findPipelineByName(name);
+        if (dup && dup.id !== cur.id) {
+          sendJson(res, 409, { error: "已存在同名管线" });
+          return;
+        }
+      }
+      if (repoId !== undefined && repoId && !loadRepo(repoId)) {
+        sendJson(res, 400, { error: "所选仓库不存在" });
+        return;
+      }
+      const updated = updatePipeline(cur.id, (p) => {
+        if (name !== undefined) p.name = name;
+        if (repoId !== undefined) {
+          if (repoId) p.repoId = repoId;
+          else delete p.repoId;
+        }
+      });
+      sendJson(res, 200, { pipeline: updated });
       return;
     }
 
@@ -2059,8 +2391,7 @@ export async function startPlatformServer(
         sendJson(res, 401, { error: "未登录" });
         return;
       }
-      const nodes = loadNodes();
-      const node = nodes.find((n) => n.id === rm[1]);
+      const node = loadNodeById(rm[1]);
       if (!node) {
         sendJson(res, 404, { error: "节点不存在" });
         return;
@@ -2082,7 +2413,7 @@ export async function startPlatformServer(
         return;
       }
       node.requirementText = text;
-      saveNodes(nodes);
+      saveNode(node);
       sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
       return;
     }
@@ -2095,7 +2426,7 @@ export async function startPlatformServer(
         sendJson(res, 401, { error: "未登录" });
         return;
       }
-      const node = loadNodes().find((n) => n.id === ntc[1]);
+      const node = loadNodeById(ntc[1]);
       if (!node) {
         sendJson(res, 404, { error: "节点不存在" });
         return;
@@ -2132,7 +2463,7 @@ export async function startPlatformServer(
         sendJson(res, 401, { error: "未登录" });
         return;
       }
-      const node = loadNodes().find((n) => n.id === ntm[1]);
+      const node = loadNodeById(ntm[1]);
       if (!node) {
         sendJson(res, 404, { error: "节点不存在" });
         return;
@@ -2175,7 +2506,7 @@ export async function startPlatformServer(
           refType: "ticket",
           refId: ticket.id,
         });
-        const fresh = loadNodes().find((n) => n.id === node.id) ?? node;
+        const fresh = loadNodeById(node.id) ?? node;
         sendJson(res, 200, {
           ticket: toTicketView(updated as TicketRecord, user),
           node: toNodeView(user, fresh),
@@ -2223,7 +2554,7 @@ export async function startPlatformServer(
           refType: "ticket",
           refId: record.id,
         });
-        const fresh = loadNodes().find((n) => n.id === node.id) ?? node;
+        const fresh = loadNodeById(node.id) ?? node;
         sendJson(res, 201, { ticket: toTicketView(record, user), node: toNodeView(user, fresh) });
         return;
       }
@@ -2236,8 +2567,8 @@ export async function startPlatformServer(
           return;
         }
         deleteTicket(ticket.id);
-        const fresh = ensureNodeRequirementTicket(loadNodes().find((n) => n.id === node.id) ?? node);
-        const reloaded = loadNodes().find((n) => n.id === node.id) ?? node;
+        const fresh = ensureNodeRequirementTicket(loadNodeById(node.id) ?? node);
+        const reloaded = loadNodeById(node.id) ?? node;
         sendJson(res, 200, {
           ok: true,
           deleted: ticket.id,
@@ -2256,7 +2587,7 @@ export async function startPlatformServer(
         sendJson(res, 401, { error: "未登录" });
         return;
       }
-      const node = loadNodes().find((n) => n.id === ntl[1]);
+      const node = loadNodeById(ntl[1]);
       if (!node) {
         sendJson(res, 404, { error: "节点不存在" });
         return;
@@ -2287,7 +2618,7 @@ export async function startPlatformServer(
         return;
       }
       linkTicketToNode(node, target.id);
-      const fresh = loadNodes().find((n) => n.id === node.id) ?? node;
+      const fresh = loadNodeById(node.id) ?? node;
       const updated = loadTickets().find((t) => t.id === target.id) as TicketRecord;
       sendJson(res, 200, { ticket: toTicketView(updated, user), node: toNodeView(user, fresh) });
       return;
@@ -2301,8 +2632,7 @@ export async function startPlatformServer(
         sendJson(res, 401, { error: "未登录" });
         return;
       }
-      const nodes = loadNodes();
-      const node = nodes.find((n) => n.id === um[1]);
+      const node = loadNodeById(um[1]);
       if (!node) {
         sendJson(res, 404, { error: "节点不存在" });
         return;
@@ -2329,13 +2659,13 @@ export async function startPlatformServer(
         return;
       }
       const safeName = sanitizeFilename(filename);
-      const dir = join(repo, UPLOADS_DIR, node.id);
+      const dir = join(repoOfNode(node, repo), UPLOADS_DIR, node.id);
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, safeName), Buffer.from(contentBase64, "base64"));
       const list = node.uploads ?? [];
       if (!list.includes(safeName)) list.push(safeName);
       node.uploads = list;
-      saveNodes(nodes);
+      saveNode(node);
       sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
       return;
     }
@@ -2348,12 +2678,12 @@ export async function startPlatformServer(
         sendJson(res, 401, { error: "未登录" });
         return;
       }
-      const nodes = loadNodes();
-      const node = nodes.find((n) => n.id === am[1]);
+      const node = loadNodeById(am[1]);
       if (!node) {
         sendJson(res, 404, { error: "节点不存在" });
         return;
       }
+      const nodeRepo = repoOfNode(node, repo);
       const action = am[2];
 
       if (action === "execute") {
@@ -2395,7 +2725,7 @@ export async function startPlatformServer(
           } catch {
             /* 未带 body 时沿用最近一次输出目录 */
           }
-          const outputAbs = safeRepoPath(repo, outputDirRel);
+          const outputAbs = safeRepoPath(nodeRepo, outputDirRel);
           if (!outputAbs) {
             sendJson(res, 403, { error: "输出目录越权：只能选择目标仓库内的目录" });
             return;
@@ -2405,7 +2735,7 @@ export async function startPlatformServer(
             return;
           }
           const skill = skillOverride || sm[1];
-          const uploadDir = join(repo, UPLOADS_DIR, node.id);
+          const uploadDir = join(nodeRepo, UPLOADS_DIR, node.id);
           const uploadFiles = (node.uploads ?? [])
             .map((f) => join(uploadDir, f))
             .filter((f) => existsSync(f));
@@ -2416,7 +2746,7 @@ export async function startPlatformServer(
           node.reportUrl = undefined;
           node.outputDir = outputDirRel.replace(/\\/g, "/");
           busy.add(node.id);
-          saveNodes(nodes);
+          saveNode(node);
           sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
           runSkill(
             {
@@ -2432,7 +2762,7 @@ export async function startPlatformServer(
               },
               email: user.email,
             },
-            loadSkillModelConfig(repo).model
+            loadSkillModelConfig(nodeRepo).model
           )
             .then((r) => {
               updateNode(node.id, (n) => {
@@ -2443,7 +2773,7 @@ export async function startPlatformServer(
                   ...(n.artifacts ?? []),
                   {
                     name: r.artifactName,
-                    path: relative(repo, r.artifactPath).replace(/\\/g, "/"),
+                    path: relative(nodeRepo, r.artifactPath).replace(/\\/g, "/"),
                     skill,
                     at: new Date().toISOString(),
                   },
@@ -2481,7 +2811,7 @@ export async function startPlatformServer(
             sendJson(res, 400, { error: `调研 agent 目录不存在：${crawler.root}` });
             return;
           }
-          const outputAbs = safeRepoPath(repo, node.outputDir ?? "");
+          const outputAbs = safeRepoPath(nodeRepo, node.outputDir ?? "");
           if (!outputAbs || !existsSync(outputAbs) || !statSync(outputAbs).isDirectory()) {
             sendJson(res, 400, { error: `产物输出目录不存在：${node.outputDir || "."}` });
             return;
@@ -2496,7 +2826,7 @@ export async function startPlatformServer(
           node.lastResult = undefined;
           node.reportUrl = undefined;
           busy.add(node.id);
-          saveNodes(nodes);
+          saveNode(node);
           sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
           runCrawler({
             root: crawler.root,
@@ -2522,7 +2852,7 @@ export async function startPlatformServer(
                   ...(n.artifacts ?? []),
                   {
                     name: r.artifactName,
-                    path: relative(repo, r.artifactPath).replace(/\\/g, "/"),
+                    path: relative(nodeRepo, r.artifactPath).replace(/\\/g, "/"),
                     skill: "research-crawler",
                     at: new Date().toISOString(),
                   },
@@ -2552,9 +2882,9 @@ export async function startPlatformServer(
           node.lastResult = "AI 评审进行中…";
           node.reportUrl = undefined;
           busy.add(node.id);
-          saveNodes(nodes);
+          saveNode(node);
           sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
-          runAiReviewNode(repo, user.email)
+          runAiReviewNode(nodeRepo, user.email)
             .then((r) => {
               updateNode(node.id, (n) => {
                 n.status = "running";
@@ -2611,7 +2941,7 @@ export async function startPlatformServer(
         }
         node.status = "in_review";
         node.rejection = undefined;
-        saveNodes(nodes);
+        saveNode(node);
         sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
         return;
       }
@@ -2634,7 +2964,7 @@ export async function startPlatformServer(
         ensureNodeRequirementTicket(node);
         node.status = "done";
         node.rejection = undefined;
-        saveNodes(nodes);
+        saveNode(node);
         sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
         return;
       }
@@ -2659,7 +2989,7 @@ export async function startPlatformServer(
       }
       node.status = "running";
       node.rejection = reason;
-      saveNodes(nodes);
+      saveNode(node);
       sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
       return;
     }
@@ -2676,7 +3006,7 @@ export async function startPlatformServer(
         sendJson(res, 403, { error: "仅部门主管可添加执行人" });
         return;
       }
-      const node = loadNodes().find((n) => n.id === exm[1]);
+      const node = loadNodeById(exm[1]);
       if (!node) {
         sendJson(res, 404, { error: "节点不存在" });
         return;
@@ -2729,7 +3059,7 @@ export async function startPlatformServer(
           refId: ticketId,
         });
       }
-      const fresh = loadNodes().find((n) => n.id === node.id) ?? node;
+      const fresh = loadNodeById(node.id) ?? node;
       sendJson(res, 200, { ok: true, node: toNodeView(user, fresh) });
       return;
     }
@@ -2746,7 +3076,7 @@ export async function startPlatformServer(
         sendJson(res, 403, { error: "仅部门主管可移除执行角色" });
         return;
       }
-      const node = loadNodes().find((n) => n.id === exd[1]);
+      const node = loadNodeById(exd[1]);
       if (!node) {
         sendJson(res, 404, { error: "节点不存在" });
         return;
@@ -2772,7 +3102,7 @@ export async function startPlatformServer(
         refType: "node",
         refId: node.id,
       });
-      const fresh = loadNodes().find((n) => n.id === node.id) ?? next;
+      const fresh = loadNodeById(node.id) ?? next;
       sendJson(res, 200, { ok: true, removed: name, node: toNodeView(user, fresh) });
       return;
     }
@@ -2785,7 +3115,8 @@ export async function startPlatformServer(
         return;
       }
       const rel = u.searchParams.get("path") ?? "";
-      const abs = safeRepoPath(repo, rel);
+      const fsRepo = pipelineRepoPath(loadPipeline(resolvePipelineId(u.searchParams.get("p"))), repo);
+      const abs = safeRepoPath(fsRepo, rel);
       if (!abs) {
         sendJson(res, 403, { error: "路径越权：只能浏览目标仓库内的目录" });
         return;
@@ -2803,7 +3134,7 @@ export async function startPlatformServer(
       }
       const dirs = readdirSync(abs, { withFileTypes: true })
         .filter((d) => d.isDirectory() && !d.name.startsWith(".") && d.name !== "node_modules")
-        .map((d) => ({ name: d.name, path: relative(repo, join(abs, d.name)).replace(/\\/g, "/") }))
+        .map((d) => ({ name: d.name, path: relative(fsRepo, join(abs, d.name)).replace(/\\/g, "/") }))
         .sort((a, b) => a.name.localeCompare(b.name));
       sendJson(res, 200, { path: rel.replace(/\\/g, "/") || ".", dirs });
       return;
@@ -2825,18 +3156,19 @@ export async function startPlatformServer(
       } catch {
         /* fallthrough 按空处理 */
       }
+      const fsRepo = pipelineRepoPath(loadPipeline(resolvePipelineId(u.searchParams.get("p"))), repo);
       const safeName = sanitizeFilename(name);
       if (!safeName || safeName === "file") {
         sendJson(res, 400, { error: "目录名不合法" });
         return;
       }
-      const abs = safeRepoPath(repo, join(base || ".", safeName));
+      const abs = safeRepoPath(fsRepo, join(base || ".", safeName));
       if (!abs) {
         sendJson(res, 403, { error: "路径越权：只能在目标仓库内新建目录" });
         return;
       }
       mkdirSync(abs, { recursive: true });
-      sendJson(res, 200, { ok: true, path: relative(repo, abs).replace(/\\/g, "/") });
+      sendJson(res, 200, { ok: true, path: relative(fsRepo, abs).replace(/\\/g, "/") });
       return;
     }
 
@@ -2848,13 +3180,13 @@ export async function startPlatformServer(
         sendJson(res, 401, { error: "未登录" });
         return;
       }
-      const node = loadNodes().find((n) => n.id === dm[1]);
+      const node = loadNodeById(dm[1]);
       const artifact = node?.artifacts?.find((a) => a.name === dm[2]);
       if (!node || !artifact) {
         sendJson(res, 404, { error: "产物不存在" });
         return;
       }
-      const abs = safeRepoPath(repo, artifact.path);
+      const abs = safeRepoPath(repoOfNode(node, repo), artifact.path);
       if (!abs || !existsSync(abs)) {
         sendJson(res, 404, { error: "产物文件不存在" });
         return;
@@ -3498,7 +3830,7 @@ export async function startPlatformServer(
       }
       // 工单挂在管线上：负责人自动挂进该节点的执行角色
       if (email && ticket.nodeId) {
-        const node = loadNodes().find((n) => n.id === ticket.nodeId);
+        const node = loadNodeById(ticket.nodeId);
         if (node) addNodeExecutor(node, email);
       }
       sendJson(res, 200, { ticket: toTicketView(updated, user) });

@@ -982,6 +982,34 @@ body { padding-top: 56px; }
   text-transform: uppercase;
 }
 
+/* 「管线列表」标题右侧的管线设置入口（齿轮） */
+.sidebar-gear {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--glass-line);
+  border-radius: 8px;
+  background: var(--glass-fill);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+
+.sidebar-gear svg {
+  width: 14px;
+  height: 14px;
+}
+
+.sidebar-gear:hover {
+  color: var(--led);
+  border-color: rgba(79, 70, 229, 0.35);
+  background: var(--led-soft);
+}
+
 .pipeline-list {
   list-style: none;
   margin: 0;

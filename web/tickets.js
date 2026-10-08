@@ -609,9 +609,9 @@
     badge.className = "tk-badge " + t.status;
     badge.textContent = STATUS_LABEL[t.status] || t.status;
 
-    // 编辑按钮：只有提交人可见
+    // 编辑按钮：提交人本人或主管可见（与后端权限对齐）
     var editBtn = byId("editBtn");
-    if (t.authorEmail === user.email) {
+    if (t.authorEmail === user.email || isSuper) {
       editBtn.style.display = "";
       editBtn.onclick = openEdit;
     } else {

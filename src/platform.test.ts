@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { filterReviewsByUser, canEditRequirement, safeRepoPath, canAccessTicket, filterTicketsByUser, isTicketStatus, collectTicketImages, decodePathSegment, summarizeTokenUsage } from "./platform.js";
+import { filterReviewsByUser, canEditRequirement, safeRepoPath, parseGithubRepo, canAccessTicket, filterTicketsByUser, isTicketStatus, collectTicketImages, decodePathSegment, summarizeTokenUsage } from "./platform.js";
 import type { ReviewRecord, UserAccount, NodeState, TicketRecord } from "./db.js";
 
 function user(role: "staff" | "supervisor", department: string): UserAccount {
@@ -78,6 +78,40 @@ test("should resolve paths inside repo root and reject traversal outside", () =>
 test("should reject sibling-prefix paths that do not live inside repo root", () => {
   // D:/code/demo-evil 与 D:/code/demo 前缀相似但不在根内
   assert.strictEqual(safeRepoPath("D:/code/demo", "D:/code/demo-evil/x"), null);
+});
+
+test("should parse owner and repo from github links", () => {
+  assert.deepStrictEqual(parseGithubRepo("https://github.com/LavaTap/Lightbulb-AI"), {
+    owner: "LavaTap",
+    repo: "Lightbulb-AI",
+  });
+  // 省略协议 / 带 www / 末尾斜杠 / .git 后缀
+  assert.deepStrictEqual(parseGithubRepo("github.com/LavaTap/Lightbulb-AI"), {
+    owner: "LavaTap",
+    repo: "Lightbulb-AI",
+  });
+  assert.deepStrictEqual(parseGithubRepo("http://www.github.com/owner/repo/"), {
+    owner: "owner",
+    repo: "repo",
+  });
+  assert.deepStrictEqual(parseGithubRepo("https://github.com/owner/repo.git"), {
+    owner: "owner",
+    repo: "repo",
+  });
+  // 前后空白容错
+  assert.deepStrictEqual(parseGithubRepo("  https://github.com/owner/repo  "), {
+    owner: "owner",
+    repo: "repo",
+  });
+});
+
+test("should return null when github link is empty or not a repo url", () => {
+  assert.strictEqual(parseGithubRepo(""), null);
+  assert.strictEqual(parseGithubRepo("   "), null);
+  assert.strictEqual(parseGithubRepo("https://gitlab.com/owner/repo"), null);
+  assert.strictEqual(parseGithubRepo("https://github.com/owner"), null);
+  assert.strictEqual(parseGithubRepo("https://github.com/"), null);
+  assert.strictEqual(parseGithubRepo("owner/repo"), null);
 });
 
 function ticket(department: string): TicketRecord {

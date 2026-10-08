@@ -41,9 +41,32 @@ CREATE TABLE IF NOT EXISTS users (
   password_changed_at TEXT
 );
 
+/* 仓库登记表：仓库管理页登记的本机目录（path 为绝对路径）+ 可选 GitHub 链接。
+   管线通过 repo_id 引用，多个管线可复用同一仓库。 */
+CREATE TABLE IF NOT EXISTS repos (
+  ord        INTEGER NOT NULL,
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  path       TEXT NOT NULL,
+  github_url TEXT,
+  created_at TEXT NOT NULL
+);
+
+/* 管线表：每条管线独立（各自一套节点，节点通过 nodes.pipeline_id 归属）。
+   repo_id 指向 repos.id，可空表示未绑定仓库。 */
+CREATE TABLE IF NOT EXISTS pipelines (
+  ord        INTEGER NOT NULL,
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  repo_id    TEXT,
+  created_at TEXT NOT NULL
+);
+
+/* 管线节点：pipeline_id 归属某条管线（老库升级时统一挂到默认管线）。 */
 CREATE TABLE IF NOT EXISTS nodes (
   ord              INTEGER NOT NULL,
   id               TEXT PRIMARY KEY,
+  pipeline_id      TEXT,
   department       TEXT NOT NULL,
   step             TEXT NOT NULL,
   ready            INTEGER NOT NULL DEFAULT 0,
@@ -61,6 +84,10 @@ CREATE TABLE IF NOT EXISTS nodes (
   executors        TEXT,
   removed_executors TEXT
 );
+
+/* 节点按管线归属的索引放在 getDb() 里、补列之后建：
+   老库的 nodes 表已存在（CREATE TABLE IF NOT EXISTS 不会加列），
+   若在此处建索引会因缺 pipeline_id 列而报 no such column。 */
 
 /* 账号投影表：以 users.email 为唯一来源同步（email 主键 + FK 级联），
    chat_accounts 供 AI 对话侧取姓名，review_accounts 额外带部门供评审侧取归属。
@@ -320,6 +347,10 @@ export function getDb(): Database.Database {
   // 老库补列（节点执行角色：显式添加名单 / 显式排除名单）
   ensureColumn(c, "main", "nodes", "executors", "executors TEXT");
   ensureColumn(c, "main", "nodes", "removed_executors", "removed_executors TEXT");
+  // 老库补列（节点归属管线；老节点留空，由 db.ts 启动时挂到默认管线）
+  ensureColumn(c, "main", "nodes", "pipeline_id", "pipeline_id TEXT");
+  // 补列之后再建索引（见上方注释：老库缺列时不能先建）
+  c.exec("CREATE INDEX IF NOT EXISTS idx_nodes_pipeline ON nodes(pipeline_id)");
   // 老库补列（对话消息的附件元数据 / 引用会话）
   ensureColumn(c, CHAT_REVIEWS_SCHEMA, "chat_messages", "attachments", "attachments TEXT");
   ensureColumn(c, CHAT_REVIEWS_SCHEMA, "chat_messages", "refs", "refs TEXT");
