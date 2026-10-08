@@ -8,6 +8,7 @@ ai-review.config.json
 .env
 .ai-review-reports/
 review-report.md
+venv/
 
 # 运行期日志（AI 请求日志 / 网页访问日志，本地实时写入，不入版本库）
 logs/
