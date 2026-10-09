@@ -611,67 +611,31 @@ body { padding-top: 56px; }
   display: none;
 }
 
-/* @ 提及下拉 */
+/* @ 提及下拉：与管线「指派执行人」共用 .ms-row 行样式（同源同款） */
 .mention-pop {
   position: absolute;
   z-index: 50;
   background: var(--surface);
   border: 1px solid var(--glass-line);
-  border-radius: 8px;
+  border-radius: 10px;
   box-shadow: 0 4px 16px rgba(15, 23, 42, .12);
-  max-height: 220px;
+  max-height: 280px;
   overflow-y: auto;
-  min-width: 200px;
-  padding: 4px;
+  min-width: 260px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .mention-pop[hidden] {
   display: none;
 }
 
-.mention-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  font: 400 12px/18px var(--font-sans);
-  color: var(--ink-soft);
-}
-
-.mention-item:hover,
-.mention-item.on {
-  background: var(--led-soft);
-  color: var(--led);
-}
-
-.mention-item .tk-avatar {
-  width: 24px;
-  height: 24px;
-  flex: none;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font: 600 11px/1 var(--font-sans);
-  overflow: hidden;
-}
-
-.mention-item .mi-meta {
-  flex: 1;
-  min-width: 0;
-}
-
-.mention-item .mi-name {
-  font-weight: 500;
-  font-size: 12px;
-}
-
-.mention-item .mi-dept {
-  font-size: 11px;
-  color: var(--muted);
+/* 键盘选中态（↑↓ 高亮）：与 .ms-row:hover 同款 */
+.mention-pop .ms-row.on {
+  border-color: var(--led);
+  background: var(--paper-2);
 }
 
 /* 正文中 @ 提及链接（已升级为「头像 + 名字」胶囊，见 /user-card.js） */

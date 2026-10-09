@@ -62,11 +62,6 @@
   function renderProfile() {
     byId("crumbName").textContent = target.name || target.email || "员工";
 
-    // banner 文案
-    byId("bannerName").textContent = target.name || target.email;
-    byId("bannerDept").textContent = target.department || "—";
-    byId("bannerTitle").textContent = target.title || "—";
-
     // 骑跨头像
     var heroAv = byId("heroAvatar");
     if (heroAv) {

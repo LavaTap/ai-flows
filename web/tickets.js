@@ -826,32 +826,39 @@
       }, 200);
     }
 
+    /* 回退行：MemberSearch 缺失时也产出同款 .ms-row 结构，保证与管线面板一致 */
+    function fallbackMentionRow(u) {
+      var el = document.createElement("div");
+      el.className = "ms-row";
+      el.appendChild(makeAvatar(u, u.email, "ms-avatar"));
+      var info = document.createElement("div");
+      info.className = "ms-info";
+      var nm = document.createElement("div");
+      nm.className = "ms-name";
+      nm.textContent = u.name || u.email;
+      var mt = document.createElement("div");
+      mt.className = "ms-meta";
+      mt.textContent = [u.department, u.title].filter(Boolean).join(" · ") || "—";
+      info.appendChild(nm);
+      info.appendChild(mt);
+      el.appendChild(info);
+      return el;
+    }
+
     function cmRender() {
       if (!cm.active) return;
       pop.innerHTML = "";
       if (!cm.list.length) {
         var empty = document.createElement("div");
-        empty.className = "mention-item";
-        empty.style.cursor = "default";
-        empty.style.color = "var(--muted)";
+        empty.className = "ms-empty";
         empty.textContent = "没有匹配的成员";
         pop.appendChild(empty);
       }
       cm.list.forEach(function (u, i) {
-        var item = document.createElement("div");
-        item.className = "mention-item" + (i === cm.idx ? " on" : "");
-        item.appendChild(makeAvatar(u, u.email, "tk-avatar"));
-        var meta = document.createElement("div");
-        meta.className = "mi-meta";
-        var nm = document.createElement("div");
-        nm.className = "mi-name";
-        nm.textContent = u.name || u.email;
-        var dp = document.createElement("div");
-        dp.className = "mi-dept";
-        dp.textContent = u.department || "";
-        meta.appendChild(nm);
-        meta.appendChild(dp);
-        item.appendChild(meta);
+        /* 复用统一员工搜索行（MemberSearch.row → .ms-row），与管线「指派执行人」面板同款 */
+        var item = window.MemberSearch ? window.MemberSearch.row(u, {}) : fallbackMentionRow(u);
+        item.classList.add("mention-row");
+        if (i === cm.idx) item.classList.add("on");
         item.addEventListener("mousedown", function (e) { e.preventDefault(); cmInsert(u); });
         pop.appendChild(item);
       });
@@ -859,7 +866,6 @@
       var br = box.getBoundingClientRect();
       pop.style.left = Math.max(0, r.left - br.left) + "px";
       pop.style.top = (r.bottom - br.top + 4) + "px";
-      pop.style.minWidth = "220px";
       pop.hidden = false;
     }
 

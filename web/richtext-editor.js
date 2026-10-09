@@ -555,42 +555,44 @@ window.RichEditor = (function () {
       }).catch(function () { /* 搜索失败时静默 */ });
     }
 
+    /* 回退行：MemberSearch 缺失时也产出同款 .ms-row 结构，保证与管线面板一致 */
+    function fallbackMentionRow(u) {
+      var el = document.createElement("div");
+      el.className = "ms-row";
+      var av = document.createElement("span");
+      av.className = "ms-avatar";
+      av.style.background = colorOf(u.email);
+      av.textContent = firstChar(u.name, u.email);
+      var info = document.createElement("div");
+      info.className = "ms-info";
+      var nm = document.createElement("div");
+      nm.className = "ms-name";
+      nm.textContent = u.name || u.email;
+      var mt = document.createElement("div");
+      mt.className = "ms-meta";
+      mt.textContent = [u.department, u.title].filter(Boolean).join(" · ") || "—";
+      info.appendChild(nm);
+      info.appendChild(mt);
+      el.appendChild(av);
+      el.appendChild(info);
+      return el;
+    }
+
     function renderMentionList() {
       mentionPop.innerHTML = "";
       if (!mentionList.length) {
         var empty = document.createElement("div");
-        empty.className = "mention-item";
-        empty.style.cursor = "default";
-        empty.style.color = "var(--muted)";
+        empty.className = "ms-empty";
         empty.textContent = "没有匹配的成员";
         mentionPop.appendChild(empty);
         mentionPop.hidden = false;
         return;
       }
       mentionList.forEach(function (u, i) {
-        var item = document.createElement("div");
-        item.className = "mention-item" + (i === mentionIdx ? " on" : "");
-        var av;
-        if (window.MemberSearch) {
-          av = window.MemberSearch.avatarEl(u, "tk-avatar");
-        } else {
-          av = document.createElement("div");
-          av.className = "tk-avatar";
-          av.style.background = colorOf(u.email);
-          av.textContent = firstChar(u.name, u.email);
-        }
-        item.appendChild(av);
-        var meta = document.createElement("div");
-        meta.className = "mi-meta";
-        var name = document.createElement("div");
-        name.className = "mi-name";
-        name.textContent = window.MemberSearch ? window.MemberSearch.displayName(u) : (u.name || u.email);
-        var dept = document.createElement("div");
-        dept.className = "mi-dept";
-        dept.textContent = u.department || "";
-        meta.appendChild(name);
-        meta.appendChild(dept);
-        item.appendChild(meta);
+        /* 复用统一员工搜索行（MemberSearch.row → .ms-row），与管线「指派执行人」面板同款 */
+        var item = window.MemberSearch ? window.MemberSearch.row(u, {}) : fallbackMentionRow(u);
+        item.classList.add("mention-row");
+        if (i === mentionIdx) item.classList.add("on");
         item.addEventListener("mousedown", function (e) {
           e.preventDefault();
           insertMention(u);
