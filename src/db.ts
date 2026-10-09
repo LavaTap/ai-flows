@@ -165,6 +165,8 @@ export interface RepoRecord {
   path: string;
   /** GitHub 链接（规范化为 https://github.com/owner/repo；未绑定为空串/缺省） */
   githubUrl?: string;
+  /** 登记人账号（登录邮箱；服务端写入，登记后不再变更；老数据可能缺省） */
+  ownerEmail?: string;
   /** ISO 创建时间 */
   createdAt: string;
 }
@@ -1181,12 +1183,14 @@ interface RepoRow {
   name: string;
   path: string;
   github_url: string | null;
+  owner_email: string | null;
   created_at: string;
 }
 
 function rowToRepo(r: RepoRow): RepoRecord {
   const rec: RepoRecord = { id: r.id, name: r.name, path: r.path, createdAt: r.created_at };
   if (r.github_url != null) rec.githubUrl = r.github_url;
+  if (r.owner_email != null) rec.ownerEmail = r.owner_email;
   return rec;
 }
 
@@ -1211,9 +1215,18 @@ export function appendRepo(rec: Omit<RepoRecord, "id" | "createdAt"> & { id?: st
     createdAt: new Date().toISOString(),
   };
   if (rec.githubUrl) full.githubUrl = rec.githubUrl;
+  if (rec.ownerEmail) full.ownerEmail = rec.ownerEmail;
   c.prepare(
-    "INSERT INTO repos (ord,id,name,path,github_url,created_at) VALUES (?,?,?,?,?,?)"
-  ).run(nextOrd(c, "repos"), full.id, full.name, full.path, full.githubUrl ?? null, full.createdAt);
+    "INSERT INTO repos (ord,id,name,path,github_url,owner_email,created_at) VALUES (?,?,?,?,?,?,?)"
+  ).run(
+    nextOrd(c, "repos"),
+    full.id,
+    full.name,
+    full.path,
+    full.githubUrl ?? null,
+    full.ownerEmail ?? null,
+    full.createdAt
+  );
   return full;
 }
 

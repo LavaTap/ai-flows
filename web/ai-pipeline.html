@@ -6,6 +6,8 @@
   <title>AI 管线 · AI-FLOWS 平台</title>
   <link rel="stylesheet" href="/ai-pipeline.css">
   <script src="/user-menu.js" defer></script>
+  <script src="/member-search.js" defer></script>
+  <script src="/richtext-editor.js" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -23,8 +25,8 @@
       <a class="nav-link active" href="/pipeline">AI 管线</a>
       <a class="nav-link" href="/tickets" target="_blank" rel="noopener">工单</a>
       <a class="nav-link" href="/kb" target="_blank" rel="noopener">知识库</a>
-
-      <a class="nav-link" href="/team" id="teamLink" style="display:none;">团队管理</a>
+      <a class="nav-link" href="/reviews" target="_blank" rel="noopener">代码评审</a>
+
       <a class="nav-link" href="/chat" target="_blank" rel="noopener">AI 对话</a>
       <div class="user-menu">
         <span class="user-chip" id="userChip" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"><span class="avatar" aria-hidden="true"></span><span id="userName">未登录</span></span>
@@ -333,15 +335,28 @@
         cell.addEventListener("mouseleave", scheduleHide);
         /* 从节点移入 tooltip 继续停留：悬停 tooltip 期间暂缓收起 */
         var t = tipOf(i);
+        var nd = nodes[i];
         if (t) {
           t.addEventListener("mouseenter", cancelHide);
           t.addEventListener("mouseleave", scheduleHide);
+          /* tooltip 内部获得焦点时也保持展开（例如搜索框输入、按钮点击） */
+          t.addEventListener("focusin", cancelHide);
+          t.addEventListener("focusout", function (e) {
+            /* 焦点移回节点本身不算离开 */
+            if (e.relatedTarget && nd && nd.contains(e.relatedTarget)) return;
+            scheduleHide();
+          });
         }
       });
 
       nodes.forEach(function (n, i) {
         n.addEventListener("focus", function () { show(i); });
-        n.addEventListener("blur", scheduleHide);
+        n.addEventListener("blur", function (e) {
+          /* 焦点移到 tooltip 内部（如搜索框）时不收起，由 tooltip 的 focusout 接管 */
+          var t = tipOf(i);
+          if (t && e.relatedTarget && t.contains(e.relatedTarget)) return;
+          scheduleHide();
+        });
       });
     })();
   </script>

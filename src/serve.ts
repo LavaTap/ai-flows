@@ -1,11 +1,11 @@
 import { createServer, type Server, type IncomingMessage } from "node:http";
 import { readdirSync, readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, basename, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { renderTemplate, type ReportView } from "./reporter.js";
 import { pushToTargets } from "./publisher.js";
-import { stagedFiles, commitStaged, headCommit, amendCommitMessage } from "./git.js";
+import { stagedFiles, commitStaged, headCommit, amendCommitMessage, diffRaw } from "./git.js";
 import { recordWeb, shouldLogWeb } from "./log.js";
 
 /** 存放评审报告数据（JSON）的目录名（在该 git 仓库根下） */
@@ -157,11 +157,14 @@ function readSummaries(dir: string): ReportSummary[] {
     });
 }
 
-function indexHtml(dir: string): string {
-  const items = readSummaries(dir);
+/** 报告列表页：聚合所有已登记报告目录（单例服务同时服务多个仓库） */
+function indexHtml(roots: string[]): string {
+  const items = roots
+    .flatMap((d) => readSummaries(d).map((s) => ({ ...s, repo: basename(dirname(d)) })))
+    .sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
   const rows = items
     .map((s) => {
-      const meta = [s.generatedAt, s.ref].filter(Boolean).map((x) => esc(String(x))).join(" · ");
+      const meta = [s.repo, s.generatedAt, s.ref].filter(Boolean).map((x) => esc(String(x))).join(" · ");
       return `<li>
       <a href="/reports/${encodeURIComponent(s.id)}">${esc(s.id)}</a>
       <span class="pill ${s.passed ? "pass" : "block"}">${s.passed ? "PASS" : "BLOCK"}</span>
@@ -182,13 +185,24 @@ export interface ReportServer {
   close(): Promise<void>;
 }
 
-/** 以目录为数据源启动报告 HTTP 服务。GET /reports/<id> 读取 <dir>/<id>.json 并动态渲染。 */
+/** 启动单例报告 HTTP 服务：服务持有多个「报告目录」（roots），按 report id 跨目录查找。
+ *  GET /reports/<id> 读取任一 root 下的 <id>.json 并动态渲染；POST /roots 供各仓库注册自己的报告目录。 */
 export async function startReportServer(
-  opts: { host?: string; port?: number; dir?: string } = {}
+  opts: { host?: string; port?: number; roots?: string[]; dir?: string } = {}
 ): Promise<ReportServer> {
   const host = opts.host ?? "127.0.0.1";
-  const dir = opts.dir ?? REPORTS_DIR;
-  mkdirSync(dir, { recursive: true });
+  const roots = new Set<string>();
+  if (opts.dir) roots.add(resolve(opts.dir));
+  for (const r of opts.roots ?? []) roots.add(resolve(r));
+  const listRoots = () => [...roots];
+  /** 按 id 在各 root 下查找报告文件（id 已限定 [^/\\]+，roots 固定，天然免疫路径穿越） */
+  const findReport = (id: string): string | null => {
+    for (const d of roots) {
+      const f = join(d, id + ".json");
+      if (existsSync(f)) return f;
+    }
+    return null;
+  };
 
   const server = createServer(async (req, res) => {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -208,21 +222,42 @@ export async function startReportServer(
     });
 
     if (path === "/") {
-      res.end(indexHtml(dir));
+      res.end(indexHtml(listRoots()));
       return;
     }
+    // 存活探针：单例服务固定端口，回 ok + 已登记的报告目录清单即可
     if (path === "/health") {
-      res.setHeader("Content-Type", "text/plain; charset=utf-8");
-      res.end("ok");
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.end(JSON.stringify({ ok: true, roots: listRoots() }));
+      return;
+    }
+    // 注册报告目录：各仓库评审后把自己的 .ai-review-reports 登记进来（幂等）
+    if (path === "/roots" && req.method === "POST") {
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      try {
+        const parsed = JSON.parse(await readBody(req)) as { dir?: unknown };
+        if (typeof parsed.dir !== "string" || !parsed.dir.trim()) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: "缺少 dir" }));
+          return;
+        }
+        const d = resolve(parsed.dir);
+        mkdirSync(d, { recursive: true });
+        roots.add(d);
+        res.end(JSON.stringify({ ok: true, roots: listRoots() }));
+      } catch {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ error: "请求体不是合法 JSON" }));
+      }
       return;
     }
     // 确认提交：页面按钮 POST 触发。必须带非空 commit message 才允许提交，
     // 避免误触导致「自动提交」到远端。有暂存变更时先 commit 再 push。
     const pm = path.match(/^\/reports\/([^/\\]+)\/push$/);
     if (pm && req.method === "POST") {
-      const f = join(dir, pm[1] + ".json");
+      const f = findReport(pm[1]);
       res.setHeader("Content-Type", "application/json; charset=utf-8");
-      if (!f.startsWith(dir + "") || !existsSync(f)) {
+      if (!f) {
         res.statusCode = 404;
         res.end(JSON.stringify({ error: "报告不存在" }));
         return;
@@ -284,8 +319,8 @@ export async function startReportServer(
     }
     const m = path.match(/^\/reports\/([^/\\]+)$/);
     if (m) {
-      const f = join(dir, m[1] + ".json");
-      if (f.startsWith(dir + "") && existsSync(f)) {
+      const f = findReport(m[1]);
+      if (f) {
         try {
           const view = JSON.parse(readFileSync(f, "utf8")) as ReportView;
           // 实时注入 HEAD 提交信息：提交栏展示 commit 描述，改写信息后确认走 amend
@@ -325,48 +360,130 @@ const CLI_ENTRY = (() => {
   return join(dirname(here), here.endsWith(".ts") ? "index.ts" : "index.js");
 })();
 
-/** 确保某仓库的报告服务在跑，返回其 base URL（不阻塞调用方进程）。
- *  用 .server 握手文件取得真实（可用）端口。 */
-export async function ensureReportServer(repo: string): Promise<string> {
-  const dir = join(repo, REPORTS_DIR);
-  const serverFile = join(dir, ".server");
-  const fallbackPort = Number(process.env.AI_REVIEW_PORT || DEFAULT_REPORT_PORT);
+/** 单例报告服务地址（固定端口，与平台服务 4311 错开） */
+function reportServiceBase(): string {
+  const port = Number(process.env.AI_REVIEW_PORT || DEFAULT_REPORT_PORT);
+  return `http://127.0.0.1:${port}`;
+}
 
-  // 已有可用的服务？(同时校验 dir 一致 + /health 返回 ok，防止同端口别的 ai-review 实例被误信)
-  if (existsSync(serverFile)) {
-    try {
-      const m = JSON.parse(readFileSync(serverFile, "utf8"));
-      if (m.dir === dir) {
-        const r = await fetch(`${m.url}/health`, { signal: AbortSignal.timeout(700) });
-        if (r.ok && (await r.text()).trim() === "ok") return m.url;
-      }
-    } catch {
-      /* 失效，重新拉起 */
-    }
+/** 探测单例报告服务是否在跑（/health 回 ok 即认为可用） */
+async function reportServiceAlive(base: string, timeoutMs = 700): Promise<boolean> {
+  try {
+    const r = await fetch(`${base}/health`, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!r.ok) return false;
+    const h = JSON.parse((await r.text()).trim()) as { ok?: boolean };
+    return !!h.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** 把某仓库的报告目录登记到单例服务上（幂等；失败不抛错，报告文件仍在盘上） */
+async function registerReportRoot(base: string, dir: string): Promise<void> {
+  try {
+    await fetch(`${base}/roots`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dir }),
+      signal: AbortSignal.timeout(1500),
+    });
+  } catch {
+    /* 注册失败不影响返回地址 */
+  }
+}
+
+/** 确保单例报告服务在跑（固定端口），并把该仓库的报告目录登记进去，返回 base URL（不阻塞调用方进程）。
+ *  所有仓库共用同一个服务、同一个端口，不再每仓库拉一个守护进程、端口也不再漂移。 */
+export async function ensureReportServer(repo: string): Promise<string> {
+  const dir = resolve(join(repo, REPORTS_DIR));
+  mkdirSync(dir, { recursive: true });
+  const base = reportServiceBase();
+
+  // 已在跑：直接登记本仓库目录即可
+  if (await reportServiceAlive(base)) {
+    await registerReportRoot(base, dir);
+    return base;
   }
 
-  // 后台拉起 serve 守护进程（detached），落位改端口会自动写入 .server。
-  // 关键：复用 process.execArgv，让 tsx 的 ESM loader 一并传给子进程；
-  // 否则裸 node 无法解析 .ts 源文件，子进程立即崩溃，.server 永远写不出。
+  // 后台拉起单例 serve 守护进程（detached）。复用 process.execArgv，让 tsx 的 ESM loader
+  // 一并传给子进程；否则裸 node 无法解析 .ts 源文件，子进程立即崩溃。
   // dist 构建产物（.js）场景下 execArgv 为空，不影响。
-  spawn(
-    process.execPath,
-    [...process.execArgv, CLI_ENTRY, "serve", "--port", String(fallbackPort)],
-    { detached: true, stdio: "ignore", cwd: repo }
-  ).unref();
+  spawn(process.execPath, [...process.execArgv, CLI_ENTRY, "serve"], {
+    detached: true,
+    stdio: "ignore",
+  }).unref();
 
   for (let i = 0; i < 40; i++) {
     await new Promise((r) => setTimeout(r, 150));
-    if (!existsSync(serverFile)) continue;
-    try {
-      const m = JSON.parse(readFileSync(serverFile, "utf8"));
-      if (m.dir === dir) {
-        const r = await fetch(`${m.url}/health`, { signal: AbortSignal.timeout(600) });
-        if (r.ok && (await r.text()).trim() === "ok") return m.url;
-      }
-    } catch {
-      /* keep waiting */
+    if (await reportServiceAlive(base, 600)) {
+      await registerReportRoot(base, dir);
+      return base;
     }
   }
-  return `http://127.0.0.1:${fallbackPort}`;
+  return base;
+}
+
+/** 可复用的既有评审结果（供「无新提交则跳过评审」复用） */
+export interface ReusableReview {
+  id: string;
+  passed: boolean;
+  blockers: number;
+  issues: number;
+}
+
+/** 纯判定：本轮评审能否跳过（当前代码无任何更改 + 已有评审结果）。
+ *  - `range` 模式：当前 HEAD 与上一份报告记录的提交相同，即「无新提交」，评审输入不变；
+ *  - 其他模式（staged / working）：当前 diff 为空，即「无改动」。
+ *  prevCommit 缺失（旧报告未记录提交 hash）时一律不跳过。 */
+export function canReuseReview(
+  scope: string,
+  prevCommit: string | undefined,
+  headHash: string | null,
+  currentDiffEmpty: boolean
+): boolean {
+  if (!prevCommit) return false;
+  if (scope === "range") return !!headHash && headHash === prevCommit;
+  return currentDiffEmpty;
+}
+
+/** 读取仓库 .ai-review-reports 下最近一份报告（按 id 倒序即新在前；坏文件跳过继续找更旧的） */
+function readLatestReport(repo: string): { view: ReportView; id: string } | null {
+  const dir = join(repo, REPORTS_DIR);
+  if (!existsSync(dir)) return null;
+  const files = readdirSync(dir).filter((f) => f.endsWith(".json")).sort().reverse();
+  for (const f of files) {
+    try {
+      return { view: JSON.parse(readFileSync(join(dir, f), "utf8")) as ReportView, id: f.slice(0, -5) };
+    } catch {
+      /* 坏报告跳过，继续找更旧的 */
+    }
+  }
+  return null;
+}
+
+/** 判断本轮评审能否跳过并复用已有报告：仓库已有报告，且「本次要评的输入」与那份报告一致。
+ *  命中返回可复用报告（不调用模型），否则 null（照常评审）。 */
+export async function findReusableReview(
+  repo: string,
+  diff: { scope: string; base?: string }
+): Promise<ReusableReview | null> {
+  const prev = readLatestReport(repo);
+  if (!prev) return null;
+  let headHash: string | null = null;
+  let diffEmpty = false;
+  if (diff.scope === "range") {
+    headHash = (await headCommit(repo))?.hash ?? null;
+  } else {
+    // 取 diff 失败（非 git / 命令报错）时按「有改动」处理，避免误跳过而漏评
+    diffEmpty = await diffRaw(diff.scope, diff.base, repo)
+      .then((raw) => !raw.trim())
+      .catch(() => false);
+  }
+  if (!canReuseReview(diff.scope, prev.view.reviewedCommit, headHash, diffEmpty)) return null;
+  return {
+    id: prev.id,
+    passed: !!prev.view.passed,
+    blockers: prev.view.counts?.blocker ?? 0,
+    issues: prev.view.total ?? 0,
+  };
 }

@@ -2,7 +2,6 @@
 (function () {
   var boot = window.__CHAT__ || {};
   var user = boot.user || {};
-  var isSuper = !!boot.isSupervisor;
   var models = boot.models || [];
   var activeModelId = boot.activeModelId || "";
 
@@ -304,10 +303,6 @@
   /* ────────────── 顶栏 ────────────── */
 
   function initTopbar() {
-    if (isSuper) {
-      var teamLink = document.getElementById("teamLink");
-      if (teamLink) teamLink.style.display = "inline-block";
-    }
     var chip = document.querySelector(".user-chip");
     if (chip) {
       var av = chip.querySelector(".avatar");

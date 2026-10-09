@@ -1568,3 +1568,62 @@ body { padding-top: 56px; }
     transform: none;
   }
 }
+
+/* member-search · 统一员工搜索面板（节点加执行人 / @提及 / 团队管理共用，数据源同表） */
+.ms-panel { display: flex; flex-direction: column; gap: 8px; }
+.ms-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--glass-line);
+  border-radius: 8px;
+  background: var(--glass-fill);
+  color: var(--ink);
+  font: 400 13px/18px var(--font-sans);
+  box-sizing: border-box;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+.ms-input:focus { outline: none; border-color: var(--led); box-shadow: 0 0 0 3px var(--led-soft); }
+.ms-list { display: flex; flex-direction: column; gap: 4px; max-height: 280px; overflow-y: auto; }
+.ms-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--glass-line);
+  border-radius: 10px;
+  background: var(--glass-fill);
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.ms-row:hover { border-color: var(--led); background: var(--paper-2); }
+.ms-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font: 600 14px/1 var(--font-sans);
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(20, 20, 20, 0.15);
+}
+.ms-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.ms-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ms-name { font: 600 13px/18px var(--font-sans); color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ms-meta { font: 400 11px/16px var(--font-sans); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ms-action {
+  flex: none;
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid var(--led-line);
+  background: var(--led);
+  color: #fff;
+  font: 500 11px/18px var(--font-sans);
+  transition: all 120ms ease;
+}
+.ms-action:hover:not(:disabled) { background: #4338ca; border-color: #4338ca; }
+.ms-action:disabled { opacity: 0.45; cursor: not-allowed; }
+.ms-empty { font: 400 12px/18px var(--font-sans); color: var(--muted); text-align: center; padding: 14px 0; }

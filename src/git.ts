@@ -62,6 +62,41 @@ export async function isRepo(cwd?: string): Promise<boolean> {
   }
 }
 
+/** git 仓库根目录绝对路径；非 git 仓库返回 null */
+export async function repoRoot(cwd?: string): Promise<string | null> {
+  try {
+    const out = await git(["rev-parse", "--show-toplevel"], cwd);
+    return out || null;
+  } catch {
+    return null;
+  }
+}
+
+/** 远端仓库可达性探测：git ls-remote 只取 refs（不拉对象）。
+ *  必须双保险禁用交互：GIT_TERMINAL_PROMPT=0 关终端提示、GCM_INTERACTIVE=never 关
+ *  Windows Git Credential Manager 的弹窗（否则访问需鉴权的地址会卡住不返回）。
+ *  仍保留本机凭据助手，私有仓库若已存凭据可正常探测。
+ *  ok=true 表示远端可访问（含私有仓库凭据被接受）；ok=false 时 message 为 git 首行错误，供调用方归类 */
+export async function lsRemote(
+  url: string,
+  timeoutMs = 10000
+): Promise<{ ok: boolean; message: string }> {
+  try {
+    await exec("git", ["ls-remote", "--exit-code", url], {
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never" },
+      timeout: timeoutMs,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    return { ok: true, message: "远端仓库可访问" };
+  } catch (err: any) {
+    if (err?.killed || err?.signal) return { ok: false, message: "探测超时" };
+    // 返回完整 stderr 供调用方归类：GCM 的「无法交互」噪音行会排在真正的
+    // 「Repository not found」之前，只取首行会漏判，故整体回传
+    const detail = (err?.stderr?.toString().trim() || err?.message || String(err)).trim();
+    return { ok: false, message: detail };
+  }
+}
+
 /** 列出已暂存（cached）的变更文件相对路径，空数组表示无暂存变更 */
 export async function stagedFiles(cwd?: string): Promise<string[]> {
   const out = await git(["diff", "--cached", "--name-only", "--relative"], cwd);

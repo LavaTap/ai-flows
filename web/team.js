@@ -330,4 +330,18 @@
   initTopbar();
   renderPending();
   renderMembers();
+
+  /* 统一员工搜索：与节点加执行人 / @提及同源（同一张 users 表），仅做本页过滤 */
+  var memberSearch = document.getElementById("memberSearch");
+  if (memberSearch) {
+    memberSearch.addEventListener("input", function () {
+      var q = memberSearch.value.trim().toLowerCase();
+      document.querySelectorAll("#memberTbody .member-row").forEach(function (tr) {
+        var m = members.find(function (x) { return x.email === tr.dataset.email; }) || {};
+        var hay = [m.name, m.email, m.department, m.title, m.github, m.githubPending]
+          .filter(Boolean).join(" ").toLowerCase();
+        tr.style.display = (!q || hay.indexOf(q) >= 0) ? "" : "none";
+      });
+    });
+  }
 })();

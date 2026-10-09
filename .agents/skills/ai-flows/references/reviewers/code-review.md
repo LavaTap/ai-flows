@@ -3,6 +3,10 @@
 > 业务文档：由主文档 `SKILL.md` 在「代码评审」意图下路由到这里。本目录下的
 > `<类别>.md` 是**规则子文档**，只有命中本文档 §4 触发索引时才允许读取。
 
+## 全局条件
+
+禁止直接阅读仓库下的.ai-review-reports文件夹 内的json！！！
+
 ## 触发条件
 
 用户要求「代码评审」「按规范评审这段代码」「Python 规范检查」「检查代码有没有不符合规范的地方」等。
@@ -45,29 +49,29 @@
 
 ## 3. 问题分级
 
-| 级别 | 触发条件 | 颜色语义 |
-|---|---|---|
-| **blocker** | 违反规范中标 `[强制]` 的条目，且会导致运行错误、不可导入、行为与预期不符 | 红 |
-| **warning** | 违反 `[强制]` 但影响较轻，或违反 `[建议]` 但有明确可观察的副作用 | 黄 |
-| **info** | 违反 `[建议]` 类条目，纯可读性/可维护性问题 | 蓝 |
+| 级别          | 触发条件                                    | 颜色语义 |
+| ----------- | --------------------------------------- | ---- |
+| **blocker** | 违反规范中标 `[强制]` 的条目，且会导致运行错误、不可导入、行为与预期不符 | 红    |
+| **warning** | 违反 `[强制]` 但影响较轻，或违反 `[建议]` 但有明确可观察的副作用  | 黄    |
+| **info**    | 违反 `[建议]` 类条目，纯可读性/可维护性问题               | 蓝    |
 
 拿不准级别时，按“这条不改会不会炸/会不会误导下一个读代码的人”判断：会炸→blocker，会误导→warning，都不→info。
 
 ## 4. 触发索引（核心：未命中不读）
 
-| 代码中出现的特征 | 必读子文档 |
-|---|---|
-| 任何 `import`、`from ... import`、`sys.path`、模块路径 | `imports.md` |
-| `raise`、`except`、`try`、自定义异常类、`Error` 基类 | `exceptions.md` |
-| `def` 函数、多返回值、默认参数（`def f(x=[])`）、`lambda`、装饰器、嵌套函数、三目表达式 | `functions.md` |
-| `class`、`__init__`、`@property`、继承、单/双下划线成员、`object` 基类 | `classes.md` |
-| 列表/字典/集合推导、`yield`、`readlines()`、`has_key`、遍历 `keys()`/`items()` | `iteration.md` |
-| `is None`、`== True/False`、`if not x`、`== 0`、`while x:` 之类真值判断 | `boolean.md` |
-| 行尾分号、行长、缩进（含 Tab）、空行、冗余括号、运算符两侧空格、`=` 在默认参数里的空格 | `formatting.md` |
-| 类名/函数名/变量名/常量名、全大写常量、模块级全局赋值、单/双下划线前缀命名 | `naming.md` |
-| 三引号 docstring、文件头版权注释、`# TODO:` 注释 | `docstrings.md` |
-| 字符串 `+`/`+=` 拼接、`%` 或 `.format`、非 ASCII 字符、`# -*- coding`、`reload(sys)` | `strings-encoding.md` |
-| `open()`、`socket`、`with` 语句、`if __name__ ==`、shebang `#!`、`logging`、`unittest` | `resources-entry.md` |
+| 代码中出现的特征                                                                       | 必读子文档                 |
+| ------------------------------------------------------------------------------ | --------------------- |
+| 任何 `import`、`from ... import`、`sys.path`、模块路径                                  | `imports.md`          |
+| `raise`、`except`、`try`、自定义异常类、`Error` 基类                                       | `exceptions.md`       |
+| `def` 函数、多返回值、默认参数（`def f(x=[])`）、`lambda`、装饰器、嵌套函数、三目表达式                      | `functions.md`        |
+| `class`、`__init__`、`@property`、继承、单/双下划线成员、`object` 基类                         | `classes.md`          |
+| 列表/字典/集合推导、`yield`、`readlines()`、`has_key`、遍历 `keys()`/`items()`               | `iteration.md`        |
+| `is None`、`== True/False`、`if not x`、`== 0`、`while x:` 之类真值判断                  | `boolean.md`          |
+| 行尾分号、行长、缩进（含 Tab）、空行、冗余括号、运算符两侧空格、`=` 在默认参数里的空格                                | `formatting.md`       |
+| 类名/函数名/变量名/常量名、全大写常量、模块级全局赋值、单/双下划线前缀命名                                        | `naming.md`           |
+| 三引号 docstring、文件头版权注释、`# TODO:` 注释                                             | `docstrings.md`       |
+| 字符串 `+`/`+=` 拼接、`%` 或 `.format`、非 ASCII 字符、`# -*- coding`、`reload(sys)`        | `strings-encoding.md` |
+| `open()`、`socket`、`with` 语句、`if __name__ ==`、shebang `#!`、`logging`、`unittest` | `resources-entry.md`  |
 
 **判定规则**：左列任意一条在代码里以**字面形式**出现，才读对应子文档。仅在注释、字符串里出现的不算。拿不准时——“这段代码真的会执行这一类构造吗？”——不会，就不读。
 
@@ -99,19 +103,19 @@
 
 ## 6. 规则子文档索引
 
-| 文件 | 覆盖规则 | 主要规则编号 |
-|---|---|---|
-| `imports.md` | import 风格、`from x import yyy`、`import *`、全路径、排序、一行一库 | PY002, PY003, PY037 |
-| `exceptions.md` | raise 语法、Error 基类、裸 except、`as` 语法、try 块范围、finally | PY004, PY007 |
-| `functions.md` | 返回值数量、默认参数、lambda、装饰器、嵌套函数、三目、函数长度 | PY011, PY014, PY016, PY024 |
-| `classes.md` | 构造函数、property 派生覆盖、继承 object、protected/private、dunder | PY043, PY046 |
-| `iteration.md` | 列表推导、生成器 yield、`in` 与 `has_key`、`readlines`、只读遍历 | PY013 |
-| `boolean.md` | `is None`、不与 True/False 比等、零值判断、显式 bool | PY018 |
-| `formatting.md` | 分号、一行一句、行长 120、缩进 4 空格、空行、括号、空格规则 | PY021~PY032 |
-| `naming.md` | 类驼峰、常量全大写下划线、其余下划线、单/双下划线前缀、禁用 dunder 自定义 | PY039, PY043 |
-| `docstrings.md` | 三双引号 docstring、文件头、参数/返回/异常描述、TODO 格式 | PY033, PY034 |
-| `strings-encoding.md` | 字符串格式化、join vs +=、文件编码声明、禁用 reload setdefaultencoding | — |
-| `resources-entry.md` | 全局变量、with 关文件/socket、`__name__ == '__main__'`、shebang、logging、unittest | — |
+| 文件                    | 覆盖规则                                                                   | 主要规则编号                     |
+| --------------------- | ---------------------------------------------------------------------- | -------------------------- |
+| `imports.md`          | import 风格、`from x import yyy`、`import *`、全路径、排序、一行一库                   | PY002, PY003, PY037        |
+| `exceptions.md`       | raise 语法、Error 基类、裸 except、`as` 语法、try 块范围、finally                     | PY004, PY007               |
+| `functions.md`        | 返回值数量、默认参数、lambda、装饰器、嵌套函数、三目、函数长度                                     | PY011, PY014, PY016, PY024 |
+| `classes.md`          | 构造函数、property 派生覆盖、继承 object、protected/private、dunder                  | PY043, PY046               |
+| `iteration.md`        | 列表推导、生成器 yield、`in` 与 `has_key`、`readlines`、只读遍历                       | PY013                      |
+| `boolean.md`          | `is None`、不与 True/False 比等、零值判断、显式 bool                                | PY018                      |
+| `formatting.md`       | 分号、一行一句、行长 120、缩进 4 空格、空行、括号、空格规则                                      | PY021\~PY032               |
+| `naming.md`           | 类驼峰、常量全大写下划线、其余下划线、单/双下划线前缀、禁用 dunder 自定义                              | PY039, PY043               |
+| `docstrings.md`       | 三双引号 docstring、文件头、参数/返回/异常描述、TODO 格式                                  | PY033, PY034               |
+| `strings-encoding.md` | 字符串格式化、join vs +=、文件编码声明、禁用 reload setdefaultencoding                  | —                          |
+| `resources-entry.md`  | 全局变量、with 关文件/socket、`__name__ == '__main__'`、shebang、logging、unittest | —                          |
 
 ## 7. 红线
 
@@ -119,3 +123,4 @@
 - **不要发明规则**：所有规则必须能在对应子文档里找到编号或原文。
 - **不要越过代码谈架构**：用户没问设计问题时，只评规范符合度。
 - **Python 版本差异要说明**：规范写于 Py2 时代，`xrange`、`print` 语句、`has_key` 等已在 Py3 变更；按用户代码实际运行的版本给建议。
+

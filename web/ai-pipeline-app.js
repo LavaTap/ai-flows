@@ -145,6 +145,9 @@
     ".rsp-empty{font:400 12px/18px var(--font-sans);color:var(--muted);text-align:center;padding:16px 0;}",
     ".rsp-error{margin-top:6px;padding:6px 10px;border-radius:6px;background:var(--block-soft);",
     "color:var(--block);font:400 11px/16px var(--font-sans);border:1px solid var(--block-line);}",
+    /* 统一员工搜索面板落在悬浮框内：给关闭按钮留位 + 限制列表高度 */
+    ".role-search-panel .ms-input{padding-right:26px;}",
+    ".role-search-panel .ms-list{max-height:240px;}",
     /* 进度条 */
     ".d-progress{width:100%;}",
     ".d-progress .bar{height:8px;border-radius:999px;background:rgba(0,0,0,.08);overflow:hidden;}",
@@ -236,7 +239,35 @@
     ".acc-btn.ghost{background:transparent;border:1px solid var(--glass-line);color:var(--copy);}",
     ".acc-btn.ghost:hover:not(:disabled){border-color:var(--teal);color:var(--teal);}",
     ".acc-btn.red{background:transparent;border:1px solid var(--led-line,rgba(173,49,77,.35));color:var(--led);}",
-    ".acc-btn:disabled{opacity:.5;cursor:not-allowed;}"
+    ".acc-btn:disabled{opacity:.5;cursor:not-allowed;}",
+    /* 需求工单：编辑按钮 + 管理弹窗 */
+    ".d-ticket-edit{margin-left:auto;padding:2px 10px;border-radius:999px;cursor:pointer;",
+    "border:1px solid var(--led-line);background:var(--led-soft);color:var(--led);",
+    "font:500 12px/18px var(--font-sans);transition:all 120ms ease;}",
+    ".d-ticket-edit:hover{background:var(--led);color:#fff;border-color:var(--led);}",
+    ".tkm-panel{width:min(680px,94vw);}",
+    ".tkm-tabs{display:flex;gap:6px;margin-bottom:14px;border-bottom:1px solid var(--glass-line);}",
+    ".tkm-tab{appearance:none;border:none;background:transparent;cursor:pointer;padding:7px 4px;margin-bottom:-1px;",
+    "border-bottom:2px solid transparent;color:var(--muted);font:500 13px/18px var(--font-sans);transition:all 120ms ease;}",
+    ".tkm-tab:hover{color:var(--ink-soft);}",
+    ".tkm-tab.on{color:var(--led);border-bottom-color:var(--led);}",
+    ".tkm-input{width:100%;padding:8px 12px;border-radius:10px;border:1px solid var(--glass-line);",
+    "background:var(--glass-fill);font:400 13px/18px var(--font-sans);color:var(--ink);box-sizing:border-box;margin-bottom:10px;}",
+    ".tkm-input:focus{outline:none;border-color:var(--led);box-shadow:0 0 0 3px var(--led-soft);}",
+    ".tkm-editor{margin-bottom:10px;}",
+    ".tkm-textarea{width:100%;min-height:140px;padding:10px 12px;border-radius:10px;border:1px solid var(--glass-line);",
+    "font:400 13px/20px var(--font-sans);box-sizing:border-box;resize:vertical;}",
+    ".tkm-list{display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto;margin-bottom:10px;}",
+    ".tkm-row{display:flex;flex-direction:column;gap:2px;text-align:left;padding:9px 12px;cursor:pointer;",
+    "border:1px solid var(--glass-line);border-radius:10px;background:var(--glass-fill);}",
+    ".tkm-row:hover:not(:disabled){border-color:var(--led);}",
+    ".tkm-row:disabled{opacity:.55;cursor:not-allowed;}",
+    ".tkm-row-title{font:600 13px/18px var(--font-sans);color:var(--ink-soft);}",
+    ".tkm-row-meta{font:400 11px/16px var(--font-sans);color:var(--muted);}",
+    ".tkm-empty{font:400 12px/18px var(--font-sans);color:var(--muted);padding:10px 0;}",
+    ".tkm-status{font:400 12px/18px var(--font-sans);color:var(--muted);min-height:18px;margin-top:6px;}",
+    ".tkm-status.ok{color:var(--teal);}",
+    ".tkm-status.err{color:var(--block);}"
   ].join("");
   document.head.appendChild(style);
 
@@ -433,11 +464,6 @@
       chip.appendChild(avatar);
       chip.appendChild(name);
       chip.title = user.email;
-    }
-    // 团队链接仅主管可见
-    if (user.role !== "supervisor") {
-      var tl = document.getElementById("teamLink");
-      if (tl) tl.style.display = "none";
     }
   })();
 
@@ -665,7 +691,7 @@
     panel.classList.toggle("show", show);
     addBtn.classList.toggle("active", show);
     if (show) {
-      var input = panel.querySelector(".rsp-search");
+      var input = panel.querySelector(".ms-input");
       if (input) setTimeout(function () { input.focus(); }, 50);
     }
   }
@@ -686,23 +712,11 @@
     });
     panel.appendChild(closeBtn);
 
-    /* 搜索框 */
-    var input = document.createElement("input");
-    input.type = "text";
-    input.placeholder = "搜索姓名 / 邮箱 / 部门 / 职位…";
-    input.className = "rsp-search";
-    panel.appendChild(input);
-
     /* 错误提示 */
     var errorEl = document.createElement("div");
     errorEl.className = "rsp-error";
     errorEl.style.display = "none";
     panel.appendChild(errorEl);
-
-    /* 结果列表 */
-    var list = document.createElement("div");
-    list.className = "rsp-list";
-    panel.appendChild(list);
 
     function showError(msg) {
       errorEl.textContent = msg;
@@ -712,78 +726,34 @@
       errorEl.style.display = "none";
     }
 
-    function renderList(q) {
-      list.textContent = "";
-      hideError();
-      var pool = members.filter(function (mem) {
-        return mem.department !== node.department;
-      });
-      var filtered = q ? pool.filter(function (mem) {
-        var name = (mem.name || "").toLowerCase();
-        var email = (mem.email || "").toLowerCase();
-        var dept = (mem.department || "").toLowerCase();
-        var title = (mem.title || "").toLowerCase();
-        return name.indexOf(q) >= 0 || email.indexOf(q) >= 0 ||
-               dept.indexOf(q) >= 0 || title.indexOf(q) >= 0;
-      }) : pool.slice(0, 30);
-      if (!filtered.length) {
-        var empty = document.createElement("div");
-        empty.className = "rsp-empty";
-        empty.textContent = q ? "未找到匹配的员工" : "暂无可添加的员工";
-        list.appendChild(empty);
-        return;
-      }
-      filtered.forEach(function (mem) {
-        var row = document.createElement("div");
-        row.className = "rsp-row";
-        var av = document.createElement("span");
-        av.className = "rsp-avatar";
-        av.style.background = colorOf(mem.email);
-        av.textContent = firstChar(mem);
-        var info = document.createElement("span");
-        info.className = "rsp-info";
-        var nm = document.createElement("span");
-        nm.className = "rsp-name";
-        nm.textContent = displayName(mem);
-        var mt = document.createElement("span");
-        mt.className = "rsp-meta";
-        mt.textContent = (mem.department || "无部门") + " · " + (mem.title || "");
-        info.appendChild(nm);
-        info.appendChild(mt);
-        var add = document.createElement("button");
-        add.type = "button";
-        add.className = "rsp-add";
-        add.textContent = "加入";
-        add.addEventListener("click", function () {
-          add.disabled = true;
-          add.textContent = "添加中…";
-          hideError();
-          post("/api/nodes/" + encodeURIComponent(node.id) + "/executors", { email: mem.email }).then(function (res) {
-            if (!handleAuth(res)) { add.disabled = false; add.textContent = "加入"; return; }
-            if (res.ok) {
-              refreshNodes();
-            } else {
-              add.disabled = false;
-              add.textContent = "加入";
-              showError((res.data && res.data.error) || "添加失败");
-            }
-          }).catch(function () {
-            add.disabled = false;
-            add.textContent = "加入";
-            showError("网络异常");
-          });
+    /* 统一员工搜索面板：与工单/知识库 @提及、团队管理同源（GET /api/search?type=user）同款 */
+    var ms = window.MemberSearch.createPanel({
+      placeholder: "搜索姓名 / 邮箱 / 部门 / 职位…",
+      excludeDepartments: [node.department],
+      actionLabel: "加入",
+      emptyText: "暂无可添加的员工",
+      onAction: function (mem, btn) {
+        hideError();
+        btn.disabled = true;
+        btn.textContent = "添加中…";
+        post("/api/nodes/" + encodeURIComponent(node.id) + "/executors", { email: mem.email }).then(function (res) {
+          if (!handleAuth(res)) { btn.disabled = false; btn.textContent = "加入"; return; }
+          if (res.ok) {
+            refreshNodes();
+          } else {
+            btn.disabled = false;
+            btn.textContent = "加入";
+            showError((res.data && res.data.error) || "添加失败");
+          }
+        }).catch(function () {
+          btn.disabled = false;
+          btn.textContent = "加入";
+          showError("网络异常");
         });
-        row.appendChild(av);
-        row.appendChild(info);
-        row.appendChild(add);
-        list.appendChild(row);
-      });
-    }
-
-    input.addEventListener("input", function () {
-      renderList(input.value.trim().toLowerCase());
+      }
     });
-    renderList("");
+    panel.appendChild(ms.el);
+    panel.ms = ms;
     return panel;
   }
 
@@ -1002,6 +972,251 @@
       m.close();
       if (done) done();
     });
+  }
+
+  /* ────────────────────────────── 需求工单管理 ────────────────────────────── */
+
+  /** HTML 富文本 → 纯文本（无富文本编辑器时的退化输入） */
+  function htmlToPlain(html) {
+    var d = document.createElement("div");
+    d.innerHTML = html || "";
+    return d.textContent || "";
+  }
+
+  /** 纯文本 → 转义后的 HTML（换行转 <br>），供无富文本编辑器时落库 */
+  function plainToHtml(text) {
+    return String(text || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\n/g, "<br>");
+  }
+
+  /** 节点需求工单管理弹窗：编辑当前挂单 / 选择已有工单挂载 / 新建工单（主管 + 本部门员工） */
+  function openTicketManager(node) {
+    var m = openModal();
+    m.panel.classList.add("tkm-panel");
+
+    var h = document.createElement("h3");
+    h.textContent = "需求工单";
+    var sub = document.createElement("div");
+    sub.className = "sub";
+    sub.textContent = "节点「" + node.step + "」的需求工单：可编辑当前工单、选择已有工单挂载，或新建工单。";
+    m.panel.appendChild(h);
+    m.panel.appendChild(sub);
+
+    var tabs = document.createElement("div");
+    tabs.className = "tkm-tabs";
+    var body = document.createElement("div");
+    body.className = "tkm-body";
+    m.panel.appendChild(tabs);
+    m.panel.appendChild(body);
+
+    var TABS = [
+      { id: "edit", label: "编辑当前工单" },
+      { id: "link", label: "选择已有工单" },
+      { id: "create", label: "新建工单" }
+    ];
+    var active = "edit";
+
+    function statusEl(host) {
+      var s = document.createElement("div");
+      s.className = "tkm-status";
+      host.appendChild(s);
+      return s;
+    }
+
+    function setStatus(el, text, cls) {
+      el.textContent = text;
+      el.className = "tkm-status" + (cls ? " " + cls : "");
+    }
+
+    /** 标题输入 + 富文本正文（优先 RichEditor，缺省退化 textarea） */
+    function buildEditor(host, title, content) {
+      var titleInput = document.createElement("input");
+      titleInput.type = "text";
+      titleInput.className = "tkm-input";
+      titleInput.placeholder = "工单标题";
+      titleInput.value = title || "";
+      host.appendChild(titleInput);
+
+      var bodyHost = document.createElement("div");
+      bodyHost.className = "tkm-editor";
+      host.appendChild(bodyHost);
+
+      var ed;
+      if (window.RichEditor && window.RichEditor.make) {
+        ed = window.RichEditor.make(bodyHost, { placeholder: "填写需求内容…支持 @提及成员 / 图片 / 标题" });
+        ed.setHtml(content || "");
+      } else {
+        var ta = document.createElement("textarea");
+        ta.className = "tkm-textarea";
+        ta.placeholder = "填写需求内容…";
+        ta.value = htmlToPlain(content);
+        bodyHost.appendChild(ta);
+        ed = { getHtml: function () { return plainToHtml(ta.value); } };
+      }
+      return { titleInput: titleInput, editor: ed };
+    }
+
+    function renderTabs() {
+      tabs.textContent = "";
+      TABS.forEach(function (t) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "tkm-tab" + (t.id === active ? " on" : "");
+        b.textContent = t.label;
+        b.addEventListener("click", function () { active = t.id; renderTabs(); renderBody(); });
+        tabs.appendChild(b);
+      });
+    }
+
+    function renderBody() {
+      body.textContent = "";
+      if (active === "edit") renderEdit();
+      else if (active === "link") renderLink();
+      else renderCreate();
+    }
+
+    /* 编辑当前工单：拉当前挂单 → 回填 → 保存 */
+    function renderEdit() {
+      var loading = document.createElement("div");
+      loading.className = "tkm-empty";
+      loading.textContent = "加载中…";
+      body.appendChild(loading);
+      request("GET", "/api/nodes/" + encodeURIComponent(node.id) + "/ticket").then(function (res) {
+        if (!handleAuth(res)) return;
+        if (!res.ok) { loading.textContent = (res.data && res.data.error) || "读取失败"; return; }
+        var t = res.data && res.data.ticket;
+        if (!t) { loading.textContent = "该节点尚未挂需求工单"; return; }
+        body.textContent = "";
+        var built = buildEditor(body, t.title, t.content);
+        var st = statusEl(body);
+        var foot = document.createElement("div");
+        foot.className = "foot";
+        var save = document.createElement("button");
+        save.type = "button";
+        save.className = "btn";
+        save.textContent = "保存修改";
+        save.addEventListener("click", function () {
+          var title = (built.titleInput.value || "").trim();
+          if (!title) { setStatus(st, "标题不能为空", "err"); return; }
+          save.disabled = true;
+          setStatus(st, "保存中…");
+          put("/api/nodes/" + encodeURIComponent(node.id) + "/ticket", {
+            title: title,
+            content: built.editor.getHtml(),
+          }).then(function (r) {
+            save.disabled = false;
+            if (!handleAuth(r)) return;
+            if (r.ok) { setStatus(st, "已保存", "ok"); refreshNodes(); }
+            else setStatus(st, (r.data && r.data.error) || "保存失败", "err");
+          }).catch(function () { save.disabled = false; setStatus(st, "网络异常", "err"); });
+        });
+        foot.appendChild(save);
+        body.appendChild(foot);
+      }).catch(function () { loading.textContent = "网络异常"; });
+    }
+
+    /* 选择已有工单：搜索候选 → 点击挂载（替换式） */
+    function renderLink() {
+      var search = document.createElement("input");
+      search.type = "text";
+      search.className = "tkm-input";
+      search.placeholder = "搜索工单标题 / 提交人…";
+      body.appendChild(search);
+      var list = document.createElement("div");
+      list.className = "tkm-list";
+      body.appendChild(list);
+      var st = statusEl(body);
+
+      function load(q) {
+        list.textContent = "";
+        var empty = document.createElement("div");
+        empty.className = "tkm-empty";
+        empty.textContent = "加载中…";
+        list.appendChild(empty);
+        request("GET", "/api/nodes/" + encodeURIComponent(node.id) + "/ticket/candidates?q=" + encodeURIComponent(q || "")).then(function (res) {
+          if (!handleAuth(res)) return;
+          list.textContent = "";
+          if (!res.ok) { empty.textContent = (res.data && res.data.error) || "读取失败"; list.appendChild(empty); return; }
+          var rows = (res.data && res.data.tickets) || [];
+          if (!rows.length) {
+            empty.textContent = q ? "未找到匹配的工单" : "暂无可挂载的工单";
+            list.appendChild(empty);
+            return;
+          }
+          rows.forEach(function (t) {
+            var row = document.createElement("button");
+            row.type = "button";
+            row.className = "tkm-row";
+            var title = document.createElement("span");
+            title.className = "tkm-row-title";
+            title.textContent = t.title;
+            var meta = document.createElement("span");
+            meta.className = "tkm-row-meta";
+            meta.textContent = [t.authorName, t.department].filter(Boolean).join(" · ") || "—";
+            row.appendChild(title);
+            row.appendChild(meta);
+            row.addEventListener("click", function () {
+              row.disabled = true;
+              setStatus(st, "挂载中…");
+              post("/api/nodes/" + encodeURIComponent(node.id) + "/ticket/link", { ticketId: t.id }).then(function (r) {
+                if (!handleAuth(r)) return;
+                if (r.ok) {
+                  setStatus(st, "已挂载：" + t.title, "ok");
+                  refreshNodes();
+                  load(search.value.trim());
+                } else {
+                  row.disabled = false;
+                  setStatus(st, (r.data && r.data.error) || "挂载失败", "err");
+                }
+              }).catch(function () { row.disabled = false; setStatus(st, "网络异常", "err"); });
+            });
+            list.appendChild(row);
+          });
+        }).catch(function () { list.textContent = ""; empty.textContent = "网络异常"; list.appendChild(empty); });
+      }
+
+      var timer = null;
+      search.addEventListener("input", function () {
+        clearTimeout(timer);
+        timer = setTimeout(function () { load(search.value.trim()); }, 250);
+      });
+      load("");
+    }
+
+    /* 新建工单：填标题 + 正文 → 新建并挂载 */
+    function renderCreate() {
+      var built = buildEditor(body, "", "");
+      var st = statusEl(body);
+      var foot = document.createElement("div");
+      foot.className = "foot";
+      var create = document.createElement("button");
+      create.type = "button";
+      create.className = "btn";
+      create.textContent = "新建并挂载";
+      create.addEventListener("click", function () {
+        var title = (built.titleInput.value || "").trim();
+        if (!title) { setStatus(st, "标题不能为空", "err"); return; }
+        create.disabled = true;
+        setStatus(st, "创建中…");
+        post("/api/nodes/" + encodeURIComponent(node.id) + "/ticket", {
+          title: title,
+          content: built.editor.getHtml(),
+        }).then(function (r) {
+          create.disabled = false;
+          if (!handleAuth(r)) return;
+          if (r.ok) { setStatus(st, "已新建并挂载", "ok"); refreshNodes(); }
+          else setStatus(st, (r.data && r.data.error) || "创建失败", "err");
+        }).catch(function () { create.disabled = false; setStatus(st, "网络异常", "err"); });
+      });
+      foot.appendChild(create);
+      body.appendChild(foot);
+    }
+
+    renderTabs();
+    renderBody();
   }
 
   /* ────────────────────────────── 账号管理 ────────────────────────────── */
@@ -1354,23 +1569,35 @@
     }
     wrap.appendChild(row1);
 
-    /* 工单引用：每个节点必挂一张需求工单，点击可跳转工单系统 */
+    /* 需求工单：每个节点必挂一张，可跳转工单系统；有编辑权限时可编辑 / 换单 / 新建 */
+    var tkRow = document.createElement("div");
+    tkRow.className = "d-ticket";
+    var tkLbl = document.createElement("span");
+    tkLbl.className = "lbl";
+    tkLbl.textContent = "需求工单";
+    tkRow.appendChild(tkLbl);
     if (node.ticketId) {
-      var tkRow = document.createElement("div");
-      tkRow.className = "d-ticket";
-      var tkLbl = document.createElement("span");
-      tkLbl.className = "lbl";
-      tkLbl.textContent = "需求工单";
       var tkLink = document.createElement("a");
       tkLink.href = "/tickets?id=" + encodeURIComponent(node.ticketId);
       tkLink.target = "_blank";
       tkLink.rel = "noopener";
       tkLink.textContent = node.ticketId;
       tkLink.title = "打开该节点的需求工单";
-      tkRow.appendChild(tkLbl);
       tkRow.appendChild(tkLink);
-      wrap.appendChild(tkRow);
     }
+    if (node.canEdit) {
+      var tkEdit = document.createElement("button");
+      tkEdit.type = "button";
+      tkEdit.className = "d-ticket-edit";
+      tkEdit.textContent = "编辑";
+      tkEdit.title = "编辑当前工单 / 选择已有工单 / 新建工单";
+      tkEdit.addEventListener("click", function (e) {
+        e.stopPropagation();
+        openTicketManager(node);
+      });
+      tkRow.appendChild(tkEdit);
+    }
+    wrap.appendChild(tkRow);
 
     /* 进度条（执行中且服务端已回报进度） */
     if (node.status === "running" && node.progress != null) {
@@ -1420,14 +1647,14 @@
       wrap.appendChild(arts);
     }
 
-    /* 评审报告页链接（runner=ai-review） */
-    if (node.reportUrl) {
+    /* 评审记录入口（runner=ai-review）：跳转当前仓库的评审记录页，展示该仓库全部评审报告 */
+    if (node.runner === "ai-review") {
       var link = document.createElement("a");
       link.className = "btn";
-      link.href = node.reportUrl;
+      link.href = "/reviews?p=" + encodeURIComponent(activePipelineId);
       link.target = "_blank";
       link.rel = "noopener";
-      link.textContent = "查看评审报告";
+      link.textContent = "查看评审记录";
       var rowR = document.createElement("div");
       rowR.className = "d-row";
       rowR.appendChild(link);

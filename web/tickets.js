@@ -987,7 +987,6 @@
         }
       }
     }
-    if (isSuper) byId("teamLink").style.display = "inline-block";
   }
 
   function initFilters() {

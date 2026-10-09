@@ -41,8 +41,8 @@ CREATE TABLE IF NOT EXISTS users (
   password_changed_at TEXT
 );
 
-/* 仓库登记表：仓库管理页登记的本机目录（path 为绝对路径）+ 可选 GitHub 链接。
-   管线通过 repo_id 引用，多个管线可复用同一仓库。 */
+/* 仓库登记表：仓库管理页登记的本机目录（path 为绝对路径）+ 可选 GitHub 链接 + 登记人账号
+   （owner_email，服务端从登录会话取）。管线通过 repo_id 引用，多个管线可复用同一仓库。 */
 CREATE TABLE IF NOT EXISTS repos (
   ord         INTEGER NOT NULL,
   id          TEXT PRIMARY KEY,
@@ -345,6 +345,8 @@ export function getDb(): Database.Database {
   ensureColumn(c, TICKETS_SCHEMA, "tickets", "assignee_email", "assignee_email TEXT");
   // 老库补列（账号密码上次修改时间，用于 10 天有效期提醒）
   ensureColumn(c, "main", "users", "password_changed_at", "password_changed_at TEXT");
+  // 老库补列（仓库登记人账号）
+  ensureColumn(c, "main", "repos", "owner_email", "owner_email TEXT");
   // 老库补列（节点执行角色：显式添加名单 / 显式排除名单）
   ensureColumn(c, "main", "nodes", "executors", "executors TEXT");
   ensureColumn(c, "main", "nodes", "removed_executors", "removed_executors TEXT");

@@ -63,7 +63,7 @@
   function initTopbar() {
     if (isSuper) {
       var teamLink = byId("teamLink");
-      if (teamLink) teamLink.style.display = "inline-block";
+      if (teamLink) teamLink.style.display = "";
     }
     renderUserChip();
   }

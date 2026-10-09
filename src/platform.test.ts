@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { filterReviewsByUser, canEditRequirement, safeRepoPath, parseGithubRepo, canAccessTicket, filterTicketsByUser, isTicketStatus, collectTicketImages, decodePathSegment, summarizeTokenUsage } from "./platform.js";
-import type { ReviewRecord, UserAccount, NodeState, TicketRecord } from "./db.js";
+import { resolve } from "node:path";
+import { filterReviewsByUser, canEditRequirement, safeRepoPath, parseGithubRepo, canAccessTicket, filterTicketsByUser, isTicketStatus, collectTicketImages, decodePathSegment, summarizeTokenUsage, matchRepoByPath, classifyRemoteProbe } from "./platform.js";
+import type { ReviewRecord, UserAccount, NodeState, TicketRecord, RepoRecord } from "./db.js";
 
 function user(role: "staff" | "supervisor", department: string): UserAccount {
   return {
@@ -112,6 +113,43 @@ test("should return null when github link is empty or not a repo url", () => {
   assert.strictEqual(parseGithubRepo("https://github.com/owner"), null);
   assert.strictEqual(parseGithubRepo("https://github.com/"), null);
   assert.strictEqual(parseGithubRepo("owner/repo"), null);
+});
+
+test("should match registered repo by resolved local path", () => {
+  const repos: RepoRecord[] = [
+    { id: "r1", name: "a", path: resolve("tmp/a"), createdAt: "" },
+    { id: "r2", name: "b", path: resolve("tmp/b"), createdAt: "" },
+  ];
+  assert.strictEqual(matchRepoByPath(repos, resolve("tmp/a"))?.id, "r1");
+  // 末尾分隔符 / 重复分隔符归一后仍命中
+  assert.strictEqual(matchRepoByPath(repos, resolve("tmp/a/"))?.id, "r1");
+  // 未登记目录返回 null
+  assert.strictEqual(matchRepoByPath(repos, resolve("tmp/c")), null);
+});
+
+test("should classify remote probe verdict from ls-remote result", () => {
+  // 探测成功 → 放行
+  assert.strictEqual(classifyRemoteProbe(true, "远端仓库可访问"), "ok");
+  // 仓库不存在 / 无权限 / 凭据被拒 → 拒绝登记
+  assert.strictEqual(
+    classifyRemoteProbe(false, "remote: Repository not found. fatal: repository 'https://github.com/o/x.git/' not found"),
+    "reject"
+  );
+  assert.strictEqual(classifyRemoteProbe(false, "fatal: could not read Username for 'https://github.com': terminal prompts disabled"), "reject");
+  assert.strictEqual(classifyRemoteProbe(false, "remote: Permission denied"), "reject");
+  assert.strictEqual(classifyRemoteProbe(false, "fatal: Authentication failed"), "reject");
+  // GCM 的「无法交互」噪音行排在真正的 not found 之前，整段扫描仍应判 reject
+  assert.strictEqual(
+    classifyRemoteProbe(
+      false,
+      "fatal: Cannot prompt because user interactivity has been disabled.\nremote: Repository not found.\nfatal: repository 'https://github.com/o/x.git/' not found"
+    ),
+    "reject"
+  );
+  // 网络异常 / 超时 / DNS 失败 → 只提示放行
+  assert.strictEqual(classifyRemoteProbe(false, "fatal: unable to access 'https://github.com/o/x.git/': Failed to connect"), "warn");
+  assert.strictEqual(classifyRemoteProbe(false, "Could not resolve host: github.com"), "warn");
+  assert.strictEqual(classifyRemoteProbe(false, "探测超时"), "warn");
 });
 
 function ticket(department: string): TicketRecord {

@@ -414,6 +414,8 @@ export interface ReportView {
   repo?: string;
   /** 面包屑：分支 / 提交 */
   ref?: string;
+  /** 本次评审时的仓库 HEAD 提交 hash（供「无新提交则跳过重复评审」判定；旧报告可能缺省） */
+  reviewedCommit?: string;
   filesReviewed: number;
   degradedCount: number;
   /** 问题总数 */
@@ -510,7 +512,7 @@ export function formatReport(
   result: ReviewResult,
   files: DiffFile[],
   gate: { passed: boolean; blockers: ReviewIssue[] },
-  meta: { repo?: string; ref?: string; generatedAt?: Date; pushes?: PushResult[]; repoCwd?: string; targets?: TargetRemote[]; repoTree?: RepoTreeNode[] } = {}
+  meta: { repo?: string; ref?: string; generatedAt?: Date; pushes?: PushResult[]; repoCwd?: string; targets?: TargetRemote[]; repoTree?: RepoTreeNode[]; reviewedCommit?: string } = {}
 ): ReportView {
   const counts = { blocker: 0, warning: 0, info: 0 };
   for (const i of result.issues) {
@@ -524,6 +526,7 @@ export function formatReport(
     generatedAt: formatTime(meta.generatedAt ?? new Date()),
     repo: meta.repo,
     ref: meta.ref,
+    reviewedCommit: meta.reviewedCommit,
     filesReviewed: result.stats.filesReviewed,
     degradedCount: result.stats.degradedCount,
     total: result.issues.length,

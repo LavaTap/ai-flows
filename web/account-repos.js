@@ -43,7 +43,7 @@
   function initTopbar() {
     if (isSuper) {
       var teamLink = byId("teamLink");
-      if (teamLink) teamLink.style.display = "inline-block";
+      if (teamLink) teamLink.style.display = "";
     }
     var chip = document.querySelector(".user-chip");
     if (chip) {
@@ -108,6 +108,7 @@
       +   '<div class="repo-meta">'
       +     '<div class="row"><span class="k">本机目录</span><span class="v">' + esc(r.path) + '</span></div>'
       +     '<div class="row"><span class="k">GitHub</span>' + github + '</div>'
+      +     '<div class="row"><span class="k">登记人</span>' + (r.ownerEmail ? '<span class="v">' + esc(r.ownerEmail) + '</span>' : '<span class="v empty">—</span>') + '</div>'
       +     '<div class="row"><span class="k">被管线使用</span><div class="repo-tags">' + tags + '</div></div>'
       +   '</div>'
       + '</div>';
@@ -174,7 +175,11 @@
       put("/api/repos/" + encodeURIComponent(id), { name: name, githubUrl: githubUrl, path: path })
         .then(function (res) {
           btn.disabled = false;
-          if (res.ok) { editingId = null; reload(); }
+          if (res.ok) {
+            editingId = null;
+            if (res.data && res.data.warning) window.alert("已保存（" + res.data.warning + "）");
+            reload();
+          }
           else { msg.textContent = (res.data && res.data.error) || "保存失败"; msg.className = "form-msg err"; }
         })
         .catch(function () { btn.disabled = false; msg.textContent = "保存失败，请稍后重试"; msg.className = "form-msg err"; });
@@ -203,7 +208,7 @@
           byId("newPath").value = "";
           byId("newName").value = "";
           byId("newGithub").value = "";
-          msg.textContent = "已登记";
+          msg.textContent = res.data.warning ? "已登记（" + res.data.warning + "）" : "已登记";
           msg.className = "form-msg ok";
           reload();
         } else {

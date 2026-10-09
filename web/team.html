@@ -106,8 +106,8 @@
       <a href="/pipeline" class="nav-link" target="_blank" rel="noopener">AI 管线</a>
       <a href="/tickets" class="nav-link" target="_blank" rel="noopener">工单</a>
       <a href="/kb" class="nav-link" target="_blank" rel="noopener">知识库</a>
-
-      <a href="/team" class="nav-link active">团队管理</a>
+      <a href="/reviews" class="nav-link" target="_blank" rel="noopener">代码评审</a>
+
       <a href="/chat" class="nav-link" target="_blank" rel="noopener">AI 对话</a>
       <div class="user-menu">
         <span class="user-chip" id="userChip" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"><span class="avatar" aria-hidden="true"></span><span id="userName">未登录</span></span>
@@ -153,6 +153,8 @@
           全部成员
           <span class="count" id="memberCount"></span>
         </h2>
+        <input type="text" id="memberSearch" class="ms-input" style="margin-bottom:12px;"
+          placeholder="搜索姓名 / 邮箱 / 部门 / 职位…">
         <table class="member-table">
           <thead>
             <tr>

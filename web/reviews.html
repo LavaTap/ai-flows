@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>代码评审 · AI-FLOWS 平台</title>
+  <link rel="stylesheet" href="/ai-pipeline.css">
+  <script src="/user-menu.js" defer></script>
+  <style>
+    /* 代码评审记录页：顶栏 + 居中内容区，按当前管线绑定仓库列出评审记录 */
+    body { background: var(--paper); }
+
+    .reviews-wrap { max-width: 1040px; margin: 0 auto; padding: 28px 24px 80px; }
+
+    .reviews-head { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+    .reviews-head .head-main { flex: 1; min-width: 240px; }
+    .page-title { margin: 0; font: 700 22px/30px var(--font-sans); color: var(--ink); }
+    .page-title em { font-style: normal; color: var(--led); }
+    .page-sub { margin: 6px 0 0; font: 400 13px/20px var(--font-sans); color: var(--muted); }
+    .page-sub .repo { font-family: var(--font-mono); color: var(--led); }
+
+    .reviews-head .picker { display: flex; align-items: center; gap: 8px; }
+    .reviews-head label { font: 500 12px/18px var(--font-sans); color: var(--muted); }
+    select.pipeline-select { padding: 8px 30px 8px 12px; border-radius: 8px; border: 1px solid var(--glass-line);
+      background: var(--glass-fill); color: var(--ink-soft); font: 500 13px/18px var(--font-sans); cursor: pointer;
+      box-shadow: inset 0 1px 2px rgba(15,23,42,.05); appearance: none;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2.5 4.5 L6 8 L9.5 4.5' fill='none' stroke='%2394a3b8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+      background-repeat: no-repeat; background-position: right 10px center; }
+    select.pipeline-select:focus { outline: none; border-color: var(--led); box-shadow: 0 0 0 3px var(--led-soft); }
+
+    .review-list { display: flex; flex-direction: column; }
+    .review-row { display: grid; grid-template-columns: 62px 1fr 132px 118px 96px; gap: 14px; align-items: center;
+      padding: 14px 12px; border-bottom: 1px solid var(--glass-line); }
+    .review-row:first-child { border-top: 1px solid var(--glass-line); }
+    .review-row:hover { background: var(--paper-2); }
+
+    .pill { display: inline-block; padding: 3px 10px; border-radius: 999px; text-align: center;
+      font: 700 11px/16px var(--font-sans); letter-spacing: .5px; }
+    .pill.pass { background: var(--teal-soft); color: var(--teal); }
+    .pill.block { background: rgba(239,68,68,.12); color: var(--block); }
+
+    .rev-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+    .rev-id { font: 500 13px/19px var(--font-mono); color: var(--led); text-decoration: none;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    a.rev-id:hover { text-decoration: underline; }
+    .rev-id.plain { color: var(--ink-soft); }
+    .rev-meta { font: 400 11.5px/17px var(--font-sans); color: var(--muted); overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap; }
+
+    .rev-repo { font: 500 12px/18px var(--font-mono); color: var(--copy); overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap; }
+    .rev-repo .dash { color: var(--muted-2); }
+    .rev-time { font: 400 12px/18px var(--font-mono); color: var(--muted); white-space: nowrap; }
+    .rev-counts { text-align: right; font: 500 12px/18px var(--font-mono); color: var(--muted); white-space: nowrap; }
+    .rev-counts b { color: var(--ink); }
+    .rev-counts .blk { color: var(--block); }
+
+    .reviews-empty { padding: 56px 12px; text-align: center; font: 400 13px/22px var(--font-sans); color: var(--muted-2); }
+
+    @media (max-width: 820px) {
+      .review-row { grid-template-columns: 62px 1fr 96px; }
+      .review-row .rev-repo, .review-row .rev-counts { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <h1 class="brand-title">
+        <span class="tt-pipeline">AI-FLOWS</span>
+        <span class="tt-sep">/</span>
+        <span>代码评审</span>
+      </h1>
+    </div>
+    <div class="top-right">
+      <a class="nav-link" href="/home">首页</a>
+      <a class="nav-link" href="/pipeline" target="_blank" rel="noopener">AI 管线</a>
+      <a class="nav-link" href="/tickets" target="_blank" rel="noopener">工单</a>
+      <a class="nav-link" href="/kb" target="_blank" rel="noopener">知识库</a>
+      <a class="nav-link active" href="/reviews">代码评审</a>
+
+      <a class="nav-link" href="/chat" target="_blank" rel="noopener">AI 对话</a>
+      <div class="user-menu">
+        <span class="user-chip" id="userChip" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"><span class="avatar" aria-hidden="true"></span><span id="userName">未登录</span></span>
+        <div class="user-panel" id="userPanel" hidden>
+          <div class="user-panel-head">
+            <span class="avatar" aria-hidden="true"></span>
+            <div class="user-panel-meta">
+              <strong id="userPanelName">未登录</strong>
+              <span class="user-panel-email" id="userPanelEmail"></span>
+            </div>
+          </div>
+          <div class="user-panel-sep"></div>
+          <a class="user-panel-item" href="/account"><span class="user-panel-ico" aria-hidden="true">⚙</span>设置</a>
+          <div class="user-panel-sep"></div>
+          <button class="user-panel-item user-panel-logout" type="button"><span class="user-panel-ico" aria-hidden="true">⏻</span>退出登录</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="reviews-wrap">
+    <div class="reviews-head">
+      <div class="head-main">
+        <h1 class="page-title"><em>代码评审记录</em></h1>
+        <p class="page-sub">当前仓库 <span class="repo" id="repoName">—</span> 的 AI 评审记录（已登记仓库 / 管线绑定仓库）</p>
+      </div>
+      <div class="picker">
+        <label for="pipelineSel">管线</label>
+        <select class="pipeline-select" id="pipelineSel"></select>
+      </div>
+    </div>
+
+    <div class="review-list" id="reviewList">
+      <div class="reviews-empty">加载中…</div>
+    </div>
+  </main>
+</body>
+</html>

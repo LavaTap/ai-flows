@@ -56,10 +56,6 @@
         }
       }
     }
-    if (user.role === "supervisor") {
-      var tl = byId("teamLink");
-      if (tl) tl.style.display = "inline-block";
-    }
   }
 
   /* ---------- 资料渲染 ---------- */

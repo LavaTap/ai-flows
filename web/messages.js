@@ -132,7 +132,6 @@
         }
       }
     }
-    if (user.role === "supervisor") byId("teamLink").style.display = "inline-block";
   }
 
   function initFilters() {

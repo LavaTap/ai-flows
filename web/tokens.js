@@ -1,7 +1,7 @@
 /* tokens.js · Token 面板
    数据源：window.__TOKENS__ = { user, isSupervisor }
-   接口：GET /api/tokens → { scope: "self"|"team", me, team }
-   展示本人「今天 / 近 7 天 / 近 30 天 / 累计」token 消耗；主管额外展示团队每名成员的消耗量。 */
+   接口：GET /api/tokens → { scope: "team", me, team }
+   展示本人「今天 / 近 7 天 / 近 30 天 / 累计」token 消耗，并展示全团队每名成员的消耗量（所有登录用户可见）。 */
 (function () {
   var boot = window.__TOKENS__ || {};
   var isSuper = !!boot.isSupervisor;
@@ -90,13 +90,14 @@
       .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
       .then(function (d) {
         renderMine(d.me);
-        if (d.scope === "team") renderTeam(d.team);
+        renderTeam(d.team);
       })
       .catch(function () { byId("myNote").textContent = "读取失败，请刷新重试"; });
   }
 
   function init() {
-    if (isSuper) byId("teamLink").style.display = "inline-block";
+    var teamLink = byId("teamLink");
+    if (isSuper && teamLink) teamLink.style.display = "";
     load();
   }
 

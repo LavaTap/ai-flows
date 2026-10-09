@@ -104,7 +104,7 @@
 ## 十一、报告服务（`serve`，默认 4310）
 
 - `GET /` — 评审报告列表页。
-- `GET /health` — 存活探针，纯文本 `ok`。
+- `GET /health` — 存活探针，回带本实例的报告目录：`{"ok":true,"dir":"<abs>"}`。`ensureReportServer` 据此校验「该端口上的实例确实是本仓库的」，避免陈旧 `.server` 指向同端口别的 ai-review 实例而被误信（旧版仅回纯文本 `ok`，无法辨识归属）导致报告页 404。
 - `GET /reports/<id>` — 报告详情页；id 用 `[^/\\]+` 限定防穿越，渲染前实时注入 HEAD 提交信息 `view.head`。
 - `POST /reports/<id>/push` — 确认提交：**必须带非空 `message`**（否则 400），评审未通过 400、报告不存在 404。
   有暂存变更先 `commitStaged` 再 `pushToTargets`；无暂存且 `message` 与 HEAD 不同则 `amendCommitMessage` 改写最近一次提交。

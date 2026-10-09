@@ -54,10 +54,6 @@
   /* ────────────── 顶栏 ────────────── */
 
   function initTopbar() {
-    if (isSuper) {
-      var teamLink = document.getElementById("teamLink");
-      if (teamLink) teamLink.style.display = "inline-block";
-    }
     renderUserChip();
   }
 

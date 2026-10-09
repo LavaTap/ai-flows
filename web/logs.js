@@ -149,12 +149,11 @@
     byId("termLiveText").textContent = "已终止";
     var line = document.createElement("div");
     line.className = "term-line";
-    line.innerHTML = '<span class="t-err">平台服务已终止（等价于启动脚本 quit）。重新运行 start-platform.bat 可再次启动。</span>';
+    line.innerHTML = '<span class="t-err">平台服务已终止。重新运行 start-platform.bat 可再次启动。</span>';
     byId("termBody").appendChild(line);
   }
 
   function init() {
-    if (isSuper) byId("teamLink").style.display = "inline-block";
     if (isSuper) {
       var tbtn = byId("terminateBtn");
       tbtn.hidden = false;

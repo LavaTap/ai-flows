@@ -13,14 +13,15 @@ description: ai-flows 能力总入口，只做目录与路由，不承载业务�
 - **按需下钻**：业务文档内部若再指向支撑文件（如 `references/reviewers/` 下的规则子文档），由该业务文档自己决定是否读取，主文档不管，也不能提前读。
 - **意图不明先问用户**，不要为了“了解全貌”把所有业务文档读一遍。
 - **不越界**：用户没提的业务，不读、不做、不提示。
+- **全局有效**：禁止直接阅读仓库下的.ai-review-reports文件夹 内的json！！！！！！！！
 
 ## 业务路由表
 
-| 用户意图 / 触发词 | 只读这个业务文档 | 配套脚本 |
-|---|---|---|
+| 用户意图 / 触发词                                       | 只读这个业务文档                                | 配套脚本                                                                                                                |
+| ------------------------------------------------ | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | 初始化仓库、接入评审、装 ai-review、给仓库配评审、检查/重配模型密钥、私有仓库推送凭据 | `references/repository-manager/init.md` | `<skill-dir>/scripts/init-repo.mjs`、`<skill-dir>/scripts/check-key.mjs`、`<skill-dir>/scripts/check-remote-auth.mjs` |
-| 代码评审、按规范评审代码、Python 规范检查 | `references/reviewers/CODE-REVIEW.MD` | — |
-| 跑评审、起报告服务、起平台、装 hook、ai-review CLI 用法、评审输出规范化 | `references/ai-flows/review-chain.md` | `<skill-dir>/scripts/normalize-review.mjs` |
+| 代码评审、按规范评审代码、Python 规范检查                         | `references/reviewers/CODE-REVIEW.MD`   | —                                                                                                                   |
+| 跑评审、起报告服务、起平台、装 hook、ai-review CLI 用法、评审输出规范化    | `references/ai-flows/review-chain.md`   | `<skill-dir>/scripts/normalize-review.mjs`                                                                          |
 
 ## 读取方式
 
@@ -52,3 +53,4 @@ ai-flows/
 - 只读当前意图对应的业务文档，多读即违规
 - 本文件不写任何命令细节与业务规则（细节都在业务文档里）
 - 不在主文档层代替业务文档执行操作
+

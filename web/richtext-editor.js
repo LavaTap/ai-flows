@@ -541,15 +541,18 @@ window.RichEditor = (function () {
     }
 
     function searchMention(q) {
-      fetch("/api/search?type=user&q=" + encodeURIComponent(q))
-        .then(function (r) { return r.json().catch(function () { return {}; }); })
-        .then(function (d) {
-          if (!mentionActive) return;
-          mentionList = d.results || [];
-          mentionIdx = 0;
-          renderMentionList();
-        })
-        .catch(function () { /* 搜索失败时静默 */ });
+      /* 统一走 MemberSearch（同源同表 GET /api/search?type=user），缺省时回退本地请求 */
+      var p = (window.MemberSearch && window.MemberSearch.search)
+        ? window.MemberSearch.search(q)
+        : fetch("/api/search?type=user&q=" + encodeURIComponent(q))
+            .then(function (r) { return r.json().catch(function () { return {}; }); })
+            .then(function (d) { return (d && d.results) || []; });
+      p.then(function (list) {
+        if (!mentionActive) return;
+        mentionList = list || [];
+        mentionIdx = 0;
+        renderMentionList();
+      }).catch(function () { /* 搜索失败时静默 */ });
     }
 
     function renderMentionList() {
@@ -567,16 +570,21 @@ window.RichEditor = (function () {
       mentionList.forEach(function (u, i) {
         var item = document.createElement("div");
         item.className = "mention-item" + (i === mentionIdx ? " on" : "");
-        var av = document.createElement("div");
-        av.className = "tk-avatar";
-        av.style.background = colorOf(u.email);
-        av.textContent = firstChar(u.name, u.email);
+        var av;
+        if (window.MemberSearch) {
+          av = window.MemberSearch.avatarEl(u, "tk-avatar");
+        } else {
+          av = document.createElement("div");
+          av.className = "tk-avatar";
+          av.style.background = colorOf(u.email);
+          av.textContent = firstChar(u.name, u.email);
+        }
         item.appendChild(av);
         var meta = document.createElement("div");
         meta.className = "mi-meta";
         var name = document.createElement("div");
         name.className = "mi-name";
-        name.textContent = u.name || u.email;
+        name.textContent = window.MemberSearch ? window.MemberSearch.displayName(u) : (u.name || u.email);
         var dept = document.createElement("div");
         dept.className = "mi-dept";
         dept.textContent = u.department || "";

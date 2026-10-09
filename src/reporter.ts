@@ -1,4 +1,4 @@
-﻿import { writeFileSync, readdirSync, statSync } from "node:fs";
+import { writeFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { ReviewResult, ReviewIssue } from "./gate.js";
 import type { PushResult } from "./publisher.js";
@@ -338,8 +338,11 @@ code { font-family:var(--mono); font-size:.92em; }
 .sev-filter .sf-btn.active.blocker { background:var(--block-soft); border-color:var(--block-line); color:var(--block); }
 .sev-filter .sf-btn.active.warning { background:var(--warn-soft); border-color:var(--amber-line); color:var(--warn); }
 .sev-filter .sf-btn.active.info { background:var(--ok-soft); border-color:var(--teal-line); color:var(--ok); }
+.sev-filter .sf-btn.active.all { background:var(--surface-2); border-color:var(--border); color:var(--text); }
 .sev-filter .sf-clear { margin-left:auto; appearance:none; background:none; border:none; color:var(--dim); font-size:10.5px; cursor:pointer; font-family:var(--sans); }
 .sev-filter .sf-clear:hover { color:var(--text); }
+.sev-filter .sf-export { appearance:none; border:1px solid var(--border); background:var(--surface); color:var(--muted); font-size:10.5px; font-weight:600; padding:3px 11px; border-radius:999px; cursor:pointer; font-family:var(--sans); transition:all 120ms ease; }
+.sev-filter .sf-export:hover { color:var(--text); border-color:var(--dim); }
 /* 单个问题项：左侧条例名 + 问题描述占满，最右侧行号区间，无 severity 色点 */
 .rule-issue { display:flex; align-items:center; gap:8px; padding:7px 0; border-top:1px solid var(--border); cursor:pointer; transition:background 120ms ease; }
 .rule-issue:first-child { border-top:none; }
@@ -543,10 +546,12 @@ function ruleList(v: ReportView): string {
     .join("\n");
   return `<div class="sev-filter">
     <span class="sf-label">筛选</span>
+    <button type="button" class="sf-btn all active" data-sev="all">全部 · ${v.issues.length}</button>
     <button type="button" class="sf-btn blocker" data-sev="blocker">Blocker · ${v.counts.blocker}</button>
     <button type="button" class="sf-btn warning" data-sev="warning">Warning · ${v.counts.warning}</button>
     <button type="button" class="sf-btn info" data-sev="info">Info · ${v.counts.info}</button>
     <button type="button" class="sf-clear" id="sevFilterClear">清除</button>
+    <button type="button" class="sf-export" id="sevFilterExport" title="把当前筛选出的问题导出为 CSV">导出 CSV</button>
   </div>
   <div class="rule-list">${itemHtml}</div>`;
 }
@@ -1089,27 +1094,36 @@ export function renderTemplate(v: ReportView): string {
     }
     return null;
   }
-  /* severity 筛选：点击按钮切换 active，按 data-sev 过滤问题列表 */
+  /* severity 筛选：点击按钮切换 active，按 data-sev 过滤问题列表；「全部」为默认态 */
   var sevFilterBtns = document.querySelectorAll('.sev-filter .sf-btn');
   var sevFilterClear = document.getElementById('sevFilterClear');
-  function applySevFilter(){
+  var sevFilterExport = document.getElementById('sevFilterExport');
+  function activeSevs(){
     var active = [];
     sevFilterBtns.forEach(function(b){
-      if(b.classList.contains('active')) active.push(b.getAttribute('data-sev'));
+      if(b.classList.contains('active') && b.getAttribute('data-sev') !== 'all') active.push(b.getAttribute('data-sev'));
     });
-    var items = document.querySelectorAll('.rule-issue');
-    items.forEach(function(it){
+    return active;
+  }
+  function syncAllBtn(){
+    var allBtn = document.querySelector('.sev-filter .sf-btn.all');
+    if(allBtn) allBtn.classList.toggle('active', activeSevs().length === 0);
+  }
+  function applySevFilter(){
+    var active = activeSevs();
+    document.querySelectorAll('.rule-issue').forEach(function(it){
       var sev = it.getAttribute('data-sev');
-      if(active.length === 0 || active.indexOf(sev) >= 0){
-        it.style.display = '';
-      } else {
-        it.style.display = 'none';
-      }
+      it.style.display = (active.length === 0 || active.indexOf(sev) >= 0) ? '' : 'none';
     });
+    syncAllBtn();
   }
   sevFilterBtns.forEach(function(btn){
     btn.addEventListener('click', function(){
-      btn.classList.toggle('active');
+      if(btn.getAttribute('data-sev') === 'all'){
+        sevFilterBtns.forEach(function(b){ if(b.getAttribute('data-sev') !== 'all') b.classList.remove('active'); });
+      } else {
+        btn.classList.toggle('active');
+      }
       applySevFilter();
     });
   });
@@ -1118,6 +1132,40 @@ export function renderTemplate(v: ReportView): string {
       sevFilterBtns.forEach(function(b){ b.classList.remove('active'); });
       applySevFilter();
     });
+  }
+  /* 导出：把当前筛选出的（可见）问题写成 CSV 下载 */
+  function csvCell(s){
+    s = String(s == null ? '' : s);
+    return /[",\\n\\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  function exportIssuesCsv(){
+    var rows = [['严重级别', '条例', '文件', '行号', '问题描述']];
+    document.querySelectorAll('.rule-issue').forEach(function(it){
+      if(it.style.display === 'none') return;
+      var rule = it.querySelector('.ri-rule');
+      var msg = it.querySelector('.ri-msg');
+      var loc = it.querySelector('.ri-loc');
+      rows.push([
+        it.getAttribute('data-sev') || '',
+        rule ? rule.textContent : '',
+        it.getAttribute('data-file') || '',
+        loc ? loc.textContent : '',
+        msg ? msg.textContent : ''
+      ]);
+    });
+    var csv = rows.map(function(r){ return r.map(csvCell).join(','); }).join('\\r\\n');
+    var blob = new Blob(['\\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'review-issues.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+  if(sevFilterExport){
+    sevFilterExport.addEventListener('click', exportIssuesCsv);
   }
   /* 违反条例项点击 → 高亮对应 diff 行区间 + 展开 diff 文件并定位到菜单卡 */
   var ruleItems = document.querySelectorAll('.rule-issue');
@@ -1320,7 +1368,7 @@ export function buildReportView(
   files: DiffFile[],
   gate: GateSummary,
   pushes?: PushResult[],
-  meta?: { repo?: string; ref?: string; repoCwd?: string; targets?: TargetRemote[]; repoTree?: RepoTreeNode[] }
+  meta?: { repo?: string; ref?: string; repoCwd?: string; targets?: TargetRemote[]; repoTree?: RepoTreeNode[]; reviewedCommit?: string }
 ): ReportView {
   return formatReport(result, files, gate, { ...meta, pushes });
 }

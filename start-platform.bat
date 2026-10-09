@@ -45,10 +45,13 @@ echo   local environment OK.
 
 :startAll
 
-:: 1. free ports
-echo [1/5] Freeing ports (%SERVE_PORT%, %PLATFORM_PORT%)...
-call :killPort %SERVE_PORT%
-call :killPort %PLATFORM_PORT%
+:: 1. clear only OUR own leftover ai-review processes (by command line).
+::    Never kill by port range: a foreign app (e.g. QQ) may squat 4310-4320,
+::    and killing it would be destructive. The report server is a fixed-port
+::    singleton (4310) that serves every registered repo's report dir, so the
+::    printed URL stays correct across repos; if 4310 is taken it just idles.
+echo [1/5] Clearing leftover ai-review processes...
+powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -match 'index\.(ts|js) (serve|platform|logs)' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" >nul 2>&1
 
 :: 2. report server (hidden, port 4310)
 echo [2/5] Starting report server (port %SERVE_PORT%)...
@@ -89,6 +92,17 @@ if !_wait! geq 30 goto portsReady
 ping -n 2 127.0.0.1 >nul 2>&1
 goto waitPorts
 :portsReady
+
+:: a PID found by port may belong to a foreign app squatting the port (e.g. QQ on 4312);
+:: only trust PIDs whose command line is really ours - never report/kill someone else's process
+if defined SERVE_PID (
+    powershell -NoProfile -Command "if (-not ((Get-CimInstance Win32_Process -Filter ('ProcessId=' + %SERVE_PID%)).CommandLine -match 'index\.(ts|js) serve')) { exit 1 }" >nul 2>&1
+    if errorlevel 1 set "SERVE_PID="
+)
+if defined PLATFORM_PID (
+    powershell -NoProfile -Command "if (-not ((Get-CimInstance Win32_Process -Filter ('ProcessId=' + %PLATFORM_PID%)).CommandLine -match 'index\.(ts|js) platform')) { exit 1 }" >nul 2>&1
+    if errorlevel 1 set "PLATFORM_PID="
+)
 
 if defined SERVE_PID if defined PLATFORM_PID goto ready
 :: startup failed -> treat it as a broken environment, re-init once, retry once

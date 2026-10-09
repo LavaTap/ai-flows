@@ -7,10 +7,11 @@ import { collectDiff } from "./collector.js";
 import { reviewBatch } from "./reviewer.js";
 import { decideGate, type ReviewIssue } from "./gate.js";
 import { pushToTargets, type PushResult } from "./publisher.js";
-import { isRepo, currentBranch } from "./git.js";
+import { isRepo, currentBranch, repoRoot, headCommit } from "./git.js";
 import { writeReviewReport, buildReportView, fetchRepoTree } from "./reporter.js";
-import { startReportServer, ensureReportServer, REPORTS_DIR, DEFAULT_REPORT_PORT } from "./serve.js";
-import { startPlatformServer, DEFAULT_PLATFORM_PORT } from "./platform.js";
+import { startReportServer, ensureReportServer, findReusableReview, REPORTS_DIR, DEFAULT_REPORT_PORT } from "./serve.js";
+import { startPlatformServer, DEFAULT_PLATFORM_PORT, matchRepoByPath } from "./platform.js";
+import { loadRepos } from "./db.js";
 import {
   readLogTail,
   readLogChunk,
@@ -58,6 +59,26 @@ async function run(
   if (!(await isRepo(CWD))) {
     console.error("当前目录不是 git 仓库。请在 git 仓库内运行。");
     return 1;
+  }
+
+  // 评审只对「已登记仓库」开放：未登记目录一律拒绝
+  const root = (await repoRoot(CWD)) ?? CWD;
+  if (!matchRepoByPath(loadRepos(), root)) {
+    console.error(`${RED}当前仓库未登记，拒绝评审：${root}${RESET}`);
+    console.error(`${DIM}请先在平台「仓库管理」页登记该仓库目录，再运行评审。${RESET}`);
+    return 1;
+  }
+
+  // 无任何更改 + 已有评审结果：复用最近那份报告，不再调用模型重复评审
+  // （range 模式看 HEAD 是否未变；staged/working 模式看 diff 是否为空）
+  const head = await headCommit(CWD);
+  const reusable = await findReusableReview(CWD, cfg.diff);
+  if (reusable) {
+    const base = await ensureReportServer(CWD);
+    console.log(`${DIM}当前代码无任何更改（HEAD ${head?.short ?? ""} 未变），已存在评审结果，跳过评审。${RESET}`);
+    console.log(`\n${GREEN}📄 评审结果页面：${base}/reports/${reusable.id}${RESET}`);
+    console.log(`${DIM}（全部报告列表：${base}/）${RESET}`);
+    return reusable.passed ? 0 : 1;
   }
 
   console.log(`${DIM}采集变更（scope=${cfg.diff.scope}）...${RESET}`);
@@ -116,6 +137,7 @@ async function run(
       ref,
       repoCwd: CWD,
       targets: cfg.targets,
+      reviewedCommit: head?.hash,
       repoTree: await fetchRepoTree(CWD, { tokenEnv: cfg.reviews?.gitHubTokenEnv }),
     });
     writeFileSync(join(dir, `${id}.json`), JSON.stringify(view, null, 2), "utf8");
@@ -299,24 +321,18 @@ async function main(): Promise<void> {
 
   if (sub === "serve") {
     const args = parseArgs(process.argv.slice(3));
-    const dir = join(CWD, REPORTS_DIR);
+    // 单例报告服务：固定端口。初始 root 取 --repo / 当前目录；其余仓库评审时经 POST /roots 自行登记。
+    const port = Number(args.port || process.env.AI_REVIEW_PORT || DEFAULT_REPORT_PORT);
+    const repo = args.repo ? resolve(args.repo) : CWD;
+    const dir = join(repo, REPORTS_DIR);
     mkdirSync(dir, { recursive: true });
-    const base = Number(args.port || process.env.AI_REVIEW_PORT || DEFAULT_REPORT_PORT);
-    let srv;
-    for (let p = base; p < base + 10; p++) {
-      try {
-        srv = await startReportServer({ host: "127.0.0.1", port: p, dir });
-        break;
-      } catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== "EADDRINUSE") throw e;
-      }
+    try {
+      const srv = await startReportServer({ host: "127.0.0.1", port, roots: [dir] });
+      console.log(`${GREEN}评审报告服务已启动：${srv.url}${RESET}`);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EADDRINUSE") throw e;
+      console.log(`${DIM}端口 ${port} 上已有报告服务在运行（单例），本进程空闲驻留。${RESET}`);
     }
-    if (!srv) {
-      console.error(`${RED}✖ 无法启动服务：端口 ${base}-${base + 9} 均被占用${RESET}`);
-      return;
-    }
-    writeFileSync(join(dir, ".server"), JSON.stringify({ port: srv.port, url: srv.url, dir }));
-    console.log(`${GREEN}评审报告服务已启动：${srv.url}${RESET}`);
     console.log(`${DIM}（Ctrl+C 停止）${RESET}`);
     await new Promise<void>(() => {});
     return;

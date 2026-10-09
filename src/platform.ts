@@ -1,6 +1,6 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomBytes, randomUUID } from "node:crypto";
-import { spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname, basename, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,8 +28,8 @@ import { collectDiff } from "./collector.js";
 import { reviewBatch } from "./reviewer.js";
 import { decideGate } from "./gate.js";
 import { writeReviewReport, buildReportView, fetchRepoTree } from "./reporter.js";
-import { isRepo, currentBranch } from "./git.js";
-import { ensureReportServer, REPORTS_DIR } from "./serve.js";
+import { isRepo, currentBranch, lsRemote, headCommit } from "./git.js";
+import { ensureReportServer, findReusableReview, REPORTS_DIR } from "./serve.js";
 import { runSkill, sanitizeFilename, listSkills, resolveSkillDocByName, REPO_ROOT, type SkillInfo } from "./skill.js";
 import { runCrawler, runSkillAgent, packZip } from "./crawler.js";
 import { sanitizeRichHtml, isEmptyRichHtml } from "./richtext.js";
@@ -131,6 +131,46 @@ export function parseGithubRepo(url: string): { owner: string; repo: string } | 
   return { owner: m[1], repo: m[2] };
 }
 
+/** 按本机目录路径匹配已登记仓库（resolve 归一，Windows 下大小写不敏感）；未登记返回 null */
+export function matchRepoByPath(repos: RepoRecord[], target: string): RepoRecord | null {
+  const norm = (p: string) => {
+    const abs = resolve(p);
+    return process.platform === "win32" ? abs.toLowerCase() : abs;
+  };
+  const t = norm(target);
+  return repos.find((r) => norm(r.path) === t) ?? null;
+}
+
+/** GitHub 链接实探结论：ok 放行 / reject 拒绝登记 / warn 探测不到但放行 */
+export type GithubProbeVerdict = "ok" | "reject" | "warn";
+
+/** 由 git ls-remote 探测结果判定结论：仓库不存在 / 无权限（凭据被拒）拒绝登记；
+ *  网络异常 / 超时等只提示并放行，避免网络问题误伤登记 */
+export function classifyRemoteProbe(ok: boolean, message: string): GithubProbeVerdict {
+  if (ok) return "ok";
+  const m = (message || "").toLowerCase();
+  if (
+    /not found|does not exist|could not read username|authentication failed|permission denied|terminal prompts disabled|invalid username or (token|password)|403|forbidden|invalid credentials/.test(
+      m
+    )
+  ) {
+    return "reject";
+  }
+  return "warn";
+}
+
+/** 从 ls-remote 原始 stderr 摘一行可读提示：跳过 GCM「无法交互」噪音行，取首条有效信息 */
+function probeSummary(message: string): string {
+  const lines = (message || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const meaningful = lines.find((l) => !/cannot prompt|user interactivity/i.test(l));
+  return (meaningful ?? lines[0] ?? "探测失败").slice(0, 200);
+}
+
+/** 探测 GitHub 仓库是否存在/是否有权限：git ls-remote 复用本机 git 凭据，10s 超时，异常不抛错 */
+async function probeGithubRepo(owner: string, repo: string): Promise<{ ok: boolean; message: string }> {
+  return lsRemote(`https://github.com/${owner}/${repo}.git`, 10000);
+}
+
 /** 取当前仓库的本地目录名（尾部分隔符先剥掉，Windows 路径也能取到正确 basename） */
 function repoDirName(repo: string): string {
   return basename(repo.replace(/[\\/]+$/, ""));
@@ -158,24 +198,36 @@ function pipelineGithub(pipeline: PipelineRecord | null | undefined): string {
 
 /** 终止平台相关进程（等价于启动脚本 start-platform.bat 里输入 quit）：
  *  杀掉所有 `src/index.ts serve|platform` 服务进程与 `src/index.ts logs --kind` 日志跟随进程。
- *  本进程也在匹配范围内，故调用方必须先响应、再延时调用；用 detached PowerShell 执行，
- *  脱离被杀的父进程后仍能完成全部清理（与 bat 的兜底清理口径一致）。 */
+ *  先同步枚举目标 PID，逐个 kill，**最后**再结束本进程——本进程若先死会连带中止枚举与清理。
+ *  （Windows 下 spawn 的 detached 子进程在部分环境不执行，故改用 execFileSync 同步枚举。） */
 function terminatePlatformProcesses(): void {
-  const ps =
-    "$ErrorActionPreference='SilentlyContinue';" +
+  const psCmd =
     "Get-CimInstance Win32_Process | Where-Object {" +
     " ($_.CommandLine -match 'src/index\\.ts (serve|platform)(\\s|$)')" +
     " -or ($_.CommandLine -match 'src/index\\.ts logs --kind')" +
-    " } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }";
+    " } | Select-Object -ExpandProperty ProcessId";
+  let pids: number[] = [];
   try {
-    spawn("powershell", ["-NoProfile", "-Command", ps], {
-      detached: true,
-      stdio: "ignore",
+    const out = execFileSync("powershell", ["-NoProfile", "-Command", psCmd], {
+      encoding: "utf8",
       windowsHide: true,
-    }).unref();
+      timeout: 8000,
+    });
+    pids = out.split(/\s+/).map(Number).filter((n) => Number.isInteger(n) && n > 0);
   } catch {
-    process.exit(0);
+    /* 枚举失败不阻断：至少结束本进程 */
   }
+  const self = process.pid;
+  for (const pid of pids) {
+    if (pid === self) continue;
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      /* 目标可能已退出 */
+    }
+  }
+  // 这是「终止服务」动作，无需优雅关闭；HTTP 响应已在 300ms 前 flush
+  process.exit(0);
 }
 
 /** 解析管线 id 参数：缺省 / 无效时回退到第一条管线（管线列表非空） */
@@ -814,6 +866,27 @@ function tokensHtml(user: UserAccount): string {
   return raw.replace("</body>", `${inject}\n</body>`);
 }
 
+/** 渲染代码评审记录页：读静态 reviews.html，注入登录用户 + 管线列表 + 当前管线绑定仓库 bootstrap */
+function reviewsHtml(user: UserAccount, fallbackRepo: string, pipelineIdRaw: string | null): string {
+  const raw = readFileSync(join(WEB_DIR, "reviews.html"), "utf8");
+  const pipelines = loadPipelines();
+  const activeId = resolvePipelineId(pipelineIdRaw);
+  const active = loadPipeline(activeId);
+  const repo = pipelineRepoPath(active, fallbackRepo);
+  const boot = {
+    user: toUserView(user),
+    isSupervisor: user.role === "supervisor",
+    pipelines: pipelines.map((p) => ({ id: p.id, name: p.name })),
+    pipelineId: activeId,
+    pipelineName: active?.name ?? "",
+    repoName: repoDirName(repo),
+    repoPath: repo,
+    repoGithub: pipelineGithub(active),
+  };
+  const inject = `<script>window.__REVIEWS__ = ${jsonForScript(boot)};</script>\n<script src="/reviews.js" defer></script>`;
+  return raw.replace("</body>", `${inject}\n</body>`);
+}
+
 /** JSON 序列化为可安全内嵌 <script> 的字符串（转义 < 防提前闭合标签） */
 function jsonForScript(v: unknown): string {
   return JSON.stringify(v).replace(/</g, "\\u003c");
@@ -867,10 +940,12 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   "/profile-bg.jpg": { file: "profile-bg.jpg", type: "image/jpeg" },
   "/messages.js": { file: "messages.js", type: "text/javascript; charset=utf-8" },
   "/richtext-editor.js": { file: "richtext-editor.js", type: "text/javascript; charset=utf-8" },
+  "/member-search.js": { file: "member-search.js", type: "text/javascript; charset=utf-8" },
   "/user-card.js": { file: "user-card.js", type: "text/javascript; charset=utf-8" },
   "/kb.js": { file: "kb.js", type: "text/javascript; charset=utf-8" },
   "/logs.js": { file: "logs.js", type: "text/javascript; charset=utf-8" },
   "/tokens.js": { file: "tokens.js", type: "text/javascript; charset=utf-8" },
+  "/reviews.js": { file: "reviews.js", type: "text/javascript; charset=utf-8" },
 };
 
 /** 读 web/ 下静态文件并响应，不存在返回 false */
@@ -1443,12 +1518,31 @@ async function runAiReviewNode(repo: string, email?: string): Promise<{
   passed: boolean;
   blockers: number;
   issues: number;
+  /** 本次为「无任何更改」复用旧报告、未真正跑评审（调用方据此不重复写评审历史） */
+  reused?: boolean;
 }> {
+  // 评审只对「已登记仓库」开放：未登记目录一律拒绝，避免对任意路径跑评审链
+  if (!matchRepoByPath(loadRepos(), repo)) {
+    throw new Error(`仓库未登记，拒绝评审：${repo}（请先在「仓库管理」页登记该目录）`);
+  }
   if (!(await isRepo(repo))) {
     throw new Error(`评审目标不是 git 仓库：${repo}`);
   }
   // 评审配置随目标仓库走（与其 pre-push hook 行为一致）
   const cfg = loadConfig(join(repo, "ai-review.config.json"));
+  // 无任何更改 + 已有评审结果：复用最近那份报告，不重复调用模型
+  const reusable = await findReusableReview(repo, cfg.diff);
+  if (reusable) {
+    const base = await ensureReportServer(repo);
+    return {
+      id: reusable.id,
+      reportUrl: `${base}/reports/${reusable.id}`,
+      passed: reusable.passed,
+      blockers: reusable.blockers,
+      issues: reusable.issues,
+      reused: true,
+    };
+  }
   const files = await collectDiff(cfg.diff, repo);
   const result = await reviewBatch(files, cfg.model, { email });
   const gate = decideGate(result, cfg);
@@ -1465,6 +1559,7 @@ async function runAiReviewNode(repo: string, email?: string): Promise<{
     ref,
     repoCwd: repo,
     targets: cfg.targets,
+    reviewedCommit: (await headCommit(repo))?.hash,
     repoTree: await fetchRepoTree(repo, { tokenEnv: cfg.reviews?.gitHubTokenEnv }),
   });
   const dir = join(repo, REPORTS_DIR);
@@ -1910,7 +2005,8 @@ export async function startPlatformServer(
       return;
     }
 
-    // 节点 03 评审记录：平台历史 + 外部报告聚合，按视角过滤（主管全量 / 员工本部门）
+    // 节点 03 评审记录：平台历史 + 外部报告聚合。按 ?p=<pipelineId> 锁定「当前仓库」过滤，
+    // 再按视角过滤（主管全量 / 员工本部门），不再返回所有仓库的报告。
     if (path === "/api/reviews" && req.method === "GET") {
       const user = currentUser(req);
       if (!user) {
@@ -1921,8 +2017,13 @@ export async function startPlatformServer(
       await collectExternalReviews(scanRoots, repo);
       const all = loadReviews();
       const refreshed = await refreshReviewUrls(all, repo);
-      const sorted = refreshed.sort((a, b) => b.generatedAt.localeCompare(a.generatedAt));
-      sendJson(res, 200, { reviews: filterReviewsByUser(sorted, user) });
+      // 当前仓库 = 该管线绑定仓库（未绑回退平台目标仓库）；老记录无 repo 字段按平台仓库归属
+      const activeRepo = pipelineRepoPath(loadPipeline(resolvePipelineId(u.searchParams.get("p"))), repo);
+      const repoName = repoDirName(activeRepo);
+      const fallbackName = repoDirName(repo);
+      const scoped = refreshed.filter((r) => (r.repo || fallbackName) === repoName);
+      const sorted = scoped.sort((a, b) => b.generatedAt.localeCompare(a.generatedAt));
+      sendJson(res, 200, { reviews: filterReviewsByUser(sorted, user), repo: repoName });
       return;
     }
 
@@ -1970,6 +2071,20 @@ export async function startPlatformServer(
       }
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.end(await pipelineHtml(user, repo, u.searchParams.get("p")));
+      return;
+    }
+
+    // 代码评审记录页（未登录重定向到登录页）：展示当前管线绑定仓库的评审记录
+    if (path === "/reviews" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        res.statusCode = 302;
+        res.setHeader("Location", "/login");
+        res.end();
+        return;
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(reviewsHtml(user, repo, u.searchParams.get("p")));
       return;
     }
 
@@ -2131,17 +2246,29 @@ export async function startPlatformServer(
         sendJson(res, 409, { error: "该目录已登记" });
         return;
       }
-      if (githubUrl && !parseGithubRepo(githubUrl)) {
+      const gh = parseGithubRepo(githubUrl);
+      if (githubUrl && !gh) {
         sendJson(res, 400, { error: "请输入形如 https://github.com/owner/repo 的链接" });
         return;
       }
-      const gh = parseGithubRepo(githubUrl);
+      // GitHub 链接实探：仓库不存在 / 无权限拒绝登记，网络异常或超时放行并提示
+      let githubWarning = "";
+      if (gh) {
+        const probe = await probeGithubRepo(gh.owner, gh.repo);
+        const verdict = classifyRemoteProbe(probe.ok, probe.message);
+        if (verdict === "reject") {
+          sendJson(res, 400, { error: `GitHub 链接校验不通过：${probeSummary(probe.message)}` });
+          return;
+        }
+        if (verdict === "warn") githubWarning = probeSummary(probe.message);
+      }
       const rec = appendRepo({
         name: name || repoDirName(abs),
         path: abs,
         githubUrl: gh ? `https://github.com/${gh.owner}/${gh.repo}` : "",
+        ownerEmail: user.email,
       });
-      sendJson(res, 201, { repo: rec });
+      sendJson(res, 201, githubWarning ? { repo: rec, warning: githubWarning } : { repo: rec });
       return;
     }
 
@@ -2195,11 +2322,23 @@ export async function startPlatformServer(
           return;
         }
       }
-      if (githubUrl !== undefined && githubUrl && !parseGithubRepo(githubUrl)) {
+      const gh = githubUrl !== undefined ? parseGithubRepo(githubUrl) : null;
+      if (githubUrl !== undefined && githubUrl && !gh) {
         sendJson(res, 400, { error: "请输入形如 https://github.com/owner/repo 的链接" });
         return;
       }
-      const gh = githubUrl !== undefined ? parseGithubRepo(githubUrl) : null;
+      // GitHub 链接有变化时才实探（链接不变的老记录仍可正常保存）
+      let githubWarning = "";
+      const nextGithub = gh ? `https://github.com/${gh.owner}/${gh.repo}` : "";
+      if (gh && nextGithub !== (cur.githubUrl ?? "")) {
+        const probe = await probeGithubRepo(gh.owner, gh.repo);
+        const verdict = classifyRemoteProbe(probe.ok, probe.message);
+        if (verdict === "reject") {
+          sendJson(res, 400, { error: `GitHub 链接校验不通过：${probeSummary(probe.message)}` });
+          return;
+        }
+        if (verdict === "warn") githubWarning = probeSummary(probe.message);
+      }
       const updated = updateRepo(cur.id, (r) => {
         if (name !== undefined) r.name = name || repoDirName(abs ?? r.path);
         if (abs !== undefined) r.path = abs;
@@ -2208,7 +2347,7 @@ export async function startPlatformServer(
           else delete r.githubUrl;
         }
       });
-      sendJson(res, 200, { repo: updated });
+      sendJson(res, 200, githubWarning ? { repo: updated, warning: githubWarning } : { repo: updated });
       return;
     }
 
@@ -2493,6 +2632,13 @@ export async function startPlatformServer(
       }
       if (!canEditRequirement(user, node)) {
         sendJson(res, 403, { error: "仅本部门员工或部门主管可管理节点需求工单" });
+        return;
+      }
+
+      // 读取当前挂单需求工单（供节点面板回填编辑）
+      if (req.method === "GET") {
+        const ticket = findRequirementTicket(node.id);
+        sendJson(res, 200, { ticket: ticket ? toTicketView(ticket, user) : null });
         return;
       }
 
@@ -2912,13 +3058,17 @@ export async function startPlatformServer(
               updateNode(node.id, (n) => {
                 n.status = "running";
                 n.reportUrl = r.reportUrl;
-                n.lastResult = r.passed
-                  ? r.issues > 0
-                    ? `评审通过（共 ${r.issues} 个非阻塞提示），可提交验收`
-                    : "评审通过（未发现问题），可提交验收"
-                  : `评审未通过：${r.blockers} 个 blocker，已拦截`;
+                n.lastResult = r.reused
+                  ? `当前代码无任何更改，复用已有评审结果（${r.passed ? "通过" : `${r.blockers} 个 blocker`}）`
+                  : r.passed
+                    ? r.issues > 0
+                      ? `评审通过（共 ${r.issues} 个非阻塞提示），可提交验收`
+                      : "评审通过（未发现问题），可提交验收"
+                    : `评审未通过：${r.blockers} 个 blocker，已拦截`;
               });
-              // 写入平台执行历史，供「评审记录」面板按角色/部门追溯
+              // 复用旧报告：不重复写评审历史（同一份报告已在记录里）
+              if (r.reused) return;
+              // 写入平台执行历史，供「评审记录」页按仓库/角色追溯
               appendReview({
                 id: r.id,
                 source: "platform",
@@ -2931,6 +3081,7 @@ export async function startPlatformServer(
                 blockers: r.blockers,
                 issues: r.issues,
                 reportUrl: r.reportUrl,
+                repo: repoDirName(nodeRepo),
               });
             })
             .catch((err: any) => {
@@ -3373,7 +3524,7 @@ export async function startPlatformServer(
       return;
     }
 
-    // Token 用量统计：员工看本人；主管额外看全团队（含无归属的「外部触发」）
+    // Token 用量统计：登录用户一律可见全团队（含无归属的「外部触发」），me 为本人切片
     if (path === "/api/tokens" && req.method === "GET") {
       const user = currentUser(req);
       if (!user) {
@@ -3391,31 +3542,28 @@ export async function startPlatformServer(
         department: user.department,
         tokens: summarizeTokenUsage(mine),
       };
-      let team: {
+      const team: {
         email: string;
         name: string;
         department: string;
         tokens: TokenSummary;
-      }[] = [];
-      if (user.role === "supervisor") {
-        team = users.map((u) => ({
-          email: u.email,
-          name: nameOf(u.email),
-          department: u.department ?? "",
-          tokens: summarizeTokenUsage(records.filter((r) => r.email === u.email)),
-        }));
-        // 无归属用量（外部 run / hook 触发的评审）单列一行，避免统计口径漏账
-        const external = records.filter((r) => !r.email);
-        if (external.length) {
-          team.push({
-            email: "",
-            name: "外部触发",
-            department: "程序中台",
-            tokens: summarizeTokenUsage(external),
-          });
-        }
+      }[] = users.map((u) => ({
+        email: u.email,
+        name: nameOf(u.email),
+        department: u.department ?? "",
+        tokens: summarizeTokenUsage(records.filter((r) => r.email === u.email)),
+      }));
+      // 无归属用量（外部 run / hook 触发的评审）单列一行，避免统计口径漏账
+      const external = records.filter((r) => !r.email);
+      if (external.length) {
+        team.push({
+          email: "",
+          name: "外部触发",
+          department: "程序中台",
+          tokens: summarizeTokenUsage(external),
+        });
       }
-      sendJson(res, 200, { scope: user.role === "supervisor" ? "team" : "self", me, team });
+      sendJson(res, 200, { scope: "team", me, team });
       return;
     }
 
