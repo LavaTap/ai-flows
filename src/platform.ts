@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname, basename, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadNodes, loadAllNodes, loadNodeById, saveNodes, saveNode, loadPipelines, loadPipeline, findPipelineByName, createPipeline, updatePipeline, deletePipeline, loadRepos, loadRepo, appendRepo, updateRepo, deleteRepo, DEFAULT_PIPELINE_ID, authenticate, loadUsers, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, setPassword, ensurePasswordBaseline, loadTickets, appendTicket, updateTicket, deleteTicket, loadPlatformMessages, appendPlatformMessage, markMessageRead, markAllMessagesRead, loadKbArticles, appendKbArticle, updateKbArticle, deleteKbArticle, TICKET_IMAGES_DIR, AVATARS_DIR, CHAT_UPLOADS_DIR, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, recordTokenUsage, loadTokenUsage, type TokenUsageRecord, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel, type ChatAttachment, type ChatRef, type ChatSkillCall, type PlatformMessage, type MessageType, type KbArticle, type KbVisibility, type RepoRecord, type PipelineRecord } from "./db.js";
+import { loadNodes, loadAllNodes, loadNodeById, saveNodes, saveNode, loadPipelines, loadPipeline, findPipelineByName, createPipeline, updatePipeline, deletePipeline, loadRepos, loadRepo, appendRepo, updateRepo, deleteRepo, DEFAULT_PIPELINE_ID, authenticate, loadUsers, loadDepartments, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, setPassword, ensurePasswordBaseline, loadTickets, appendTicket, updateTicket, deleteTicket, loadPlatformMessages, appendPlatformMessage, markMessageRead, markAllMessagesRead, loadKbArticles, appendKbArticle, updateKbArticle, deleteKbArticle, TICKET_IMAGES_DIR, AVATARS_DIR, CHAT_UPLOADS_DIR, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, recordTokenUsage, loadTokenUsage, type TokenUsageRecord, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel, type ChatAttachment, type ChatRef, type ChatSkillCall, type PlatformMessage, type MessageType, type KbArticle, type KbVisibility, type RepoRecord, type PipelineRecord } from "./db.js";
 import {
   callModelStream,
   callModelOnce,
@@ -722,7 +722,7 @@ function toKbCardInfo(a: KbArticle): KbCardInfo {
 /** 归一化可见部门：去空、去重、必须是平台已知部门（防止前端传任意字符串） */
 function normalizeDepartments(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
-  const known = new Set(loadUsers().map((u) => u.department).filter(Boolean));
+  const known = new Set(loadDepartments().map((d) => d.name));
   const out: string[] = [];
   for (const item of v) {
     const s = typeof item === "string" ? item.trim() : "";
@@ -982,6 +982,7 @@ async function pipelineHtml(user: UserAccount, fallbackRepo: string, pipelineIdR
     repoGithub: pipelineGithub(active),
     user: toUserView(user),
     members: loadUsers().map(toUserView),
+    departments: loadDepartments().map((d) => d.name),
     nodes: nodesWithUrls.map((n) => toNodeView(user, n, tickets)),
   };
   const inject = `<script>window.__PIPELINE__ = ${jsonForScript(boot)};</script>\n<script src="/ai-pipeline-app.js" defer></script>`;
@@ -1063,7 +1064,7 @@ function accountReposHtml(user: UserAccount): string {
 function teamHtml(user: UserAccount): string {
   const raw = readFileSync(join(WEB_DIR, "team.html"), "utf8");
   const allUsers = loadUsers();
-  const departments = Array.from(new Set(allUsers.map((u) => u.department).filter(Boolean)));
+  const departments = loadDepartments().map((d) => d.name);
   const boot = {
     user: toUserView(user),
     members: allUsers.map(toUserView),
@@ -1093,7 +1094,7 @@ function ticketsHtml(user: UserAccount): string {
   const allUsers = loadUsers();
   const boot = {
     user: toUserView(user),
-    departments: Array.from(new Set(allUsers.map((u) => u.department).filter(Boolean))),
+    departments: loadDepartments().map((d) => d.name),
     members: allUsers.map(toUserView),
     isSupervisor: user.role === "supervisor",
     /** 可见的知识库索引：工单正文里的知识卡片渲染 + 编辑器「知识库」引用选择 */
@@ -1114,7 +1115,7 @@ function kbHtml(user: UserAccount): string {
     user: toUserView(user),
     isSupervisor: user.role === "supervisor",
     members: allUsers.map(toUserView),
-    departments: Array.from(new Set(allUsers.map((u) => u.department).filter(Boolean))),
+    departments: loadDepartments().map((d) => d.name),
     articles: articles.map((a) => toKbView(a, user)),
   };
   const inject = `<script>window.__KB__ = ${jsonForScript(boot)};</script>\n<script src="/kb.js" defer></script>`;

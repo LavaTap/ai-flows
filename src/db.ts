@@ -469,7 +469,7 @@ function db(): Database.Database {
  *  把 db/*.json 的存量数据搬进 SQLite，此后 JSON 文件不再被读写。 */
 function importLegacyJson(c: Database.Database): void {
   const done = c
-    .prepare("SELECT value FROM settings WHERE key = 'migrated_from_json'")
+    .prepare("SELECT value FROM ai_flows.settings WHERE key = 'migrated_from_json'")
     .get() as { value?: string } | undefined;
   if (done) return;
 
@@ -498,14 +498,14 @@ function importLegacyJson(c: Database.Database): void {
     }
     if (pipeline) {
       if (pipeline.name) {
-        c.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('pipeline_name', ?)").run(
+        c.prepare("INSERT OR REPLACE INTO ai_flows.settings (key, value) VALUES ('pipeline_name', ?)").run(
           pipeline.name
         );
       }
       const nodes = pipeline.nodes ?? [];
       if (nodes.length) {
         const ins = c.prepare(
-          "INSERT OR REPLACE INTO nodes (ord,id,department,step,ready,status,runner,requirement_text,uploads,artifacts,progress,progress_label,rejection,last_result,report_url,output_dir) VALUES (@ord,@id,@department,@step,@ready,@status,@runner,@requirementText,@uploads,@artifacts,@progress,@progressLabel,@rejection,@lastResult,@reportUrl,@outputDir)"
+          "INSERT OR REPLACE INTO ai_flows.nodes (ord,id,department,step,ready,status,runner,requirement_text,uploads,artifacts,progress,progress_label,rejection,last_result,report_url,output_dir) VALUES (@ord,@id,@department,@step,@ready,@status,@runner,@requirementText,@uploads,@artifacts,@progress,@progressLabel,@rejection,@lastResult,@reportUrl,@outputDir)"
         );
         nodes.forEach((n, i) => ins.run(nodeParams(n, i)));
       }
@@ -524,7 +524,7 @@ function importLegacyJson(c: Database.Database): void {
 // ============ 内部工具 ============
 
 function getSettingWith(c: Database.Database, key: string): string | undefined {
-  const row = c.prepare("SELECT value FROM settings WHERE key = ?").get(key) as
+  const row = c.prepare("SELECT value FROM ai_flows.settings WHERE key = ?").get(key) as
     | { value?: string }
     | undefined;
   return row?.value;
@@ -532,7 +532,7 @@ function getSettingWith(c: Database.Database, key: string): string | undefined {
 
 function setSettingWith(c: Database.Database, key: string, value: string): void {
   c.prepare(
-    "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+    "INSERT INTO ai_flows.settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
   ).run(key, value);
 }
 
@@ -558,6 +558,82 @@ function parseJsonArray<T>(raw: string | null): T[] | undefined {
   }
 }
 
+// ---- 部门编号 ↔ 名称（库内只存编号 dept-NN，领域对象暴露部门名） ----
+
+/** 部门（表 departments，主库）。全站唯一部门来源，员工/节点/工单/评审/知识库都只引用它的编号 */
+export interface Department {
+  /** 部门编号（dept-01 形态） */
+  id: string;
+  /** 部门名（改名即全站生效） */
+  name: string;
+  /** ISO 创建时间 */
+  createdAt: string;
+}
+
+interface DepartmentRow {
+  ord: number;
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+/** 进程内编号↔名称缓存（新增部门后置空重建） */
+let deptIndex: { byId: Map<string, string>; byName: Map<string, string> } | null = null;
+
+function departmentIndex(): { byId: Map<string, string>; byName: Map<string, string> } {
+  if (deptIndex) return deptIndex;
+  const rows = db().prepare("SELECT id, name FROM departments").all() as {
+    id: string;
+    name: string;
+  }[];
+  deptIndex = {
+    byId: new Map(rows.map((r) => [r.id, r.name])),
+    byName: new Map(rows.map((r) => [r.name, r.id])),
+  };
+  return deptIndex;
+}
+
+/** 部门名 → 编号（库中没有该部门时自动新建，续号 dept-NN）；空名返回空串 */
+function departmentIdOf(name: string): string {
+  const v = (name ?? "").trim();
+  if (!v) return "";
+  const idx = departmentIndex();
+  const hit = idx.byName.get(v);
+  if (hit) return hit;
+  const c = db();
+  const rows = c.prepare("SELECT id FROM departments").all() as { id: string }[];
+  const maxNo = rows.reduce((m, r) => {
+    const n = Number(String(r.id).replace(/^dept-/, ""));
+    return Number.isFinite(n) && n > m ? n : m;
+  }, 0);
+  const ordRow = c.prepare("SELECT COALESCE(MAX(ord), -1) + 1 AS n FROM departments").get() as {
+    n: number;
+  };
+  const id = `dept-${String(maxNo + 1).padStart(2, "0")}`;
+  c.prepare("INSERT INTO departments (ord, id, name, created_at) VALUES (?,?,?,?)").run(
+    ordRow.n,
+    id,
+    v,
+    new Date().toISOString()
+  );
+  deptIndex = null;
+  return id;
+}
+
+/** 编号 → 部门名（非编号值原样返回，容忍历史脏值）；空串返回空串 */
+function departmentNameOf(idOrName: string): string {
+  const v = idOrName ?? "";
+  if (!v) return "";
+  return departmentIndex().byId.get(v) ?? v;
+}
+
+/** 读取全部部门（按登记顺序） */
+export function loadDepartments(): Department[] {
+  return (db().prepare("SELECT * FROM departments ORDER BY ord").all() as DepartmentRow[]).map(
+    (r) => ({ id: r.id, name: r.name, createdAt: r.created_at })
+  );
+}
+
 // ---- 行 → 对象映射（NULL 还原为「字段缺省」，与 JSON 时代语义一致） ----
 
 interface UserRow {
@@ -579,7 +655,7 @@ function rowToUser(r: UserRow): UserAccount {
     password: r.password,
     role: r.role as Role,
     title: r.title ?? "",
-    department: r.department ?? "",
+    department: departmentNameOf(r.department ?? ""),
   };
   if (r.name != null) u.name = r.name;
   if (r.github != null) u.github = r.github;
@@ -613,7 +689,7 @@ interface NodeRow {
 function rowToNode(r: NodeRow): NodeState {
   const n: NodeState = {
     id: r.id,
-    department: r.department,
+    department: departmentNameOf(r.department),
     step: r.step,
     ready: r.ready === 1,
     status: r.status as NodeStatus,
@@ -632,7 +708,10 @@ function rowToNode(r: NodeRow): NodeState {
   if (r.report_url != null) n.reportUrl = r.report_url;
   if (r.output_dir != null) n.outputDir = r.output_dir;
   const executors = parseJsonArray<NodeExecutor>(r.executors);
-  if (executors) n.executors = executors;
+  if (executors)
+    n.executors = executors.map((e) =>
+      e.from ? { email: e.email, from: departmentNameOf(e.from) } : { email: e.email }
+    );
   const removedExecutors = parseJsonArray<string>(r.removed_executors);
   if (removedExecutors) n.removedExecutors = removedExecutors;
   return n;
@@ -659,7 +738,7 @@ function rowToReview(r: ReviewRow): ReviewRecord {
     source: r.source as ReviewRecord["source"],
     actor: r.actor,
     email: r.email,
-    department: r.department,
+    department: departmentNameOf(r.department),
     role: r.role as Role,
     generatedAt: r.generated_at,
     passed: r.passed === 1,
@@ -729,7 +808,7 @@ function rowToComment(r: CommentRow): TicketComment {
     id: r.id,
     author: r.author,
     email: r.email,
-    department: r.department,
+    department: departmentNameOf(r.department),
     content: r.content,
     at: r.at,
   };
@@ -826,7 +905,7 @@ function userParams(u: UserAccount, ord: number): Record<string, unknown> {
     role: u.role,
     name: u.name ?? null,
     title: u.title,
-    department: u.department,
+    department: departmentIdOf(u.department),
     github: u.github ?? null,
     githubPending: u.githubPending ?? null,
     avatar: u.avatar ?? null,
@@ -839,7 +918,7 @@ function nodeParams(n: NodeState, ord: number): Record<string, unknown> {
     ord,
     id: n.id,
     pipelineId: n.pipelineId ?? null,
-    department: n.department,
+    department: departmentIdOf(n.department),
     step: n.step,
     ready: n.ready ? 1 : 0,
     status: n.status,
@@ -853,7 +932,13 @@ function nodeParams(n: NodeState, ord: number): Record<string, unknown> {
     lastResult: n.lastResult ?? null,
     reportUrl: n.reportUrl ?? null,
     outputDir: n.outputDir ?? null,
-    executors: n.executors ? JSON.stringify(n.executors) : null,
+    executors: n.executors
+      ? JSON.stringify(
+          n.executors.map((e) =>
+            e.from ? { email: e.email, from: departmentIdOf(e.from) } : { email: e.email }
+          )
+        )
+      : null,
     removedExecutors: n.removedExecutors ? JSON.stringify(n.removedExecutors) : null,
   };
 }
@@ -865,7 +950,7 @@ function reviewParams(r: ReviewRecord, ord: number): Record<string, unknown> {
     source: r.source,
     actor: r.actor,
     email: r.email,
-    department: r.department,
+    department: departmentIdOf(r.department),
     role: r.role,
     generatedAt: r.generatedAt,
     passed: r.passed ? 1 : 0,
@@ -884,7 +969,7 @@ function ticketParams(t: TicketRecord, ord: number): Record<string, unknown> {
     title: t.title,
     content: t.content,
     status: t.status,
-    department: t.department,
+    department: departmentIdOf(t.department),
     authorName: t.authorName,
     authorEmail: t.authorEmail,
     createdAt: t.createdAt,
@@ -902,7 +987,7 @@ function commentParams(c: TicketComment, ticketId: string, ord: number): Record<
     ticketId,
     author: c.author,
     email: c.email,
-    department: c.department,
+    department: departmentIdOf(c.department),
     content: c.content,
     at: c.at,
   };
@@ -1039,7 +1124,7 @@ export function syncUserAccounts(): void {
     for (const u of users) {
       const name = accountName(u);
       insChat.run({ email: u.email, name });
-      insReview.run({ email: u.email, name, department: u.department ?? "" });
+      insReview.run({ email: u.email, name, department: departmentIdOf(u.department ?? "") });
     }
   })();
 }
@@ -1055,7 +1140,8 @@ export function loadReviewAccounts(): ReviewAccount[] {
   const rows = db()
     .prepare("SELECT email,name,department FROM review_accounts ORDER BY email")
     .all() as ReviewAccount[];
-  return rows;
+  // 表内存部门编号，对外统一还原成部门名
+  return rows.map((r) => ({ ...r, department: departmentNameOf(r.department) }));
 }
 
 /** GitHub 用户名归一化：去空白与 @ 前缀；空串表示解绑；
@@ -1122,7 +1208,7 @@ export function setUserProfile(
   }
   if (patch.department !== undefined) {
     sets.push("department = ?");
-    args.push(patch.department);
+    args.push(departmentIdOf(patch.department));
   }
   if (patch.title !== undefined) {
     sets.push("title = ?");
@@ -1196,12 +1282,12 @@ function rowToRepo(r: RepoRow): RepoRecord {
 
 /** 读取全部仓库（按登记顺序） */
 export function loadRepos(): RepoRecord[] {
-  return (db().prepare("SELECT * FROM repos ORDER BY ord").all() as RepoRow[]).map(rowToRepo);
+  return (db().prepare("SELECT * FROM ai_flows.repos ORDER BY ord").all() as RepoRow[]).map(rowToRepo);
 }
 
 /** 按 id 读取仓库；不存在返回 null */
 export function loadRepo(id: string): RepoRecord | null {
-  const row = db().prepare("SELECT * FROM repos WHERE id = ?").get(id) as RepoRow | undefined;
+  const row = db().prepare("SELECT * FROM ai_flows.repos WHERE id = ?").get(id) as RepoRow | undefined;
   return row ? rowToRepo(row) : null;
 }
 
@@ -1217,9 +1303,9 @@ export function appendRepo(rec: Omit<RepoRecord, "id" | "createdAt"> & { id?: st
   if (rec.githubUrl) full.githubUrl = rec.githubUrl;
   if (rec.ownerEmail) full.ownerEmail = rec.ownerEmail;
   c.prepare(
-    "INSERT INTO repos (ord,id,name,path,github_url,owner_email,created_at) VALUES (?,?,?,?,?,?,?)"
+    "INSERT INTO ai_flows.repos (ord,id,name,path,github_url,owner_email,created_at) VALUES (?,?,?,?,?,?,?)"
   ).run(
-    nextOrd(c, "repos"),
+    nextOrd(c, "ai_flows.repos"),
     full.id,
     full.name,
     full.path,
@@ -1236,7 +1322,7 @@ export function updateRepo(id: string, mutate: (r: RepoRecord) => void): RepoRec
   if (!cur) return null;
   mutate(cur);
   db()
-    .prepare("UPDATE repos SET name = ?, path = ?, github_url = ? WHERE id = ?")
+    .prepare("UPDATE ai_flows.repos SET name = ?, path = ?, github_url = ? WHERE id = ?")
     .run(cur.name, cur.path, cur.githubUrl ?? null, id);
   return cur;
 }
@@ -1245,8 +1331,8 @@ export function updateRepo(id: string, mutate: (r: RepoRecord) => void): RepoRec
 export function deleteRepo(id: string): boolean {
   const c = db();
   return c.transaction(() => {
-    c.prepare("UPDATE pipelines SET repo_id = NULL WHERE repo_id = ?").run(id);
-    return c.prepare("DELETE FROM repos WHERE id = ?").run(id).changes > 0;
+    c.prepare("UPDATE ai_flows.pipelines SET repo_id = NULL WHERE repo_id = ?").run(id);
+    return c.prepare("DELETE FROM ai_flows.repos WHERE id = ?").run(id).changes > 0;
   })();
 }
 
@@ -1267,14 +1353,14 @@ function rowToPipeline(r: PipelineRow): PipelineRecord {
 
 /** 读取全部管线（按创建顺序；无管线时返回空数组，由 ensureDefaultPipeline 兜底建默认管线） */
 export function loadPipelines(): PipelineRecord[] {
-  return (db().prepare("SELECT * FROM pipelines ORDER BY ord").all() as PipelineRow[]).map(
+  return (db().prepare("SELECT * FROM ai_flows.pipelines ORDER BY ord").all() as PipelineRow[]).map(
     rowToPipeline
   );
 }
 
 /** 按 id 读取管线；不存在返回 null */
 export function loadPipeline(id: string): PipelineRecord | null {
-  const row = db().prepare("SELECT * FROM pipelines WHERE id = ?").get(id) as
+  const row = db().prepare("SELECT * FROM ai_flows.pipelines WHERE id = ?").get(id) as
     | PipelineRow
     | undefined;
   return row ? rowToPipeline(row) : null;
@@ -1282,7 +1368,7 @@ export function loadPipeline(id: string): PipelineRecord | null {
 
 /** 按名称查管线（重名校验用）；不存在返回 null */
 export function findPipelineByName(name: string): PipelineRecord | null {
-  const row = db().prepare("SELECT * FROM pipelines WHERE name = ?").get(name) as
+  const row = db().prepare("SELECT * FROM ai_flows.pipelines WHERE name = ?").get(name) as
     | PipelineRow
     | undefined;
   return row ? rowToPipeline(row) : null;
@@ -1291,8 +1377,8 @@ export function findPipelineByName(name: string): PipelineRecord | null {
 /** 追加一条管线（不含节点；建管线请用 createPipeline） */
 export function appendPipeline(rec: PipelineRecord): void {
   const c = db();
-  c.prepare("INSERT INTO pipelines (ord,id,name,repo_id,created_at) VALUES (?,?,?,?,?)").run(
-    nextOrd(c, "pipelines"),
+  c.prepare("INSERT INTO ai_flows.pipelines (ord,id,name,repo_id,created_at) VALUES (?,?,?,?,?)").run(
+    nextOrd(c, "ai_flows.pipelines"),
     rec.id,
     rec.name,
     rec.repoId ?? null,
@@ -1306,7 +1392,7 @@ export function updatePipeline(id: string, mutate: (p: PipelineRecord) => void):
   if (!cur) return null;
   mutate(cur);
   db()
-    .prepare("UPDATE pipelines SET name = ?, repo_id = ? WHERE id = ?")
+    .prepare("UPDATE ai_flows.pipelines SET name = ?, repo_id = ? WHERE id = ?")
     .run(cur.name, cur.repoId ?? null, id);
   return cur;
 }
@@ -1315,8 +1401,8 @@ export function updatePipeline(id: string, mutate: (p: PipelineRecord) => void):
 export function deletePipeline(id: string): boolean {
   const c = db();
   return c.transaction(() => {
-    c.prepare("DELETE FROM nodes WHERE pipeline_id = ?").run(id);
-    return c.prepare("DELETE FROM pipelines WHERE id = ?").run(id).changes > 0;
+    c.prepare("DELETE FROM ai_flows.nodes WHERE pipeline_id = ?").run(id);
+    return c.prepare("DELETE FROM ai_flows.pipelines WHERE id = ?").run(id).changes > 0;
   })();
 }
 
@@ -1339,11 +1425,11 @@ export function createPipeline(name: string, repoId?: string): PipelineRecord {
  *  同时把旧状态 approved 一次性迁移为 done。幂等。 */
 function ensureDefaultPipeline(): void {
   const c = db();
-  c.prepare("UPDATE nodes SET status = 'done' WHERE status = 'approved'").run();
-  const has = c.prepare("SELECT 1 FROM pipelines LIMIT 1").get();
+  c.prepare("UPDATE ai_flows.nodes SET status = 'done' WHERE status = 'approved'").run();
+  const has = c.prepare("SELECT 1 FROM ai_flows.pipelines LIMIT 1").get();
   if (!has) {
     const name = getSettingWith(c, "pipeline_name") || "text-flow";
-    c.prepare("INSERT INTO pipelines (ord,id,name,repo_id,created_at) VALUES (?,?,?,?,?)").run(
+    c.prepare("INSERT INTO ai_flows.pipelines (ord,id,name,repo_id,created_at) VALUES (?,?,?,?,?)").run(
       0,
       DEFAULT_PIPELINE_ID,
       name,
@@ -1353,7 +1439,7 @@ function ensureDefaultPipeline(): void {
   }
   const def = loadPipelines()[0];
   if (def) {
-    c.prepare("UPDATE nodes SET pipeline_id = ? WHERE pipeline_id IS NULL OR pipeline_id = ''").run(
+    c.prepare("UPDATE ai_flows.nodes SET pipeline_id = ? WHERE pipeline_id IS NULL OR pipeline_id = ''").run(
       def.id
     );
   }
@@ -1364,28 +1450,28 @@ function ensureDefaultPipeline(): void {
 /** 读取某条管线的全部节点（按顺序） */
 export function loadNodes(pipelineId: string): NodeState[] {
   const rows = db()
-    .prepare("SELECT * FROM nodes WHERE pipeline_id = ? ORDER BY ord")
+    .prepare("SELECT * FROM ai_flows.nodes WHERE pipeline_id = ? ORDER BY ord")
     .all(pipelineId) as NodeRow[];
   return rows.map(rowToNode);
 }
 
 /** 读取全部管线节点（跨管线；供「按节点 id 全局扫描」的场景，如补齐需求工单） */
 export function loadAllNodes(): NodeState[] {
-  return (db().prepare("SELECT * FROM nodes ORDER BY ord").all() as NodeRow[]).map(rowToNode);
+  return (db().prepare("SELECT * FROM ai_flows.nodes ORDER BY ord").all() as NodeRow[]).map(rowToNode);
 }
 
 /** 按节点 id 读取（节点 id 全局唯一）；不存在返回 null */
 export function loadNodeById(id: string): NodeState | null {
-  const row = db().prepare("SELECT * FROM nodes WHERE id = ?").get(id) as NodeRow | undefined;
+  const row = db().prepare("SELECT * FROM ai_flows.nodes WHERE id = ?").get(id) as NodeRow | undefined;
   return row ? rowToNode(row) : null;
 }
 
 /** 写回某条管线的节点（整条管线整体替换，执行/批准后持久化） */
 export function saveNodes(pipelineId: string, nodes: NodeState[]): void {
   const c = db();
-  const del = c.prepare("DELETE FROM nodes WHERE pipeline_id = ?");
+  const del = c.prepare("DELETE FROM ai_flows.nodes WHERE pipeline_id = ?");
   const ins = c.prepare(
-    "INSERT INTO nodes (ord,id,pipeline_id,department,step,ready,status,runner,requirement_text,uploads,artifacts,progress,progress_label,rejection,last_result,report_url,output_dir,executors,removed_executors) VALUES (@ord,@id,@pipelineId,@department,@step,@ready,@status,@runner,@requirementText,@uploads,@artifacts,@progress,@progressLabel,@rejection,@lastResult,@reportUrl,@outputDir,@executors,@removedExecutors)"
+    "INSERT INTO ai_flows.nodes (ord,id,pipeline_id,department,step,ready,status,runner,requirement_text,uploads,artifacts,progress,progress_label,rejection,last_result,report_url,output_dir,executors,removed_executors) VALUES (@ord,@id,@pipelineId,@department,@step,@ready,@status,@runner,@requirementText,@uploads,@artifacts,@progress,@progressLabel,@rejection,@lastResult,@reportUrl,@outputDir,@executors,@removedExecutors)"
   );
   c.transaction(() => {
     del.run(pipelineId);
@@ -1448,7 +1534,7 @@ export function loadTickets(): TicketRecord[] {
       title: r.title,
       content: r.content,
       status: r.status as TicketStatus,
-      department: r.department,
+      department: departmentNameOf(r.department),
       authorName: r.author_name,
       authorEmail: r.author_email,
       createdAt: r.created_at,
@@ -1518,7 +1604,7 @@ function rowToKb(r: KbRow): KbArticle {
     authorName: r.author_name,
     authorEmail: r.author_email,
     visibility: r.visibility as KbVisibility,
-    departments: parseJsonArray<string>(r.departments) ?? [],
+    departments: (parseJsonArray<string>(r.departments) ?? []).map(departmentNameOf),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     updatedByName: r.updated_by_name ?? r.author_name,
@@ -1535,7 +1621,7 @@ function kbParams(a: KbArticle, ord: number): Record<string, unknown> {
     authorName: a.authorName,
     authorEmail: a.authorEmail,
     visibility: a.visibility,
-    departments: JSON.stringify(a.departments ?? []),
+    departments: JSON.stringify((a.departments ?? []).map(departmentIdOf)),
     createdAt: a.createdAt,
     updatedAt: a.updatedAt,
     updatedByName: a.updatedByName,
@@ -1544,11 +1630,11 @@ function kbParams(a: KbArticle, ord: number): Record<string, unknown> {
 }
 
 const KB_INSERT_SQL =
-  "INSERT OR REPLACE INTO kb_articles (ord,id,title,content,author_name,author_email,visibility,departments,created_at,updated_at,updated_by_name,updated_by_email) VALUES (@ord,@id,@title,@content,@authorName,@authorEmail,@visibility,@departments,@createdAt,@updatedAt,@updatedByName,@updatedByEmail)";
+  "INSERT OR REPLACE INTO kb.kb_articles (ord,id,title,content,author_name,author_email,visibility,departments,created_at,updated_at,updated_by_name,updated_by_email) VALUES (@ord,@id,@title,@content,@authorName,@authorEmail,@visibility,@departments,@createdAt,@updatedAt,@updatedByName,@updatedByEmail)";
 
 /** 读取全部知识库文章（按原顺序；调用方按可见范围过滤） */
 export function loadKbArticles(): KbArticle[] {
-  return (db().prepare("SELECT * FROM kb_articles ORDER BY ord").all() as KbRow[]).map(rowToKb);
+  return (db().prepare("SELECT * FROM kb.kb_articles ORDER BY ord").all() as KbRow[]).map(rowToKb);
 }
 
 /** 写回全部知识库文章（整体替换：先清后插） */
@@ -1556,7 +1642,7 @@ export function saveKbArticles(articles: KbArticle[]): void {
   const c = db();
   const ins = c.prepare(KB_INSERT_SQL);
   c.transaction(() => {
-    c.prepare("DELETE FROM kb_articles").run();
+    c.prepare("DELETE FROM kb.kb_articles").run();
     articles.forEach((a, i) => ins.run(kbParams(a, i)));
   })();
 }
@@ -1564,7 +1650,7 @@ export function saveKbArticles(articles: KbArticle[]): void {
 /** 追加一条知识库文章 */
 export function appendKbArticle(article: KbArticle): void {
   const c = db();
-  c.prepare(KB_INSERT_SQL).run(kbParams(article, nextOrd(c, "kb_articles")));
+  c.prepare(KB_INSERT_SQL).run(kbParams(article, nextOrd(c, "kb.kb_articles")));
 }
 
 /** 按 id 更新知识库文章（mutate 回调内改字段，含最近更新人）；文章不存在返回 null */
@@ -1579,7 +1665,7 @@ export function updateKbArticle(id: string, mutate: (a: KbArticle) => void): KbA
 
 /** 按 id 删除知识库文章；返回是否命中 */
 export function deleteKbArticle(id: string): boolean {
-  return db().prepare("DELETE FROM kb_articles WHERE id = ?").run(id).changes > 0;
+  return db().prepare("DELETE FROM kb.kb_articles WHERE id = ?").run(id).changes > 0;
 }
 
 // ============ 站内消息 ============

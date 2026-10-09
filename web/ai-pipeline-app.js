@@ -14,8 +14,10 @@
   var ROLE_TEXT = { staff: "员工", supervisor: "主管" };
   var STATUS_TEXT = { todo: "待执行", running: "执行中", in_review: "待验收", done: "已执行" };
   var STATUS_CLS = { todo: "st-todo", running: "st-running", in_review: "st-review", done: "st-done" };
-  /* 平台可选部门（主管在成员管理中据此下拉分配） */
-  var DEPARTMENTS = ["用户研究部", "程序中台", "平台运营部"];
+  /* 平台可选部门（来自服务端部门表注入；主管在成员管理中据此下拉分配） */
+  var DEPARTMENTS = (boot.departments && boot.departments.length)
+    ? boot.departments.slice()
+    : ["用户研究部", "程序中台", "平台运营部"];
   /* 头像调色板：按邮箱哈希取色，前端保证同一账号颜色稳定 */
   var PALETTE = ["#ad314d", "#2aa198", "#b58900", "#6c71c4", "#cb4b16", "#859900"];
 
