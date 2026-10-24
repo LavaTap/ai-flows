@@ -1,5 +1,7 @@
 # AI 分析流程
 
+> 本文所有产出路径均相对 `.agents/agents-output/`（`output/` 采集产出、`excel/` 汇总、`reports/` 日志报告）。
+
 当用户选择 AI 分析评论时，按以下步骤执行。此流程适用于所有平台（B站、Steam、小红书）。
 
 ## 前提：读取参考文档（必须）
@@ -14,7 +16,7 @@ AI 分析前**必须**读取以下两个参考文档，不得跳过：
 ## 步骤 1：预处理评论（生成 AI 输入文件）
 
 ```bash
-venv/Scripts/python.exe research-crawler-skill/scripts/tools/limit_comments_for_ai.py --session-dir {会话目录路径}
+venv/Scripts/python.exe .agents/skills/research-crawler-skill/scripts/tools/limit_comments_for_ai.py --session-dir {会话目录路径}
 ```
 
 脚本从 `{会话目录}/comments/comments.csv` 读取评论（回退到 `output/output.csv`），
@@ -55,10 +57,10 @@ venv/Scripts/python.exe research-crawler-skill/scripts/tools/limit_comments_for_
 
 ```bash
 # 1. 批量预处理所有项目
-venv/Scripts/python.exe research-crawler-skill/scripts/tools/limit_comments_for_ai.py
+venv/Scripts/python.exe .agents/skills/research-crawler-skill/scripts/tools/limit_comments_for_ai.py
 
 # 2. 批量 AI 分析
-venv/Scripts/python.exe research-crawler-skill/scripts/flow/batch_ai_analysis.py
+venv/Scripts/python.exe .agents/skills/research-crawler-skill/scripts/flow/batch_ai_analysis.py
 ```
 
 遍历 `output/` 下所有会话目录，对每个存在 `comments/comments_for_ai.csv` 的项目执行上述步骤 2-5。
@@ -70,10 +72,10 @@ AI 分析完成后，执行错误检测并生成 Excel：
 
 ```bash
 # 1. 错误检测（按平台，报告→reports/{平台}/error/）
-venv/Scripts/python.exe research-crawler-skill/scripts/tools/check_output_errors.py --platform bilibili
-venv/Scripts/python.exe research-crawler-skill/scripts/tools/check_output_errors.py --platform steam
+venv/Scripts/python.exe .agents/skills/research-crawler-skill/scripts/tools/check_output_errors.py --platform bilibili
+venv/Scripts/python.exe .agents/skills/research-crawler-skill/scripts/tools/check_output_errors.py --platform steam
 
 # 2. 按平台生成 Excel（每平台一个文件，输出到 excel/{平台}_{时间戳}.xlsx）
-venv/Scripts/python.exe research-crawler-skill/scripts/flow/merge_all_to_excel.py --platform bilibili
-venv/Scripts/python.exe research-crawler-skill/scripts/flow/merge_all_to_excel.py --platform steam
+venv/Scripts/python.exe .agents/skills/research-crawler-skill/scripts/flow/merge_all_to_excel.py --platform bilibili
+venv/Scripts/python.exe .agents/skills/research-crawler-skill/scripts/flow/merge_all_to_excel.py --platform steam
 ```

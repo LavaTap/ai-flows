@@ -35,6 +35,7 @@ import csv
 import json
 import logging
 import os
+import sys
 import re
 import time
 from datetime import datetime
@@ -43,9 +44,13 @@ import requests
 from DrissionPage import ChromiumPage, ChromiumOptions
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'output', 'xiaohongshu')
-REPORTS_DIR = os.path.join(PROJECT_ROOT, 'reports', 'xiaohongshu')
+OUTPUT_DIR = os.path.join(AGENTS_OUTPUT, 'output', 'xiaohongshu')
+REPORTS_DIR = os.path.join(AGENTS_OUTPUT, 'reports', 'xiaohongshu')
 COOKIES_FILE = os.path.join(SCRIPT_DIR, '.xhs_cookies.json')
 # 兼容参考项目的 cookie.txt
 COOKIE_TXT_FILE = os.path.join(SCRIPT_DIR, 'cookie.txt')

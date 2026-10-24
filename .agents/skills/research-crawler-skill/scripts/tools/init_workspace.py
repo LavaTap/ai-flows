@@ -3,7 +3,7 @@
 工作区初始化脚本 —— 首次加载 skill 时必须先运行此脚本。
 
 功能：
-  在项目根目录（与 skill 同级）创建以下目录框架：
+  在仓库根的 .agents/agents-output 下创建以下目录框架：
     output/{bilibili,steam,xiaohongshu}/   — 各平台采集产出根目录
     excel/                                  — 各平台 Excel 汇总输出目录
     reports/{bilibili,steam,xiaohongshu}/   — 各平台报告根目录
@@ -15,7 +15,7 @@
   脚本幂等：已存在的目录不会被删除或覆盖，仅补建缺失目录。
 
 用法：
-    venv/Scripts/python.exe research-crawler-skill/scripts/init_workspace.py
+    venv/Scripts/python.exe .agents/skills/research-crawler-skill/scripts/init_workspace.py
 """
 import os
 import sys
@@ -25,6 +25,11 @@ if sys.platform == 'win32':
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
 SKILL_DIR = os.path.dirname(SCRIPTS_DIR)
 PROJECT_ROOT = os.path.dirname(SKILL_DIR)
@@ -41,7 +46,7 @@ def main():
     existed = []
 
     # 1. output/{platform}/
-    output_root = os.path.join(PROJECT_ROOT, 'output')
+    output_root = os.path.join(AGENTS_OUTPUT, 'output')
     for platform in PLATFORMS:
         d = os.path.join(output_root, platform)
         if os.path.isdir(d):
@@ -51,7 +56,7 @@ def main():
             created.append(d)
 
     # 2. excel/
-    excel_dir = os.path.join(PROJECT_ROOT, 'excel')
+    excel_dir = os.path.join(AGENTS_OUTPUT, 'excel')
     if os.path.isdir(excel_dir):
         existed.append(excel_dir)
     else:
@@ -59,7 +64,7 @@ def main():
         created.append(excel_dir)
 
     # 3. reports/{platform}/{ai,error,limit,program}/
-    reports_root = os.path.join(PROJECT_ROOT, 'reports')
+    reports_root = os.path.join(AGENTS_OUTPUT, 'reports')
     for platform in PLATFORMS:
         for sub in REPORT_SUBDIRS:
             d = os.path.join(reports_root, platform, sub)
@@ -73,7 +78,7 @@ def main():
     print('=' * 60)
     print('工作区初始化完成')
     print('=' * 60)
-    print(f'项目根目录: {PROJECT_ROOT}')
+    print(f'产出根目录: {AGENTS_OUTPUT}')
     print(f'本次新建目录: {len(created)} 个')
     for d in created:
         print(f'  [新建] {os.path.relpath(d, PROJECT_ROOT)}')

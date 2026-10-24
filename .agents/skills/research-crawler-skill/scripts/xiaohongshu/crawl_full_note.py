@@ -3,7 +3,7 @@
 """获取小红书单条笔记详情：点赞数、评论总数、收藏数、标题正文等元数据
 
 使用方法:
-    venv\Scripts\python.exe research-crawler-skill/scripts/xiaohongshu/crawl_full_note.py --url "笔记链接"
+    venv\Scripts\python.exe .agents/skills/research-crawler-skill/scripts/xiaohongshu/crawl_full_note.py --url "笔记链接"
 
 输出:
     output/xiaohongshu/{note_id}/{note_id}_{timestamp}/
@@ -13,6 +13,7 @@
 
 import argparse
 import os
+import sys
 import json
 import time
 import re
@@ -22,11 +23,16 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 
 # 定位项目根目录
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
 SKILL_DIR = os.path.dirname(SCRIPTS_DIR)
 PROJECT_ROOT = os.path.dirname(SKILL_DIR)
 
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'output', 'xiaohongshu')
+OUTPUT_DIR = os.path.join(AGENTS_OUTPUT, 'output', 'xiaohongshu')
 COOKIE_FILE = os.path.join(SCRIPT_DIR, 'cookie.txt')
 EDGE_PATH = os.environ.get('EDGE_PATH', r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe")
 

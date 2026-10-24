@@ -17,8 +17,8 @@
 支持 ``--dry-run`` 预览合并结果。
 
 用法:
-    python research-crawler-skill/scripts/reorganize_reports.py
-    python research-crawler-skill/scripts/reorganize_reports.py --dry-run
+    python .agents/skills/research-crawler-skill/scripts/reorganize_reports.py
+    python .agents/skills/research-crawler-skill/scripts/reorganize_reports.py --dry-run
 """
 import argparse
 import os
@@ -28,9 +28,13 @@ import sys
 from datetime import datetime
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
 PROJECT_ROOT = os.path.dirname(SKILL_DIR)
-REPORTS_DIR = os.path.join(PROJECT_ROOT, 'reports', 'bilibili', 'program')
+REPORTS_DIR = os.path.join(AGENTS_OUTPUT, 'reports', 'bilibili', 'program')
 
 # 时间戳格式 YYYYMMDD_HHMMSS
 TS_REGEX = r'\d{8}_\d{6}'

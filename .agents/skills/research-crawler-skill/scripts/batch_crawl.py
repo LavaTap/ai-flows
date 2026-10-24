@@ -6,10 +6,10 @@
 输出总日志到 ``reports/program_{时间戳}/batch_output.log``。
 
 用法:
-    python research-crawler-skill/scripts/batch_crawl.py
-    python research-crawler-skill/scripts/batch_crawl.py --resume
-    python research-crawler-skill/scripts/batch_crawl.py --start 10
-    python research-crawler-skill/scripts/batch_crawl.py --video-count 10 --comment-count 200
+    python .agents/skills/research-crawler-skill/scripts/batch_crawl.py
+    python .agents/skills/research-crawler-skill/scripts/batch_crawl.py --resume
+    python .agents/skills/research-crawler-skill/scripts/batch_crawl.py --start 10
+    python .agents/skills/research-crawler-skill/scripts/batch_crawl.py --video-count 10 --comment-count 200
 """
 import argparse
 import os
@@ -19,10 +19,14 @@ import time
 from datetime import datetime
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
 PROJECT_ROOT = os.path.dirname(SKILL_DIR)
-REPORTS_DIR = os.path.join(PROJECT_ROOT, 'reports', 'bilibili', 'program')
-OUTPUT_ROOT = os.path.join(PROJECT_ROOT, 'output')
+REPORTS_DIR = os.path.join(AGENTS_OUTPUT, 'reports', 'bilibili', 'program')
+OUTPUT_ROOT = os.path.join(AGENTS_OUTPUT, 'output')
 
 # 失败时记录 stderr 的尾部字节数
 STDERR_TAIL_BYTES = 500

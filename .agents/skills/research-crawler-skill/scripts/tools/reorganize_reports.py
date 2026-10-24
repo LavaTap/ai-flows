@@ -8,8 +8,8 @@
 删除空的源目录。已知子文件夹（ai/、error/、limit/、batch_*）会被跳过。
 
 用法:
-    python research-crawler-skill/scripts/reorganize_reports.py
-    python research-crawler-skill/scripts/reorganize_reports.py --dry-run
+    python .agents/skills/research-crawler-skill/scripts/reorganize_reports.py
+    python .agents/skills/research-crawler-skill/scripts/reorganize_reports.py --dry-run
 """
 import argparse
 import os
@@ -18,10 +18,15 @@ import sys
 from datetime import datetime
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
 SKILL_DIR = os.path.dirname(SCRIPTS_DIR)
 PROJECT_ROOT = os.path.dirname(SKILL_DIR)
-REPORTS_DIR = os.path.join(PROJECT_ROOT, 'reports', 'bilibili', 'program')
+REPORTS_DIR = os.path.join(AGENTS_OUTPUT, 'reports', 'bilibili', 'program')
 
 # 旧命名模式: program_{ts}
 PROGRAM_PATTERN = re.compile(r'^program_(\d{8}_\d{6})$')

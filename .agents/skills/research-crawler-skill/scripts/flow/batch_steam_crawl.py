@@ -7,10 +7,10 @@
   对剩余游戏逐个爬取 Steam 评论（每 100 条暂停 10 秒）。
 
 用法：
-    python research-crawler-skill/scripts/batch_steam_crawl.py
-    python research-crawler-skill/scripts/batch_steam_crawl.py --count 500
-    python research-crawler-skill/scripts/batch_steam_crawl.py --force   # 强制重爬所有
-    python research-crawler-skill/scripts/batch_steam_crawl.py --resume  # 从失败处继续
+    python .agents/skills/research-crawler-skill/scripts/batch_steam_crawl.py
+    python .agents/skills/research-crawler-skill/scripts/batch_steam_crawl.py --count 500
+    python .agents/skills/research-crawler-skill/scripts/batch_steam_crawl.py --force   # 强制重爬所有
+    python .agents/skills/research-crawler-skill/scripts/batch_steam_crawl.py --resume  # 从失败处继续
 """
 import argparse
 import csv
@@ -22,6 +22,11 @@ from datetime import datetime
 
 # 添加 skill 脚本目录到 path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPTS_DIR))
 sys.path.insert(0, os.path.join(SCRIPTS_DIR, 'steam'))
@@ -29,8 +34,8 @@ sys.path.insert(0, os.path.join(SCRIPTS_DIR, 'steam'))
 # 导入 steam_crawler 中的爬取函数
 from steam_crawler import crawl_steam_reviews, setup_logger
 
-REPORTS_DIR = os.path.join(PROJECT_ROOT, 'reports', 'steam', 'program')
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'output', 'steam')
+REPORTS_DIR = os.path.join(AGENTS_OUTPUT, 'reports', 'steam', 'program')
+OUTPUT_DIR = os.path.join(AGENTS_OUTPUT, 'output', 'steam')
 DEFAULT_COUNT = 500
 
 def parse_steam_appids_md(filepath):
@@ -77,7 +82,7 @@ def main():
                         help='要排除的游戏名称列表')
     args = parser.parse_args()
 
-    STEAM_APPIDS_FILE = os.path.join(PROJECT_ROOT, 'output', 'steam_appids.md')
+    STEAM_APPIDS_FILE = os.path.join(AGENTS_OUTPUT, 'output', 'steam_appids.md')
     ALL_GAMES = parse_steam_appids_md(STEAM_APPIDS_FILE)
 
     excluded_game_names = set(args.exclude_games)

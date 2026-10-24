@@ -11,26 +11,29 @@ description_zh: 游戏评论采集与治愈向正向复核分析。支持B站、
 
 ## 首次加载初始化（最高优先级，先于一切流程执行）
 
-**首次加载本 skill 时，必须先运行工作区初始化脚本，然后再进行任何其他步骤。** 该脚本创建与 skill 同级的 `output/`、`excel/`、`reports/` 目录框架（含各平台 `ai/error/limit/program` 子目录）。脚本幂等，已存在的目录不会被删除，仅补建缺失目录。
+**首次加载本 skill 时，必须先运行工作区初始化脚本，然后再进行任何其他步骤。** 该脚本在仓库根的 `.agents/agents-output/` 下创建 `output/`、`excel/`、`reports/` 目录框架（含各平台 `ai/error/limit/program` 子目录）。脚本幂等，已存在的目录不会被删除，仅补建缺失目录。
 
 ```bash
-venv/Scripts/python.exe research-crawler-skill/scripts/tools/init_workspace.py
+venv/Scripts/python.exe .agents/skills/research-crawler-skill/scripts/tools/init_workspace.py
 ```
 
 初始化后目录框架：
 ```
-{项目根}/
-├── research-crawler-skill/   ← 本 skill
-├── output/{bilibili,steam,xiaohongshu}/   ← 各平台采集产出
-├── excel/                    ← 各平台 Excel 汇总（每平台一个文件）
-└── reports/{bilibili,steam,xiaohongshu}/
-    ├── ai/        ← AI 分析报告
-    ├── error/     ← 错误检测报告
-    ├── limit/     ← AI 预处理（截断）报告
-    └── program/   ← 运行日志与采集报告（按会话名分子目录）
+{仓库根}/
+├── .agents/
+│   ├── skills/research-crawler-skill/   ← 本 skill（唯一入口，仓库根不再保留副本）
+│   └── agents-output/                   ← 所有 agent 产出根目录
+│       ├── output/{bilibili,steam,xiaohongshu}/   ← 各平台采集产出
+│       ├── excel/                    ← 各平台 Excel 汇总（每平台一个文件）
+│       └── reports/{bilibili,steam,xiaohongshu}/
+│           ├── ai/        ← AI 分析报告
+│           ├── error/     ← 错误检测报告
+│           ├── limit/     ← AI 预处理（截断）报告
+│           └── program/   ← 运行日志与采集报告（按会话名分子目录）
+└── venv/                    ← 项目根虚拟环境
 ```
 
-若 `output/`、`excel/`、`reports/` 任一缺失，**必须重新运行 init_workspace.py 补建**，不得手动创建或让脚本写出到不存在的目录。
+若 `.agents/agents-output/` 下的 `output/`、`excel/`、`reports/` 任一缺失，**必须重新运行 init_workspace.py 补建**，不得手动创建或让脚本写出到不存在的目录。所有脚本的产出路径统一由 `scripts/workspace_paths.py` 的 `AGENTS_OUTPUT` 常量决定，不要在脚本里另写死目录。
 
 ## 环境要求（先于采集流程执行）
 
@@ -91,7 +94,7 @@ venv/Scripts/python.exe research-crawler-skill/scripts/tools/init_workspace.py
 
 ## 数据路径约定
 
-所有产出按平台及关键词分组：
+所有产出按平台及关键词分组，**以下路径均相对 `.agents/agents-output/`**（即实际绝对路径为 `<仓库根>/.agents/agents-output/...`）：
 
 ```
 output/{平台}/{关键词}/{关键词}_{时间戳}/
@@ -133,7 +136,7 @@ CSV 内"平台"字段按实际来源填写（`B站`/`Steam`/`小红书`），与
 ## 步骤 1：检测失败项目
 
 ```bash
-venv/Scripts/python.exe research-crawler-skill/scripts/tools/check_output_errors.py
+venv/Scripts/python.exe .agents/skills/research-crawler-skill/scripts/tools/check_output_errors.py
 ```
 
 脚本检测两类错误，生成报告到 `reports/{平台}/error/output_errors.log`：
@@ -152,7 +155,7 @@ venv/Scripts/python.exe research-crawler-skill/scripts/tools/check_output_errors
 ## 步骤 3a：用户选择删除
 
 ```bash
-venv/Scripts/python.exe research-crawler-skill/scripts/tools/delete_output_errors.py
+venv/Scripts/python.exe .agents/skills/research-crawler-skill/scripts/tools/delete_output_errors.py
 ```
 
 删除所有失败项目子文件夹，同时清理变空的游戏文件夹。删除结果写入 `reports/{平台}/error/delete_output.log`。

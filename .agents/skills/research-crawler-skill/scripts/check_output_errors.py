@@ -10,6 +10,10 @@ if sys.platform == 'win32':
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
 PROJECT_ROOT = os.path.dirname(SKILL_DIR)
 
@@ -98,8 +102,8 @@ def main():
         print(f"错误: 非法的平台名称 {args.platform!r}，仅允许字母、数字、下划线和连字符")
         return
 
-    output_root = os.path.join(PROJECT_ROOT, 'output', args.platform)
-    reports_dir = os.path.join(PROJECT_ROOT, 'reports', args.platform, 'program')
+    output_root = os.path.join(AGENTS_OUTPUT, 'output', args.platform)
+    reports_dir = os.path.join(AGENTS_OUTPUT, 'reports', args.platform, 'program')
     error_dir = os.path.join(reports_dir, 'error')
 
     # ensure error directory exists

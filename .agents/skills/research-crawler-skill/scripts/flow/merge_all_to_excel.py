@@ -12,6 +12,7 @@
 
 import math
 import os
+import sys
 import pandas as pd
 import argparse
 from datetime import datetime
@@ -20,6 +21,11 @@ from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPTS_DIR))
 
@@ -191,7 +197,7 @@ def merge_to_excel(output_path: str, root_dir: str = '.'):
     for game_name, platform, csv_path in all_csvs:
         by_platform.setdefault(platform, []).append((game_name, platform, csv_path))
 
-    excel_dir = os.path.join(PROJECT_ROOT, 'excel')
+    excel_dir = os.path.join(AGENTS_OUTPUT, 'excel')
     os.makedirs(excel_dir, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -284,9 +290,9 @@ def merge_platform_to_excel(platform: str, root_dir: str = None, output_dir: str
         output_dir: Excel 输出目录，默认项目 excel/。
     """
     if root_dir is None:
-        root_dir = os.path.join(PROJECT_ROOT, 'output')
+        root_dir = os.path.join(AGENTS_OUTPUT, 'output')
     if output_dir is None:
-        output_dir = os.path.join(PROJECT_ROOT, 'excel')
+        output_dir = os.path.join(AGENTS_OUTPUT, 'excel')
     os.makedirs(output_dir, exist_ok=True)
 
     platform_dir = os.path.join(root_dir, platform)
@@ -322,9 +328,9 @@ def main():
     parser.add_argument('--platform', '-p', type=str, default=None,
                         help='指定单个平台 (bilibili/steam/xiaohongshu)，不指定则处理所有平台')
     parser.add_argument('--input-dir', '-i', type=str, help='output根目录',
-                        default=os.path.join(PROJECT_ROOT, 'output'))
+                        default=os.path.join(AGENTS_OUTPUT, 'output'))
     parser.add_argument('--output-dir', '-o', type=str, help='Excel输出目录',
-                        default=os.path.join(PROJECT_ROOT, 'excel'))
+                        default=os.path.join(AGENTS_OUTPUT, 'excel'))
     args = parser.parse_args()
 
     platforms = [args.platform] if args.platform else PLATFORMS

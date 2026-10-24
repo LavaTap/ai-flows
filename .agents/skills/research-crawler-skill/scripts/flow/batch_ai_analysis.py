@@ -9,13 +9,13 @@
 
 用法:
     # 测试单个项目
-    python research-crawler-skill/scripts/batch_ai_analysis.py --session-dir "output/bilibili/A Short Hike/A Short Hike_20260723_112807"
+    python .agents/skills/research-crawler-skill/scripts/batch_ai_analysis.py --session-dir "output/bilibili/A Short Hike/A Short Hike_20260723_112807"
 
     # 批量处理所有项目
-    python research-crawler-skill/scripts/batch_ai_analysis.py
+    python .agents/skills/research-crawler-skill/scripts/batch_ai_analysis.py
 
     # 从上一次中断处继续
-    python research-crawler-skill/scripts/batch_ai_analysis.py --resume
+    python .agents/skills/research-crawler-skill/scripts/batch_ai_analysis.py --resume
 """
 import argparse
 import csv
@@ -27,10 +27,15 @@ from datetime import datetime
 
 # ============ 路径 ============
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
 SKILL_DIR = os.path.dirname(SCRIPTS_DIR)
 PROJECT_ROOT = os.path.dirname(SKILL_DIR)
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'output')
+OUTPUT_DIR = os.path.join(AGENTS_OUTPUT, 'output')
 
 MAX_COMMENTS = 50
 
@@ -492,7 +497,7 @@ def generate_session_report(session_dir, platform, session_name, analysis_rows,
     报告文件夹名与 output 会话目录名一致，便于对应。
     """
     reports_ai_dir = os.path.join(
-        PROJECT_ROOT, 'reports', platform, 'ai', session_name)
+        AGENTS_OUTPUT, 'reports', platform, 'ai', session_name)
     os.makedirs(reports_ai_dir, exist_ok=True)
     report_path = os.path.join(reports_ai_dir, 'ai_report.md')
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -562,7 +567,7 @@ def generate_batch_summary(results, batch_ts):
 
     for platform, plat_results in platform_results.items():
         batch_dir = os.path.join(
-            PROJECT_ROOT, 'reports', platform, 'ai', f'batch_{batch_ts}')
+            AGENTS_OUTPUT, 'reports', platform, 'ai', f'batch_{batch_ts}')
         os.makedirs(batch_dir, exist_ok=True)
         report_path = os.path.join(batch_dir, 'ai_batch_report.md')
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -613,7 +618,7 @@ def main():
     if args.session_dir:
         # 单个项目
         if not os.path.isabs(args.session_dir):
-            session_dir = os.path.join(PROJECT_ROOT, args.session_dir)
+            session_dir = os.path.join(AGENTS_OUTPUT, args.session_dir)
         else:
             session_dir = args.session_dir
         result = analyze_session(session_dir)

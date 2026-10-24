@@ -10,6 +10,11 @@ if sys.platform == 'win32':
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
 SKILL_DIR = os.path.dirname(SCRIPTS_DIR)
 PROJECT_ROOT = os.path.dirname(SKILL_DIR)
@@ -153,8 +158,8 @@ def main():
     parser.add_argument('--platform', '-p', required=True, help='指定平台 (e.g., bilibili, steam)')
     args = parser.parse_args()
 
-    OUTPUT_ROOT = os.path.join(PROJECT_ROOT, 'output', args.platform)
-    REPORTS_DIR = os.path.join(PROJECT_ROOT, 'reports', args.platform)
+    OUTPUT_ROOT = os.path.join(AGENTS_OUTPUT, 'output', args.platform)
+    REPORTS_DIR = os.path.join(AGENTS_OUTPUT, 'reports', args.platform)
     PROGRAM_DIR = os.path.join(REPORTS_DIR, 'program')
     ERROR_DIR = os.path.join(REPORTS_DIR, 'error')
 

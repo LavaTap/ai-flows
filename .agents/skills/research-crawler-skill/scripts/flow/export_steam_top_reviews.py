@@ -22,14 +22,19 @@ from datetime import datetime
 import pandas as pd
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPTS_DIR))
 sys.path.insert(0, SCRIPT_DIR)
 
 from merge_all_to_excel import style_worksheet  # noqa: E402
 
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'output', 'steam')
-EXCEL_DIR = os.path.join(PROJECT_ROOT, 'excel')
+OUTPUT_DIR = os.path.join(AGENTS_OUTPUT, 'output', 'steam')
+EXCEL_DIR = os.path.join(AGENTS_OUTPUT, 'excel')
 
 EXPORT_FIELDS = ['序号', '平台', '游戏名称', 'AppID', '评论内容', '点赞数', '评论时间', '是否推荐', '是否购买']
 

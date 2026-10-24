@@ -1,5 +1,8 @@
 # 小红书搜索+评论采集流程
 
+> 本文所有产出路径均相对 `.agents/agents-output/`（`output/` 采集产出、`excel/` 汇总、`reports/` 日志报告）。
+> 例外：`links_data/`、`keywords.txt`、`res_data/`、cookie 文件属于 skill 自身的输入/调试数据，仍在 skill 目录内。
+
 当用户需要采集小红书笔记评论时，按以下步骤执行。支持多种工作流：
 - **批量游戏评论采集** (`batch_cozy_games_crawl.py`) — 从文件读取游戏列表，批量搜索和采集评论
 - **分步采集** (`list_get_links.py` → `full_api_crawl.py`) — 先获取链接再逐个爬取评论，适用于自定义链接列表
@@ -15,7 +18,7 @@
 采集前如果提示登录失效，先运行更新 Cookie：
 
 ```bash
-venv/Scripts/python.exe research-crawler-skill/scripts/xiaohongshu/update_cookie.py
+venv/Scripts/python.exe .agents/skills/research-crawler-skill/scripts/xiaohongshu/update_cookie.py
 ```
 
 脚本会自动打开浏览器 → 你手动登录小红书 → 回车保存 Cookie 到 `cookie.txt`。
@@ -26,7 +29,7 @@ venv/Scripts/python.exe research-crawler-skill/scripts/xiaohongshu/update_cookie
 
 ### 第一步：获取笔记链接列表
 
-在 `research-crawler-skill/scripts/xiaohongshu/keywords.txt` 每行写入一个搜索关键词：
+在 `.agents/skills/research-crawler-skill/scripts/xiaohongshu/keywords.txt` 每行写入一个搜索关键词：
 ```
 原神
 崩坏星穹铁道
@@ -35,17 +38,17 @@ Bongo Cat
 
 运行：
 ```bash
-venv/Scripts/python.exe research-crawler-skill/scripts/xiaohongshu/list_get_links.py
+venv/Scripts/python.exe .agents/skills/research-crawler-skill/scripts/xiaohongshu/list_get_links.py
 ```
 
-结果保存在 `research-crawler-skill/scripts/xiaohongshu/links_data/{关键词}.txt`，每行一个完整笔记URL（含 `xsec_token`）。
+结果保存在 `.agents/skills/research-crawler-skill/scripts/xiaohongshu/links_data/{关键词}.txt`，每行一个完整笔记URL（含 `xsec_token`）。
 
 ### 第二步：逐个爬取评论
 
 对链接文件中的每个URL运行：
 
 ```bash
-venv/Scripts/python.exe research-crawler-skill/scripts/xiaohongshu/full_api_crawl.py \
+venv/Scripts/python.exe .agents/skills/research-crawler-skill/scripts/xiaohongshu/full_api_crawl.py \
     --url "笔记URL" \
     --keyword "搜索关键词" \
     --max 30
@@ -79,7 +82,7 @@ output/xiaohongshu/{关键词}/{note_id}_{时间戳}/
 2.  **运行脚本**：
 
 ```bash
-venv/Scripts/python.exe research-crawler-skill/scripts/xiaohongshu/batch_cozy_games_crawl.py \
+venv/Scripts/python.exe .agents/skills/research-crawler-skill/scripts/xiaohongshu/batch_cozy_games_crawl.py \
     --game-list "path/to/your/games.txt"
 ```
 
@@ -109,7 +112,7 @@ venv/Scripts/python.exe research-crawler-skill/scripts/xiaohongshu/batch_cozy_ga
 ### 获取单篇笔记元数据（点赞/评论/收藏/正文）
 
 ```bash
-venv/Scripts/python.exe research-crawler-skill/scripts/xiaohongshu/crawl_full_note.py --url "笔记URL"
+venv/Scripts/python.exe .agents/skills/research-crawler-skill/scripts/xiaohongshu/crawl_full_note.py --url "笔记URL"
 ```
 
 输出：
@@ -124,7 +127,7 @@ output/xiaohongshu/{note_id}/{note_id}_{时间戳}/
 旧版本爬取错误使用 `note_id` 作为游戏名称，运行此脚本批量修复：
 
 ```bash
-venv/Scripts/python.exe research-crawler-skill/scripts/xiaohongshu/fix_csv_game_name.py
+venv/Scripts/python.exe .agents/skills/research-crawler-skill/scripts/xiaohongshu/fix_csv_game_name.py
 ```
 
 修复逻辑：目录名就是正确游戏关键词 → 写入所有 `output.csv` 的"游戏名称"字段。
@@ -134,7 +137,7 @@ venv/Scripts/python.exe research-crawler-skill/scripts/xiaohongshu/fix_csv_game_
 直接采集指定笔记的评论。
 
 ```bash
-venc/Scripts/python.exe research-crawler-skill/scripts/xiaohongshu/full_api_crawl.py \
+venv/Scripts/python.exe .agents/skills/research-crawler-skill/scripts/xiaohongshu/full_api_crawl.py \
     --url "https://www.xiaohongshu.com/discovery/item/xxx?xsec_token=xxx" --max 30
 ```
 

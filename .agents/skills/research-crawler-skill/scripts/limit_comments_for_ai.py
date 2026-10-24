@@ -17,25 +17,30 @@
 
 用法:
   # 处理所有项目（批量）
-  python research-crawler-skill/scripts/limit_comments_for_ai.py
+  python .agents/skills/research-crawler-skill/scripts/limit_comments_for_ai.py
 
   # 处理单个指定会话目录
-  python research-crawler-skill/scripts/limit_comments_for_ai.py --session-dir "output/xxx/xxx_timestamp"
+  python .agents/skills/research-crawler-skill/scripts/limit_comments_for_ai.py --session-dir "output/xxx/xxx_timestamp"
 
   # 覆盖原 comments.txt 模式（谨慎使用，不生成 _for_ai 文件）
-  python research-crawler-skill/scripts/limit_comments_for_ai.py --overwrite
+  python .agents/skills/research-crawler-skill/scripts/limit_comments_for_ai.py --overwrite
 """
 import argparse
 import csv
 import os
 from datetime import datetime
+import sys
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
 PROJECT_ROOT = os.path.dirname(SKILL_DIR)
 
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'output')
-REPORTS_DIR = os.path.join(PROJECT_ROOT, 'reports', 'bilibili', 'program')
+OUTPUT_DIR = os.path.join(AGENTS_OUTPUT, 'output')
+REPORTS_DIR = os.path.join(AGENTS_OUTPUT, 'reports', 'bilibili', 'program')
 
 MAX_COMMENTS_FOR_AI = 50
 
@@ -305,7 +310,7 @@ def main():
     if args.session_dir:
         # 处理单个会话
         if not os.path.isabs(args.session_dir):
-            session_dir = os.path.join(PROJECT_ROOT, args.session_dir)
+            session_dir = os.path.join(AGENTS_OUTPUT, args.session_dir)
         else:
             session_dir = args.session_dir
         # 规范化路径并校验其位于 OUTPUT_DIR 之内，拒绝路径穿越/越权读写

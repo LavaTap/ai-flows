@@ -22,11 +22,15 @@ export const KB_DB_FILE = join(DB_DIR, "ai-kb.sqlite");
 /** AI 对话与评审库 db/ai-chat-reviews.sqlite（由主连接 ATTACH 为 chat_reviews） */
 export const CHAT_REVIEWS_DB_FILE = join(DB_DIR, "ai-chat-reviews.sqlite");
 
+/** AI 美术平台库 db/ai-art.sqlite（由主连接 ATTACH 为 art）：个人画板 + 我的素材 */
+export const ART_DB_FILE = join(DB_DIR, "ai-art.sqlite");
+
 /** 各子库在主连接中的 schema 名（SQL 里用它做表前缀跨库查询；主库 main 不加前缀） */
 export const AI_FLOWS_SCHEMA = "ai_flows";
 export const TICKETS_SCHEMA = "tickets";
 export const KB_SCHEMA = "kb";
 export const CHAT_REVIEWS_SCHEMA = "chat_reviews";
+export const ART_SCHEMA = "art";
 
 /** 内置种子部门（固定编号顺序：用户研究部→dept-01 / 程序中台→dept-02 / 平台运营部→dept-03） */
 export const DEPARTMENT_SEED = ["用户研究部", "程序中台", "平台运营部"];
@@ -286,6 +290,41 @@ CREATE TABLE IF NOT EXISTS chat_reviews.reviews (
 
 CREATE INDEX IF NOT EXISTS chat_reviews.idx_reviews_department ON reviews(department);
 CREATE INDEX IF NOT EXISTS chat_reviews.idx_chat_messages_session ON chat_messages(session_id);
+`;
+
+/** AI 美术平台库 DDL：个人画板 + 我的素材。
+ *  数据按 owner_email 隔离（每个用户只看得到自己的画板 / 素材）；
+ *  图片等二进制落 db/art-assets/，素材表只存元数据与文件名。
+ *  故意不加外键：users 行整体替换（saveUsers 先 DELETE 再插）会级联清空用户内容。 */
+const ART_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS art.art_boards (
+  ord          INTEGER NOT NULL,
+  id           TEXT PRIMARY KEY,
+  owner_email  TEXT NOT NULL,
+  name         TEXT NOT NULL,
+  canvas       TEXT,
+  tree         TEXT,
+  object_count INTEGER NOT NULL DEFAULT 0,
+  thumbnail    TEXT,
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS art.idx_art_boards_owner ON art_boards(owner_email);
+
+CREATE TABLE IF NOT EXISTS art.art_assets (
+  ord         INTEGER NOT NULL,
+  id          TEXT PRIMARY KEY,
+  owner_email TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  file        TEXT NOT NULL,
+  mime        TEXT NOT NULL,
+  size        INTEGER NOT NULL DEFAULT 0,
+  source      TEXT NOT NULL,
+  created_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS art.idx_art_assets_owner ON art_assets(owner_email);
 `;
 
 /** 账号域主库的表（改库布局时从旧主库搬进 users.sqlite） */
@@ -563,9 +602,9 @@ function ensureColumn(
   }
 }
 
-/** 取全局唯一 SQLite 连接（首次调用建目录、开账号域主库、ATTACH 四个子库、开 WAL、建表）
- *  五库布局：main=users.sqlite；ai_flows=ai-flows.sqlite；tickets=ai-tickets.sqlite；
- *  kb=ai-kb.sqlite；chat_reviews=ai-chat-reviews.sqlite。 */
+/** 取全局唯一 SQLite 连接（首次调用建目录、开账号域主库、ATTACH 五个子库、开 WAL、建表）
+ *  六库布局：main=users.sqlite；ai_flows=ai-flows.sqlite；tickets=ai-tickets.sqlite；
+ *  kb=ai-kb.sqlite；chat_reviews=ai-chat-reviews.sqlite；art=ai-art.sqlite。 */
 export function getDb(): Database.Database {
   if (conn) return conn;
   mkdirSync(DB_DIR, { recursive: true });
@@ -577,11 +616,13 @@ export function getDb(): Database.Database {
   attach(c, TICKETS_DB_FILE, TICKETS_SCHEMA);
   attach(c, KB_DB_FILE, KB_SCHEMA);
   attach(c, CHAT_REVIEWS_DB_FILE, CHAT_REVIEWS_SCHEMA);
+  attach(c, ART_DB_FILE, ART_SCHEMA);
   c.exec(MAIN_SCHEMA_SQL);
   c.exec(AI_FLOWS_SCHEMA_SQL);
   c.exec(TICKETS_SCHEMA_SQL);
   c.exec(KB_SCHEMA_SQL);
   c.exec(CHAT_REVIEWS_SCHEMA_SQL);
+  c.exec(ART_SCHEMA_SQL);
   // 老库补列（账号域主库：密码上次修改时间，用于 10 天有效期提醒）
   ensureColumn(c, "main", "users", "password_changed_at", "password_changed_at TEXT");
   // 老库补列（AI-Flows 域：仓库登记人账号）

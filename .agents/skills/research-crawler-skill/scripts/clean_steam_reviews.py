@@ -6,6 +6,10 @@ import argparse
 from datetime import datetime
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 
 # 默认游戏名称：AppID 240 为 Counter-Strike: Source，可通过 --game-name 覆盖
@@ -102,7 +106,7 @@ def main():
                         help=f'游戏名称（默认: {DEFAULT_GAME_NAME}）')
     args = parser.parse_args()
 
-    base_dir = os.path.join(PROJECT_ROOT, 'output', 'steam')
+    base_dir = os.path.join(AGENTS_OUTPUT, 'output', 'steam')
     raw_json_path = os.path.join(base_dir, "appreviews_240_raw.json")
     if not convert(raw_json_path, base_dir, args.game_name):
         sys.exit(1)

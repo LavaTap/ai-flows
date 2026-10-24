@@ -1,10 +1,10 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomBytes, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync, unlinkSync } from "node:fs";
 import { join, dirname, basename, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadNodes, loadAllNodes, loadNodeById, saveNodes, saveNode, loadPipelines, loadPipeline, findPipelineByName, createPipeline, updatePipeline, deletePipeline, loadRepos, loadRepo, appendRepo, updateRepo, deleteRepo, DEFAULT_PIPELINE_ID, authenticate, loadUsers, loadDepartments, loadReviews, appendReview, appendReviews, updateReviewMeta, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, setPassword, ensurePasswordBaseline, loadTickets, appendTicket, updateTicket, deleteTicket, loadPlatformMessages, appendPlatformMessage, markMessageRead, markAllMessagesRead, loadKbArticles, appendKbArticle, updateKbArticle, deleteKbArticle, TICKET_IMAGES_DIR, AVATARS_DIR, CHAT_UPLOADS_DIR, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, recordTokenUsage, loadTokenUsage, type TokenUsageRecord, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel, type ChatAttachment, type ChatRef, type ChatSkillCall, type PlatformMessage, type MessageType, type KbArticle, type KbVisibility, type RepoRecord, type PipelineRecord } from "./db.js";
+import { loadNodes, loadAllNodes, loadNodeById, saveNodes, saveNode, loadPipelines, loadPipeline, findPipelineByName, createPipeline, updatePipeline, deletePipeline, loadRepos, loadRepo, appendRepo, updateRepo, deleteRepo, DEFAULT_PIPELINE_ID, authenticate, loadUsers, loadDepartments, loadReviews, appendReview, appendReviews, updateReviewMeta, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, setPassword, ensurePasswordBaseline, loadTickets, appendTicket, updateTicket, deleteTicket, loadPlatformMessages, appendPlatformMessage, markMessageRead, markAllMessagesRead, loadKbArticles, appendKbArticle, updateKbArticle, deleteKbArticle, TICKET_IMAGES_DIR, AVATARS_DIR, CHAT_UPLOADS_DIR, ART_ASSETS_DIR, loadArtBoards, loadArtBoard, createArtBoard, saveArtBoard, duplicateArtBoard, deleteArtBoard, loadArtAssets, loadArtAsset, appendArtAsset, deleteArtAsset, artStats, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, recordTokenUsage, loadTokenUsage, type TokenUsageRecord, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel, type ChatAttachment, type ChatRef, type ChatSkillCall, type PlatformMessage, type MessageType, type KbArticle, type KbVisibility, type RepoRecord, type PipelineRecord } from "./db.js";
 import {
   callModelStream,
   callModelOnce,
@@ -48,6 +48,29 @@ import {
 /** 平台静态资源目录 web/（src 与 dist 均位于仓库根下一级，向上取根） */
 export const WEB_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 
+/** AI 美术平台构建产物目录 web/art/（由 art/ 工程 Vite 构建输出） */
+const ART_DIR = join(WEB_DIR, "art");
+
+/** 美术静态资源的扩展名 → MIME（白名单表由目录扫描生成，不拼用户输入路径） */
+const ART_STATIC_TYPES: Record<string, string> = {
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".txt": "text/plain; charset=utf-8",
+};
+
 /** 平台默认端口（与报告服务 4310 错开） */
 export const DEFAULT_PLATFORM_PORT = 4311;
 
@@ -77,6 +100,18 @@ const CHAT_FILE_NAME_RE = /^[a-f0-9]{12}\.[a-z0-9]{1,8}$/;
 
 /** 对话上传请求体上限：base64 data URL（8MB 文件约 11MB），覆盖图片与文本类文件 */
 const CHAT_UPLOAD_BODY_MAX = 16 * 1024 * 1024;
+
+/** 美术素材上传单张上限（解码后字节数） */
+const ART_ASSET_MAX_BYTES = 8 * 1024 * 1024;
+
+/** 美术素材上传请求体上限（base64 膨胀 + JSON 包装留余量） */
+const ART_ASSET_BODY_MAX = 12 * 1024 * 1024;
+
+/** 画板保存请求体上限（画布 JSON + 缩略图 data URL） */
+const ART_BOARD_BODY_MAX = 24 * 1024 * 1024;
+
+/** 美术素材磁盘文件名形态（服务端生成，读取时严格校验防路径穿越） */
+const ART_FILE_RE = /^[a-f0-9]{12}\.(png|jpg|jpeg|gif|webp)$/;
 
 /** 单个被引用会话注入 prompt 的字符上限（超出截断，防上下文溢出） */
 const CHAT_REF_TEXT_LIMIT = 6000;
@@ -978,6 +1013,100 @@ function serveStatic(res: ServerResponse, route: string): boolean {
   }
 }
 
+/** 美术平台静态文件白名单（启动后首次访问扫描 web/art 与 web/art/assets，只收录真实存在的文件）。
+ *  走「目录扫描生成 URL → 绝对路径」的表，不把请求路径拼进文件系统，天然免疫路径穿越。 */
+let artStaticTableCache: Record<string, { file: string; type: string }> | null = null;
+
+function artStaticTable(): Record<string, { file: string; type: string }> {
+  if (artStaticTableCache) return artStaticTableCache;
+  const table: Record<string, { file: string; type: string }> = {};
+  const addDir = (dir: string, urlPrefix: string): void => {
+    if (!existsSync(dir)) return;
+    for (const ent of readdirSync(dir, { withFileTypes: true })) {
+      if (!ent.isFile()) continue;
+      // index.html 由受登录保护的路由首行返回，不进静态白名单，避免绕过 302 校验
+      if (urlPrefix === "/art/" && ent.name === "index.html") continue;
+      const dot = ent.name.lastIndexOf(".");
+      const type = dot >= 0 ? ART_STATIC_TYPES[ent.name.slice(dot).toLowerCase()] : undefined;
+      if (!type) continue;
+      table[`${urlPrefix}${ent.name}`] = { file: join(dir, ent.name), type };
+    }
+  };
+  addDir(ART_DIR, "/art/");
+  addDir(join(ART_DIR, "assets"), "/art/assets/");
+  artStaticTableCache = table;
+  return table;
+}
+
+/** 读美术平台静态文件并响应，不存在返回 false */
+function serveArtStatic(res: ServerResponse, route: string): boolean {
+  const entry = artStaticTable()[route];
+  if (!entry) return false;
+  try {
+    const content = readFileSync(entry.file);
+    res.setHeader("Content-Type", entry.type);
+    res.end(content);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 素材视图（前端只拿 id / 名称 / 取图地址 / 元数据，磁盘文件名不外泄） */
+interface ArtAssetView {
+  id: string;
+  name: string;
+  url: string;
+  mime: string;
+  size: number;
+  source: string;
+  createdAt: string;
+}
+
+/** 素材记录 → 视图（取图统一走 /api/art/assets/<id>，带登录与归属校验） */
+function toArtAssetView(a: {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  source: string;
+  createdAt: string;
+}): ArtAssetView {
+  return {
+    id: a.id,
+    name: a.name,
+    url: `/api/art/assets/${a.id}`,
+    mime: a.mime,
+    size: a.size,
+    source: a.source,
+    createdAt: a.createdAt,
+  };
+}
+
+/** 画板名称归一：去空白、截断到 80 字，空则回退默认名 */
+function artBoardName(raw: unknown): string {
+  const text = typeof raw === "string" ? raw.trim().slice(0, 80) : "";
+  return text || "未命名画板";
+}
+
+/** 从 data URL 里解出图片（仅允许 png/jpg/gif/webp） */
+function parseArtImageDataUrl(
+  raw: string
+): { ext: string; mime: string; buf: Buffer } | null {
+  const m = raw.match(/^data:image\/(png|jpeg|jpg|gif|webp);base64,([A-Za-z0-9+/=]+)$/);
+  if (!m) return null;
+  const mime = m[1] === "jpg" ? "image/jpeg" : `image/${m[1]}`;
+  const ext = m[1] === "jpeg" ? "jpg" : m[1];
+  let buf: Buffer;
+  try {
+    buf = Buffer.from(m[2], "base64");
+  } catch {
+    return null;
+  }
+  if (buf.length === 0) return null;
+  return { ext, mime, buf };
+}
+
 /** 渲染管线页：读静态 ai-pipeline.html，注入登录用户 + 部门成员 + 节点状态 + 权限 bootstrap，再挂平台脚本 */
 async function pipelineHtml(user: UserAccount, fallbackRepo: string, pipelineIdRaw: string | null): Promise<string> {
   const raw = readFileSync(join(WEB_DIR, "ai-pipeline.html"), "utf8");
@@ -1811,8 +1940,9 @@ export async function startPlatformServer(
       return;
     }
 
-    // 静态资源（白名单精确匹配）
+    // 静态资源（白名单精确匹配；美术平台由构建产物目录扫描生成白名单）
     if (req.method === "GET" && serveStatic(res, path)) return;
+    if (req.method === "GET" && serveArtStatic(res, path)) return;
 
     // 登录页
     if (path === "/login" && req.method === "GET") {
@@ -3455,6 +3585,25 @@ export async function startPlatformServer(
       return;
     }
 
+    // AI 美术平台（Vue 单页构建产物 web/art/；未登录重定向到登录页，站内路由交给前端 hash）
+    if ((path === "/art" || path === "/art/" || path === "/art/index.html") && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        res.statusCode = 302;
+        res.setHeader("Location", "/login");
+        res.end();
+        return;
+      }
+      const index = join(ART_DIR, "index.html");
+      if (!existsSync(index)) {
+        sendJson(res, 503, { error: "美术平台尚未构建，请先在 art/ 目录执行 npm run build" });
+        return;
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(readFileSync(index));
+      return;
+    }
+
     // 消息页（未登录重定向到登录页）
     if (path === "/messages" && req.method === "GET") {
       const user = currentUser(req);
@@ -4424,6 +4573,237 @@ export async function startPlatformServer(
       res.setHeader("Cache-Control", "private, max-age=86400");
       res.end(readFileSync(abs));
       return;
+    }
+
+    // ============ AI 美术平台：个人画板（按登录账号隔离） ============
+
+    // 我的画板列表（含数量 / 占用统计）
+    if (path === "/api/art/boards" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      sendJson(res, 200, { boards: loadArtBoards(user.email), stats: artStats(user.email) });
+      return;
+    }
+
+    // 新建画板（空画布；body 可省略）
+    if (path === "/api/art/boards" && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      let name: unknown;
+      try {
+        const raw = await readBody(req, 64 * 1024);
+        if (raw.trim()) name = (JSON.parse(raw) as { name?: unknown }).name;
+      } catch {
+        sendJson(res, 400, { error: "请求体过大或不是合法 JSON" });
+        return;
+      }
+      sendJson(res, 201, { board: createArtBoard(user.email, artBoardName(name)) });
+      return;
+    }
+
+    // 复制画板（含画布与图层树）
+    const artDupMatch = path.match(/^\/api\/art\/boards\/([^/\\]+)\/duplicate$/);
+    if (artDupMatch && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const meta = duplicateArtBoard(artDupMatch[1], user.email);
+      if (!meta) {
+        sendJson(res, 404, { error: "画板不存在" });
+        return;
+      }
+      sendJson(res, 201, { board: meta });
+      return;
+    }
+
+    // 单个画板：读取 / 保存 / 删除
+    const artBoardMatch = path.match(/^\/api\/art\/boards\/([^/\\]+)$/);
+    if (artBoardMatch) {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const id = artBoardMatch[1];
+
+      if (req.method === "GET") {
+        const board = loadArtBoard(id, user.email);
+        if (!board) {
+          sendJson(res, 404, { error: "画板不存在" });
+          return;
+        }
+        sendJson(res, 200, { board });
+        return;
+      }
+
+      if (req.method === "PUT") {
+        let body: {
+          name?: unknown;
+          canvas?: unknown;
+          tree?: unknown;
+          objectCount?: unknown;
+          thumbnail?: unknown;
+        };
+        try {
+          body = JSON.parse(await readBody(req, ART_BOARD_BODY_MAX)) as typeof body;
+        } catch {
+          sendJson(res, 400, { error: "画板数据过大（上限 24MB）或不是合法 JSON" });
+          return;
+        }
+        const payload: {
+          name?: string;
+          canvas?: unknown;
+          tree?: unknown;
+          objectCount?: number;
+          thumbnail?: string | null;
+        } = {};
+        if (body.name !== undefined) payload.name = artBoardName(body.name);
+        if (body.canvas !== undefined) payload.canvas = body.canvas;
+        if (body.tree !== undefined) payload.tree = body.tree;
+        if (
+          typeof body.objectCount === "number" &&
+          Number.isFinite(body.objectCount) &&
+          body.objectCount >= 0
+        ) {
+          payload.objectCount = Math.floor(body.objectCount);
+        }
+        if (body.thumbnail === null) {
+          payload.thumbnail = null;
+        } else if (
+          typeof body.thumbnail === "string" &&
+          body.thumbnail.startsWith("data:image/") &&
+          body.thumbnail.length <= 4 * 1024 * 1024
+        ) {
+          payload.thumbnail = body.thumbnail;
+        }
+        const meta = saveArtBoard(id, user.email, payload);
+        if (!meta) {
+          sendJson(res, 404, { error: "画板不存在" });
+          return;
+        }
+        sendJson(res, 200, { board: meta });
+        return;
+      }
+
+      if (req.method === "DELETE") {
+        if (!deleteArtBoard(id, user.email)) {
+          sendJson(res, 404, { error: "画板不存在" });
+          return;
+        }
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+    }
+
+    // ============ AI 美术平台：我的素材（图片二进制落 db/art-assets/） ============
+
+    // 素材列表（本人）
+    if (path === "/api/art/assets" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      sendJson(res, 200, { assets: loadArtAssets(user.email).map(toArtAssetView) });
+      return;
+    }
+
+    // 上传 / 登记素材（画布导入、粘贴、智能生成、素材复用统一走这里）
+    if (path === "/api/art/assets" && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      let body: { name?: unknown; data?: unknown; source?: unknown };
+      try {
+        body = JSON.parse(await readBody(req, ART_ASSET_BODY_MAX)) as typeof body;
+      } catch {
+        sendJson(res, 400, { error: "素材过大（解码后上限 8MB）或不是合法 JSON" });
+        return;
+      }
+      if (typeof body.data !== "string") {
+        sendJson(res, 400, { error: "缺少素材数据" });
+        return;
+      }
+      const parsed = parseArtImageDataUrl(body.data);
+      if (!parsed) {
+        sendJson(res, 400, { error: "仅支持 png / jpg / gif / webp 图片（data URL 形式）" });
+        return;
+      }
+      if (parsed.buf.length > ART_ASSET_MAX_BYTES) {
+        sendJson(res, 400, { error: "单张素材不能超过 8MB" });
+        return;
+      }
+      const rawSource = typeof body.source === "string" ? body.source : "";
+      const source = ["upload", "paste", "generate", "asset"].includes(rawSource)
+        ? rawSource
+        : "upload";
+      const rawName = typeof body.name === "string" ? body.name.trim().slice(0, 80) : "";
+      const file = `${randomBytes(6).toString("hex")}.${parsed.ext}`;
+      mkdirSync(ART_ASSETS_DIR, { recursive: true });
+      writeFileSync(join(ART_ASSETS_DIR, file), parsed.buf);
+      const asset = appendArtAsset(user.email, {
+        name: rawName || `素材 ${new Date().toLocaleDateString("zh-CN")}`,
+        file,
+        mime: parsed.mime,
+        size: parsed.buf.length,
+        source,
+      });
+      sendJson(res, 201, { asset: toArtAssetView(asset) });
+      return;
+    }
+
+    // 单条素材：取图 / 删除
+    const artAssetMatch = path.match(/^\/api\/art\/assets\/([^/\\]+)$/);
+    if (artAssetMatch) {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const asset = loadArtAsset(artAssetMatch[1], user.email);
+      if (!asset) {
+        sendJson(res, 404, { error: "素材不存在" });
+        return;
+      }
+
+      if (req.method === "GET") {
+        if (!ART_FILE_RE.test(asset.file)) {
+          sendJson(res, 404, { error: "素材文件不存在" });
+          return;
+        }
+        const abs = join(ART_ASSETS_DIR, asset.file);
+        if (!existsSync(abs)) {
+          sendJson(res, 404, { error: "素材文件不存在" });
+          return;
+        }
+        res.setHeader("Content-Type", asset.mime);
+        res.setHeader("Cache-Control", "private, max-age=604800");
+        res.end(readFileSync(abs));
+        return;
+      }
+
+      if (req.method === "DELETE") {
+        deleteArtAsset(asset.id, user.email);
+        if (ART_FILE_RE.test(asset.file)) {
+          try {
+            unlinkSync(join(ART_ASSETS_DIR, asset.file));
+          } catch {
+            // 磁盘文件已不存在时忽略，库记录已删即视为成功
+          }
+        }
+        sendJson(res, 200, { ok: true });
+        return;
+      }
     }
 
     // 可用 skill 列表（对话页「调用 Skill」选择器；只暴露目录名 + 展示名 + 描述）

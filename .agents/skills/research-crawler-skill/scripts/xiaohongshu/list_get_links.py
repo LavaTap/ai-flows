@@ -4,19 +4,25 @@
 
 使用方法:
     1. 在当前目录创建 keywords.txt，每行一个关键词
-    2. 运行: venv\Scripts\python.exe research-crawler-skill/scripts/xiaohongshu/list_get_links.py
+    2. 运行: venv\Scripts\python.exe .agents/skills/research-crawler-skill/scripts/xiaohongshu/list_get_links.py
 
 输出:
     scripts/xiaohongshu/links_data/{keyword}.txt - 每行一个完整笔记URL
 """
 
 import os
+import sys
 import time
 from urllib.parse import quote
 from playwright.sync_api import sync_playwright
 
 # 定位项目根目录
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
 SKILL_DIR = os.path.dirname(SCRIPTS_DIR)
 PROJECT_ROOT = os.path.dirname(SKILL_DIR)

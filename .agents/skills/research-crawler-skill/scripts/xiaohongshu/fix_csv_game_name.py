@@ -6,17 +6,22 @@
 修复：正确使用 搜索关键词（目录名）作为"游戏名称"字段
 
 运行：
-    venv/Scripts/python.exe research-crawler-skill/scripts/xiaohongshu/fix_csv_game_name.py
+    venv/Scripts/python.exe .agents/skills/research-crawler-skill/scripts/xiaohongshu/fix_csv_game_name.py
 """
 
 import os
 import csv
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
 SKILL_DIR = os.path.dirname(SCRIPTS_DIR)
 PROJECT_ROOT = os.path.dirname(SKILL_DIR)
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'output', 'xiaohongshu')
+OUTPUT_DIR = os.path.join(AGENTS_OUTPUT, 'output', 'xiaohongshu')
 
 
 def fix_csv_game_name(csv_path: str, correct_game_name: str) -> bool:

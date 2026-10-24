@@ -12,6 +12,7 @@
 
 import math
 import os
+import sys
 import pandas as pd
 import argparse
 from datetime import datetime
@@ -20,6 +21,10 @@ from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 
 # 参与合并的平台目录
@@ -221,7 +226,7 @@ def make_unique_sheet_name(name: str, used: set) -> str:
     return safe
 
 
-def merge_to_excel(output_path: str, root_dir: str = os.path.join(PROJECT_ROOT, 'output')):
+def merge_to_excel(output_path: str, root_dir: str = os.path.join(AGENTS_OUTPUT, 'output')):
     """合并所有 output.csv 到一个Excel文件"""
     all_csvs = find_all_output_csv(root_dir)
     print(f"找到 {len(all_csvs)} 个游戏项目的 output.csv")
@@ -266,12 +271,12 @@ def main():
     parser = argparse.ArgumentParser(description='合并所有游戏output.csv到单个Excel，每个游戏一个工作表')
     parser.add_argument('--output', '-o', type=str, help='输出Excel文件路径', default=None)
     parser.add_argument('--input-dir', '-i', type=str, help='output根目录',
-                        default=os.path.join(PROJECT_ROOT, 'output'))
+                        default=os.path.join(AGENTS_OUTPUT, 'output'))
     args = parser.parse_args()
 
     if args.output is None:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        args.output = os.path.join(PROJECT_ROOT, 'reports', f"all_games_merged_{ts}.xlsx")
+        args.output = os.path.join(AGENTS_OUTPUT, 'reports', f"all_games_merged_{ts}.xlsx")
 
     merge_to_excel(args.output, args.input_dir)
     print(f"\n输出文件位置: {os.path.abspath(args.output)}")

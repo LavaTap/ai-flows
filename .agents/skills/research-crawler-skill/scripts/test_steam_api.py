@@ -1,8 +1,13 @@
 import json
 import os
+import sys
 import requests
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 
 # 测试目标 AppID（Counter-Strike: Source）
@@ -10,7 +15,7 @@ APP_ID = 240
 
 
 def fetch_and_save(url, filename):
-    output_dir = os.path.join(PROJECT_ROOT, 'output', 'steam')
+    output_dir = os.path.join(AGENTS_OUTPUT, 'output', 'steam')
     os.makedirs(output_dir, exist_ok=True)
     try:
         # 尝试通过环境变量获取代理，或设置较短超时

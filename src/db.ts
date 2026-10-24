@@ -17,6 +17,9 @@ export const AVATARS_DIR = join(DB_DIR, "avatars");
 /** AI 对话附件上传目录 db/chat-uploads/（已 gitignore，二进制不入库，消息只存元数据） */
 export const CHAT_UPLOADS_DIR = join(DB_DIR, "chat-uploads");
 
+/** AI 美术平台素材目录 db/art-assets/（已 gitignore，二进制不入库，素材表只存文件名） */
+export const ART_ASSETS_DIR = join(DB_DIR, "art-assets");
+
 /** 身份：员工 / 部门主管（主管权限最高，可操控并批准所有节点） */
 export type Role = "staff" | "supervisor";
 
@@ -1926,4 +1929,312 @@ export function recordTokenUsage(rec: Omit<TokenUsageRecord, "id" | "at">): void
 export function loadTokenUsage(): TokenUsageRecord[] {
   const rows = db().prepare("SELECT * FROM token_usage ORDER BY ord").all() as TokenRow[];
   return rows.map(rowToToken);
+}
+
+// ============ AI 美术平台：个人画板 + 我的素材 ============
+
+/** 画板元信息（列表展示；canvas 正文在 detail 里单独取） */
+export interface ArtBoardMeta {
+  /** 画板 id（art- 前缀，服务端生成） */
+  id: string;
+  /** 画板名称 */
+  name: string;
+  /** ISO 创建时间 */
+  createdAt: string;
+  /** ISO 最近更新时间 */
+  updatedAt: string;
+  /** 画布对象数量 */
+  objectCount: number;
+  /** 列表缩略图（PNG data URL，可能很大，故仅列表返回） */
+  thumbnail?: string;
+}
+
+/** 画板完整记录（编辑器加载用） */
+export interface ArtBoardRecord {
+  /** 元信息 */
+  meta: ArtBoardMeta;
+  /** fabric.js 序列化 JSON */
+  canvas: unknown;
+  /** 图层文件夹树 */
+  tree?: unknown;
+}
+
+/** 画板保存入参（字段缺省表示不改） */
+export interface ArtBoardSavePayload {
+  name?: string;
+  canvas?: unknown;
+  tree?: unknown;
+  objectCount?: number;
+  thumbnail?: string | null;
+}
+
+/** 我的素材（图片二进制落 db/art-assets/，本表只存元数据） */
+export interface ArtAsset {
+  /** 素材 id（asset- 前缀） */
+  id: string;
+  /** 素材名称（原文件名 / 生成结果名） */
+  name: string;
+  /** 磁盘文件名（[a-f0-9]{12}.<ext>，由服务端生成） */
+  file: string;
+  /** MIME 类型 */
+  mime: string;
+  /** 字节数 */
+  size: number;
+  /** 来源：upload=上传 / paste=粘贴拖入 / generate=智能生成 / asset=素材库复用 */
+  source: string;
+  /** ISO 创建时间 */
+  createdAt: string;
+}
+
+interface ArtBoardRow {
+  ord: number;
+  id: string;
+  owner_email: string;
+  name: string;
+  canvas: string | null;
+  tree: string | null;
+  object_count: number;
+  thumbnail: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ArtAssetRow {
+  ord: number;
+  id: string;
+  owner_email: string;
+  name: string;
+  file: string;
+  mime: string;
+  size: number;
+  source: string;
+  created_at: string;
+}
+
+/** 画板行 → 元信息 */
+function rowToArtMeta(r: ArtBoardRow): ArtBoardMeta {
+  const meta: ArtBoardMeta = {
+    id: r.id,
+    name: r.name,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    objectCount: r.object_count,
+  };
+  if (r.thumbnail) meta.thumbnail = r.thumbnail;
+  return meta;
+}
+
+/** 素材行 → 素材对象 */
+function rowToArtAsset(r: ArtAssetRow): ArtAsset {
+  return {
+    id: r.id,
+    name: r.name,
+    file: r.file,
+    mime: r.mime,
+    size: r.size,
+    source: r.source,
+    createdAt: r.created_at,
+  };
+}
+
+/** 解析画板 JSON 列（坏数据按 null 处理，不阻断加载） */
+function parseArtJson(raw: string | null): unknown {
+  if (raw == null) return null;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+/** 读取某用户的全部画板（更新时间倒序） */
+export function loadArtBoards(ownerEmail: string): ArtBoardMeta[] {
+  const rows = db()
+    .prepare("SELECT * FROM art.art_boards WHERE owner_email = ? ORDER BY updated_at DESC")
+    .all(ownerEmail) as ArtBoardRow[];
+  return rows.map(rowToArtMeta);
+}
+
+/** 按 id 读取画板（必须属于该用户，否则视作不存在） */
+export function loadArtBoard(id: string, ownerEmail: string): ArtBoardRecord | null {
+  const row = db()
+    .prepare("SELECT * FROM art.art_boards WHERE id = ? AND owner_email = ?")
+    .get(id, ownerEmail) as ArtBoardRow | undefined;
+  if (!row) return null;
+  const record: ArtBoardRecord = {
+    meta: rowToArtMeta(row),
+    canvas: parseArtJson(row.canvas),
+  };
+  const tree = parseArtJson(row.tree);
+  if (tree != null) record.tree = tree;
+  return record;
+}
+
+/** 新建画板（空画布） */
+export function createArtBoard(ownerEmail: string, name: string): ArtBoardMeta {
+  const c = db();
+  const now = new Date().toISOString();
+  const id = newId("art");
+  const title = name.trim() || "未命名画板";
+  c.prepare(
+    "INSERT INTO art.art_boards (ord,id,owner_email,name,canvas,tree,object_count,thumbnail,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)"
+  ).run(nextOrd(c, "art.art_boards"), id, ownerEmail, title, null, null, 0, null, now, now);
+  return { id, name: title, createdAt: now, updatedAt: now, objectCount: 0 };
+}
+
+/** 保存画板（部分字段更新；必须属于该用户） */
+export function saveArtBoard(
+  id: string,
+  ownerEmail: string,
+  payload: ArtBoardSavePayload
+): ArtBoardMeta | null {
+  const current = loadArtBoard(id, ownerEmail);
+  if (!current) return null;
+  const c = db();
+  const now = new Date().toISOString();
+  const name = payload.name?.trim() || current.meta.name;
+  const canvas =
+    payload.canvas === undefined ? undefined : JSON.stringify(payload.canvas);
+  const tree = payload.tree === undefined ? undefined : JSON.stringify(payload.tree);
+  const objectCount = payload.objectCount ?? current.meta.objectCount;
+  const thumbnail =
+    payload.thumbnail === undefined ? current.meta.thumbnail ?? null : payload.thumbnail;
+
+  const sets: string[] = ["name = ?", "updated_at = ?", "object_count = ?", "thumbnail = ?"];
+  const args: (string | number | null)[] = [name, now, objectCount, thumbnail];
+  if (canvas !== undefined) {
+    sets.push("canvas = ?");
+    args.push(canvas);
+  }
+  if (tree !== undefined) {
+    sets.push("tree = ?");
+    args.push(tree);
+  }
+  args.push(id, ownerEmail);
+  c.prepare(`UPDATE art.art_boards SET ${sets.join(", ")} WHERE id = ? AND owner_email = ?`).run(
+    ...args
+  );
+  return {
+    id,
+    name,
+    createdAt: current.meta.createdAt,
+    updatedAt: now,
+    objectCount,
+    ...(thumbnail ? { thumbnail } : {}),
+  };
+}
+
+/** 复制画板（含画布与图层树，须属于该用户） */
+export function duplicateArtBoard(id: string, ownerEmail: string): ArtBoardMeta | null {
+  const record = loadArtBoard(id, ownerEmail);
+  if (!record) return null;
+  const c = db();
+  const now = new Date().toISOString();
+  const nextId = newId("art");
+  c.prepare(
+    "INSERT INTO art.art_boards (ord,id,owner_email,name,canvas,tree,object_count,thumbnail,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)"
+  ).run(
+    nextOrd(c, "art.art_boards"),
+    nextId,
+    ownerEmail,
+    `${record.meta.name} 副本`,
+    record.canvas == null ? null : JSON.stringify(record.canvas),
+    record.tree === undefined ? null : JSON.stringify(record.tree),
+    record.meta.objectCount,
+    record.meta.thumbnail ?? null,
+    now,
+    now
+  );
+  return {
+    id: nextId,
+    name: `${record.meta.name} 副本`,
+    createdAt: now,
+    updatedAt: now,
+    objectCount: record.meta.objectCount,
+    ...(record.meta.thumbnail ? { thumbnail: record.meta.thumbnail } : {}),
+  };
+}
+
+/** 删除画板；返回是否命中 */
+export function deleteArtBoard(id: string, ownerEmail: string): boolean {
+  return (
+    db()
+      .prepare("DELETE FROM art.art_boards WHERE id = ? AND owner_email = ?")
+      .run(id, ownerEmail).changes > 0
+  );
+}
+
+/** 读取某用户的全部素材（新增在前） */
+export function loadArtAssets(ownerEmail: string): ArtAsset[] {
+  const rows = db()
+    .prepare("SELECT * FROM art.art_assets WHERE owner_email = ? ORDER BY ord DESC")
+    .all(ownerEmail) as ArtAssetRow[];
+  return rows.map(rowToArtAsset);
+}
+
+/** 按 id 读取素材（必须属于该用户） */
+export function loadArtAsset(id: string, ownerEmail: string): ArtAsset | null {
+  const row = db()
+    .prepare("SELECT * FROM art.art_assets WHERE id = ? AND owner_email = ?")
+    .get(id, ownerEmail) as ArtAssetRow | undefined;
+  return row ? rowToArtAsset(row) : null;
+}
+
+/** 追加一条素材（自动补 id 与创建时间） */
+export function appendArtAsset(
+  ownerEmail: string,
+  rec: Omit<ArtAsset, "id" | "createdAt"> & { id?: string }
+): ArtAsset {
+  const c = db();
+  const full: ArtAsset = {
+    id: rec.id ?? newId("asset"),
+    name: rec.name,
+    file: rec.file,
+    mime: rec.mime,
+    size: rec.size,
+    source: rec.source,
+    createdAt: new Date().toISOString(),
+  };
+  c.prepare(
+    "INSERT INTO art.art_assets (ord,id,owner_email,name,file,mime,size,source,created_at) VALUES (?,?,?,?,?,?,?,?,?)"
+  ).run(
+    nextOrd(c, "art.art_assets"),
+    full.id,
+    ownerEmail,
+    full.name,
+    full.file,
+    full.mime,
+    full.size,
+    full.source,
+    full.createdAt
+  );
+  return full;
+}
+
+/** 删除素材并返回被删对象（调用方负责清理磁盘文件）；须属于该用户 */
+export function deleteArtAsset(id: string, ownerEmail: string): ArtAsset | null {
+  const asset = loadArtAsset(id, ownerEmail);
+  if (!asset) return null;
+  db().prepare("DELETE FROM art.art_assets WHERE id = ? AND owner_email = ?").run(id, ownerEmail);
+  return asset;
+}
+
+/** 某用户的画板 / 素材统计（数量 + 占用字节，列表页页脚展示用） */
+export function artStats(ownerEmail: string): { boards: number; assets: number; bytes: number } {
+  const c = db();
+  const boardRow = c
+    .prepare(
+      "SELECT COUNT(*) AS n, COALESCE(SUM(LENGTH(canvas)), 0) AS bytes FROM art.art_boards WHERE owner_email = ?"
+    )
+    .get(ownerEmail) as { n: number; bytes: number };
+  const assetRow = c
+    .prepare(
+      "SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM art.art_assets WHERE owner_email = ?"
+    )
+    .get(ownerEmail) as { n: number; bytes: number };
+  return {
+    boards: boardRow.n,
+    assets: assetRow.n,
+    bytes: boardRow.bytes + assetRow.bytes,
+  };
 }

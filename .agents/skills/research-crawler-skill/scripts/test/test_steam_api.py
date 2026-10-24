@@ -1,15 +1,21 @@
 import requests
 import json
 import os
+import sys
 import urllib3
 
 urllib3.disable_warnings()
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPTS_DIR))
 
-output_dir = os.path.join(PROJECT_ROOT, 'output', 'steam')
+output_dir = os.path.join(AGENTS_OUTPUT, 'output', 'steam')
 os.makedirs(output_dir, exist_ok=True)
 
 print("开始测试 Steam 接口...")

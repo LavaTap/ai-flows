@@ -6,10 +6,10 @@
 输出总日志到 ``reports/program_{时间戳}/batch_output.log``。
 
 用法:
-    python research-crawler-skill/scripts/batch_crawl.py
-    python research-crawler-skill/scripts/batch_crawl.py --resume
-    python research-crawler-skill/scripts/batch_crawl.py --start 10
-    python research-crawler-skill/scripts/batch_crawl.py --video-count 10 --comment-count 200
+    python .agents/skills/research-crawler-skill/scripts/batch_crawl.py
+    python .agents/skills/research-crawler-skill/scripts/batch_crawl.py --resume
+    python .agents/skills/research-crawler-skill/scripts/batch_crawl.py --start 10
+    python .agents/skills/research-crawler-skill/scripts/batch_crawl.py --video-count 10 --comment-count 200
 """
 import argparse
 import io
@@ -24,12 +24,17 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='repla
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
 SKILL_DIR = os.path.dirname(SCRIPTS_DIR)
 PROJECT_ROOT = os.path.dirname(SKILL_DIR)
-REPORTS_DIR = os.path.join(PROJECT_ROOT, 'reports', 'bilibili', 'program')
+REPORTS_DIR = os.path.join(AGENTS_OUTPUT, 'reports', 'bilibili', 'program')
 BATCH_LOG = ''  # 在 main() 中设为 batch_dir/batch_output.log
-OUTPUT_ROOT = os.path.join(PROJECT_ROOT, 'output')
+OUTPUT_ROOT = os.path.join(AGENTS_OUTPUT, 'output')
 
 GAMES = [
     "Palia", "Paralives", "Sky: Children of the Light", "gogh: Focus with Your Avatar",

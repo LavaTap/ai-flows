@@ -3,7 +3,7 @@
 """更新 cookie：打开浏览器 -> 用户登录 -> 按回车保存 cookie
 
 使用方法:
-    venv\\Scripts\\python.exe research-crawler-skill/scripts/xiaohongshu/update_cookie.py
+    venv\\Scripts\\python.exe .agents/skills/research-crawler-skill/scripts/xiaohongshu/update_cookie.py
 
 1. 运行脚本，浏览器会自动打开小红书
 2. 你在浏览器中手动完成登录
@@ -11,6 +11,7 @@
 """
 
 import os
+import sys
 import pickle
 import time
 from DrissionPage import ChromiumPage
@@ -18,6 +19,11 @@ from DrissionPage._configs.chromium_options import ChromiumOptions
 
 # 定位项目根目录：从脚本目录向上找 3 层
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 RESEARCH_CRAWLER_SKILL_DIR = os.path.dirname(SCRIPT_DIR)
 PROJECT_ROOT = os.path.dirname(RESEARCH_CRAWLER_SKILL_DIR)
 

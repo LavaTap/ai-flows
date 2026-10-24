@@ -4,6 +4,11 @@ import argparse
 from datetime import datetime
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
 SKILL_DIR = os.path.dirname(SCRIPTS_DIR)
 PROJECT_ROOT = os.path.dirname(SKILL_DIR)
@@ -62,7 +67,7 @@ def main():
     parser.add_argument('--platform', '-p', required=True, help='指定平台 (e.g., bilibili, steam)')
     args = parser.parse_args()
 
-    REPORTS_DIR = os.path.join(PROJECT_ROOT, 'reports', args.platform, 'program')
+    REPORTS_DIR = os.path.join(AGENTS_OUTPUT, 'reports', args.platform, 'program')
     ERROR_DIR = os.path.join(REPORTS_DIR, 'error')
 
     if not os.path.isdir(REPORTS_DIR):

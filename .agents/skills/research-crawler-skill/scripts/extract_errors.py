@@ -4,9 +4,13 @@ import sys
 import argparse
 from datetime import datetime
 
-# 目录结构假设：本脚本位于 research-crawler-skill/scripts/ 下，
+# 目录结构假设：本脚本位于 .agents/skills/research-crawler-skill/scripts/ 下，
 # 上溯三级得到项目根目录（scripts -> research-crawler-skill -> 项目根）
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
 PROJECT_ROOT = os.path.dirname(SKILL_DIR)
 
@@ -77,7 +81,7 @@ def main():
         print(f"错误: 非法的平台名称 {args.platform!r}，仅允许字母、数字、下划线和连字符")
         return
 
-    REPORTS_DIR = os.path.join(PROJECT_ROOT, 'reports', args.platform, 'program')
+    REPORTS_DIR = os.path.join(AGENTS_OUTPUT, 'reports', args.platform, 'program')
     ERROR_DIR = os.path.join(REPORTS_DIR, 'error')
 
     if not os.path.isdir(REPORTS_DIR):

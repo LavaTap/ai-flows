@@ -5,8 +5,8 @@
 错误分类统计（412 风控/JSON 解析失败/Cookie 失效/其他）以及逐游戏明细。
 
 用法:
-    python research-crawler-skill/scripts/generate_report.py --batch-dir reports/program_20260723_101557
-    python research-crawler-skill/scripts/generate_report.py
+    python .agents/skills/research-crawler-skill/scripts/generate_report.py --batch-dir reports/program_20260723_101557
+    python .agents/skills/research-crawler-skill/scripts/generate_report.py
 """
 import argparse
 import csv
@@ -19,10 +19,14 @@ if sys.platform == 'win32':
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
 PROJECT_ROOT = os.path.dirname(SKILL_DIR)
-OUTPUT_ROOT = os.path.join(PROJECT_ROOT, 'output')
-REPORTS_DIR = os.path.join(PROJECT_ROOT, 'reports', 'bilibili', 'program')
+OUTPUT_ROOT = os.path.join(AGENTS_OUTPUT, 'output')
+REPORTS_DIR = os.path.join(AGENTS_OUTPUT, 'reports', 'bilibili', 'program')
 ERROR_DIR = os.path.join(REPORTS_DIR, 'error')
 
 

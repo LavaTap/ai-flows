@@ -3,6 +3,7 @@ import csv
 import json
 import logging
 import os
+import sys
 import time
 import urllib.parse
 from datetime import datetime
@@ -13,9 +14,13 @@ import urllib3
 urllib3.disable_warnings()
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'output', 'steam')
-REPORTS_DIR = os.path.join(PROJECT_ROOT, 'reports', 'steam', 'program')
+OUTPUT_DIR = os.path.join(AGENTS_OUTPUT, 'output', 'steam')
+REPORTS_DIR = os.path.join(AGENTS_OUTPUT, 'reports', 'steam', 'program')
 
 PLATFORM = 'steam'
 PLATFORM_LABEL = 'Steam'

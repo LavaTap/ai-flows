@@ -1,12 +1,17 @@
 import os
 import csv
+import sys
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 
-STEAM_OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'output', 'steam')
-GAMES_LIST_FILE = os.path.join(PROJECT_ROOT, 'reports', 'steam', 'steam_games_list.txt')
-FAILED_LIST_FILE = os.path.join(PROJECT_ROOT, 'reports', 'steam', 'steam_failed_games_to_retry.txt')
+STEAM_OUTPUT_DIR = os.path.join(AGENTS_OUTPUT, 'output', 'steam')
+GAMES_LIST_FILE = os.path.join(AGENTS_OUTPUT, 'reports', 'steam', 'steam_games_list.txt')
+FAILED_LIST_FILE = os.path.join(AGENTS_OUTPUT, 'reports', 'steam', 'steam_failed_games_to_retry.txt')
 
 # output.csv 首行为表头，数据行数大于该值即视为已采集到评论
 MIN_DATA_ROWS = 1

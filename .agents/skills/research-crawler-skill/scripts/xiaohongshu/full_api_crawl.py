@@ -3,7 +3,7 @@
 """完整 API 爬取：先获取笔记评论总数作为上限，然后爬取所有评论达到上限即停止
 
 使用方法:
-    venv\Scripts\python.exe research-crawler-skill/scripts/xiaohongshu/full_api_crawl.py --url "笔记链接" [--max 500]
+    venv\Scripts\python.exe .agents/skills/research-crawler-skill/scripts/xiaohongshu/full_api_crawl.py --url "笔记链接" [--max 500]
 
 输出:
     output/xiaohongshu/{note_id}/{note_id}_{timestamp}/
@@ -13,6 +13,7 @@
 
 import argparse
 import os
+import sys
 import re
 import csv
 import time
@@ -22,11 +23,16 @@ from playwright.sync_api import sync_playwright
 
 # 定位项目根目录
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
 SKILL_DIR = os.path.dirname(SCRIPTS_DIR)
 PROJECT_ROOT = os.path.dirname(SKILL_DIR)
 
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'output', 'xiaohongshu')
+OUTPUT_DIR = os.path.join(AGENTS_OUTPUT, 'output', 'xiaohongshu')
 EDGE_PATH = os.environ.get('EDGE_PATH', r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe")
 
 

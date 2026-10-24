@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import pickle
 import re
 import threading
@@ -25,13 +26,19 @@ from playwright.sync_api import sync_playwright
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 # 真正的项目根目录：scripts/xiaohongshu → scripts → research-crawler-skill → 项目根
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(SCRIPT_DIR)))
-OUTPUT_PATH = os.path.join(PROJECT_ROOT, "note_content.txt")
-RAW_RESPONSE_PATH = os.path.join(PROJECT_ROOT, "note_detail_response.json")
+OUTPUT_PATH = os.path.join(AGENTS_OUTPUT, 'reports', 'xiaohongshu', 'program', 'note_content.txt')
+RAW_RESPONSE_PATH = os.path.join(
+    AGENTS_OUTPUT, 'reports', 'xiaohongshu', 'program', 'note_detail_response.json')
 COOKIE_CANDIDATES = [
     # 主路径：与 xhs_qrcode_crawler.py 的 COOKIES_FILE 保持一致
-    os.path.join(PROJECT_ROOT, "research-crawler-skill", "scripts", "xiaohongshu", ".xhs_cookies.pkl"),
+    os.path.join(PROJECT_ROOT, ".agents", "skills", "research-crawler-skill", "scripts", "xiaohongshu", ".xhs_cookies.pkl"),
     # 兼容旧版本脚本曾把 Cookie 放在 scripts 目录下的情况
     os.path.join(PROJECT_ROOT, "research-crawler-skill", "scripts", ".xhs_cookies.pkl"),
     # 兼容 .codebuddy/skills 方式安装 skill 的历史目录结构

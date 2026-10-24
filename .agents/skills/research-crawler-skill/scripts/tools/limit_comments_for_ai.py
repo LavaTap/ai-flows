@@ -15,10 +15,10 @@
 
 用法:
   # 处理所有项目（批量）
-  python research-crawler-skill/scripts/limit_comments_for_ai.py
+  python .agents/skills/research-crawler-skill/scripts/limit_comments_for_ai.py
 
   # 处理单个指定会话目录
-  python research-crawler-skill/scripts/limit_comments_for_ai.py --session-dir "output/xxx/xxx_timestamp"
+  python .agents/skills/research-crawler-skill/scripts/limit_comments_for_ai.py --session-dir "output/xxx/xxx_timestamp"
 """
 import argparse
 import csv
@@ -27,11 +27,16 @@ import sys
 from datetime import datetime
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
 SKILL_DIR = os.path.dirname(SCRIPTS_DIR)
 PROJECT_ROOT = os.path.dirname(SKILL_DIR)
 
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'output')
+OUTPUT_DIR = os.path.join(AGENTS_OUTPUT, 'output')
 
 MAX_COMMENTS_FOR_AI = 50
 
@@ -59,7 +64,7 @@ def detect_platform(session_dir: str) -> str:
 
 def get_reports_dir(platform: str) -> str:
     """获取平台的 reports 根目录路径（limit 报告存于 reports/{platform}/limit/）"""
-    return os.path.join(PROJECT_ROOT, 'reports', platform)
+    return os.path.join(AGENTS_OUTPUT, 'reports', platform)
 
 
 def find_all_session_dirs(root_dir: str):
@@ -244,7 +249,7 @@ def main():
     if args.session_dir:
         # 处理单个会话
         if not os.path.isabs(args.session_dir):
-            session_dir = os.path.join(PROJECT_ROOT, args.session_dir)
+            session_dir = os.path.join(AGENTS_OUTPUT, args.session_dir)
         else:
             session_dir = args.session_dir
         result = process_session(session_dir)

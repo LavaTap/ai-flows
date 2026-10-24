@@ -22,13 +22,13 @@ B站视频搜索 + 热度评论采集 + 基础清洗 工作流编排器
 
 用法（venv 下）：
     # 阶段一：搜索
-    python research-crawler-skill/scripts/bridge.py --keyword 鸣潮 --video-count 10 --search-only
+    python .agents/skills/research-crawler-skill/scripts/bridge.py --keyword 鸣潮 --video-count 10 --search-only
 
     # 阶段二：采集（用户确认链接后）
-    python research-crawler-skill/scripts/bridge.py --crawl-only --session-dir output/鸣潮/鸣潮_20260722_212543 --keyword 鸣潮 --comment-count 100
+    python .agents/skills/research-crawler-skill/scripts/bridge.py --crawl-only --session-dir output/鸣潮/鸣潮_20260722_212543 --keyword 鸣潮 --comment-count 100
 
     # 完整流程
-    python research-crawler-skill/scripts/bridge.py --keyword 鸣潮 --video-count 10 --comment-count 100
+    python .agents/skills/research-crawler-skill/scripts/bridge.py --keyword 鸣潮 --video-count 10 --comment-count 100
 """
 import argparse
 import csv
@@ -47,12 +47,17 @@ import requests
 
 # ============ 路径 ============
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
 SKILL_DIR = os.path.dirname(SCRIPTS_DIR)
 PROJECT_ROOT = os.path.dirname(SKILL_DIR)
 
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'output', 'bilibili')
-REPORTS_DIR = os.path.join(PROJECT_ROOT, 'reports', 'bilibili', 'program')
+OUTPUT_DIR = os.path.join(AGENTS_OUTPUT, 'output', 'bilibili')
+REPORTS_DIR = os.path.join(AGENTS_OUTPUT, 'reports', 'bilibili', 'program')
 
 # 显示用（报告标识来源平台）
 PLATFORM = 'bilibili'
@@ -895,6 +900,8 @@ def main():
     if args.crawl_only:
         if not args.session_dir:
             parser.error("--crawl-only 需要配合 --session-dir 使用")
+        if not os.path.isabs(args.session_dir):
+            args.session_dir = os.path.join(AGENTS_OUTPUT, args.session_dir)
         run_crawl(args.session_dir, args.keyword, args.comment_count, args.skip_bvids,
                   report_md=args.report_md, clean_report=args.clean_report, batch_dir=args.batch_dir)
     elif args.search_only:

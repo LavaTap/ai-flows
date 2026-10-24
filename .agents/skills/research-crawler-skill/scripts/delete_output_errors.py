@@ -10,6 +10,10 @@ if sys.platform == 'win32':
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
 PROJECT_ROOT = os.path.dirname(SKILL_DIR)
 
@@ -77,8 +81,8 @@ def main():
         print(f'错误: 非法的平台名: {args.platform}', file=sys.stderr)
         sys.exit(1)
 
-    output_root = os.path.join(PROJECT_ROOT, 'output', args.platform)
-    reports_dir = os.path.join(PROJECT_ROOT, 'reports', args.platform, 'program')
+    output_root = os.path.join(AGENTS_OUTPUT, 'output', args.platform)
+    reports_dir = os.path.join(AGENTS_OUTPUT, 'reports', args.platform, 'program')
     error_dir = os.path.join(reports_dir, 'error')
     dry = args.dry_run
 

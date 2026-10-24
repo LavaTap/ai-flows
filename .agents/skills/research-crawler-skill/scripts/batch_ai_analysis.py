@@ -4,13 +4,13 @@
 
 用法:
     # 测试单个项目
-    python research-crawler-skill/scripts/batch_ai_analysis.py --session-dir "output/A Short Hike/A Short Hike_20260723_112807"
+    python .agents/skills/research-crawler-skill/scripts/batch_ai_analysis.py --session-dir "output/A Short Hike/A Short Hike_20260723_112807"
 
     # 批量处理所有项目
-    python research-crawler-skill/scripts/batch_ai_analysis.py
+    python .agents/skills/research-crawler-skill/scripts/batch_ai_analysis.py
 
     # 从上一次中断处继续
-    python research-crawler-skill/scripts/batch_ai_analysis.py --resume
+    python .agents/skills/research-crawler-skill/scripts/batch_ai_analysis.py --resume
 """
 import argparse
 import csv
@@ -23,10 +23,14 @@ from datetime import datetime
 
 # ============ 路径 ============
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
 PROJECT_ROOT = os.path.dirname(SKILL_DIR)
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'output')
-REPORTS_DIR = os.path.join(PROJECT_ROOT, 'reports', 'bilibili', 'program')
+OUTPUT_DIR = os.path.join(AGENTS_OUTPUT, 'output')
+REPORTS_DIR = os.path.join(AGENTS_OUTPUT, 'reports', 'bilibili', 'program')
 
 MAX_COMMENTS = 50
 
@@ -526,7 +530,7 @@ def main():
     if args.session_dir:
         # 单个项目
         if not os.path.isabs(args.session_dir):
-            session_dir = os.path.join(PROJECT_ROOT, args.session_dir)
+            session_dir = os.path.join(AGENTS_OUTPUT, args.session_dir)
         else:
             session_dir = args.session_dir
         result = analyze_session(session_dir)

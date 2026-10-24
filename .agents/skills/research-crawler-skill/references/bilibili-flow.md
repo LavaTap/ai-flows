@@ -1,5 +1,7 @@
 # B站调用流程（必须严格遵守）
 
+> 本文所有产出路径均相对 `.agents/agents-output/`（`output/` 采集产出、`excel/` 汇总、`reports/` 日志报告），下文出现的 `output/...`、`reports/...` 都按此前缀理解。
+
 当用户调用本 skill 进行 B站评论采集时，**必须**按以下顺序执行，不得跳过任何步骤。
 
 ## 第一步：收集参数
@@ -21,7 +23,7 @@
 运行搜索脚本（venv 下）：
 
 ```bash
-venv/Scripts/python.exe research-crawler-skill/scripts/bilibili/bridge.py \
+venv/Scripts/python.exe .agents/skills/research-crawler-skill/scripts/bilibili/bridge.py \
     --keyword {关键词} --video-count {N} --search-only
 ```
 
@@ -55,7 +57,7 @@ venv/Scripts/python.exe research-crawler-skill/scripts/bilibili/bridge.py \
 用户确认后，运行采集脚本：
 
 ```bash
-venv/Scripts/python.exe research-crawler-skill/scripts/bilibili/bridge.py \
+venv/Scripts/python.exe .agents/skills/research-crawler-skill/scripts/bilibili/bridge.py \
     --crawl-only --session-dir {会话目录路径} \
     --keyword {关键词} --comment-count {M} \
     [--skip-bvids BVxxx,BVyyy] \

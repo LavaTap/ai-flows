@@ -1,13 +1,19 @@
 import os
 import csv
+import sys
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from workspace_paths import AGENTS_OUTPUT
+
 SCRIPTS_DIR = os.path.dirname(SCRIPT_DIR)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPTS_DIR))
 
-STEAM_OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'output', 'steam')
-GAMES_LIST_FILE = os.path.join(PROJECT_ROOT, 'reports', 'steam', 'steam_games_list.txt')
-FAILED_LIST_FILE = os.path.join(PROJECT_ROOT, 'reports', 'steam', 'steam_failed_games_to_retry.txt')
+STEAM_OUTPUT_DIR = os.path.join(AGENTS_OUTPUT, 'output', 'steam')
+GAMES_LIST_FILE = os.path.join(AGENTS_OUTPUT, 'reports', 'steam', 'steam_games_list.txt')
+FAILED_LIST_FILE = os.path.join(AGENTS_OUTPUT, 'reports', 'steam', 'steam_failed_games_to_retry.txt')
 
 def get_games_from_list(filepath):
     games = []

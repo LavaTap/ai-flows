@@ -10,7 +10,8 @@
     "dev": "tsx src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "review": "tsx src/index.ts run"
+    "review": "tsx src/index.ts run",
+    "art:build": "npm --prefix art run build"
   },
   "engines": {
     "node": ">=22"
