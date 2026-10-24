@@ -1,0 +1,44 @@
+{
+  "reviews": [
+    {
+      "id": "review-mufmg85h",
+      "source": "platform",
+      "actor": "产品部门主管",
+      "email": "zhangli@ai-flows.com",
+      "department": "产品",
+      "role": "supervisor",
+      "generatedAt": "2026-09-24T14:23:01.537Z",
+      "passed": false,
+      "blockers": 7,
+      "issues": 24,
+      "reportUrl": "http://127.0.0.1:4312/reports/review-mufmg85h"
+    },
+    {
+      "id": "review-mukzcdgf",
+      "source": "platform",
+      "actor": "前端开发设计师",
+      "email": "lixiang@ai-flows.com",
+      "department": "程序中台",
+      "role": "staff",
+      "generatedAt": "2026-09-28T08:22:47.692Z",
+      "passed": true,
+      "blockers": 0,
+      "issues": 0,
+      "reportUrl": "http://127.0.0.1:4310/reports/review-mukzcdgf"
+    },
+    {
+      "id": "review-muffy788",
+      "source": "external",
+      "actor": "外部触发",
+      "email": "",
+      "department": "程序中台",
+      "role": "staff",
+      "generatedAt": "2026-09-24 19:21",
+      "passed": false,
+      "blockers": 2,
+      "issues": 48,
+      "reportUrl": "",
+      "repo": "ai-flows"
+    }
+  ]
+}

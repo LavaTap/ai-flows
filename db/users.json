@@ -1,0 +1,213 @@
+{
+  "users": [
+    {
+      "email": "zhangli@ai-flows.com",
+      "password": "123456",
+      "role": "supervisor",
+      "title": "用户研究部门主管",
+      "department": "用户研究部门",
+      "name": "张丽",
+      "github": "LavaTap"
+    },
+    {
+      "email": "wangxinyi@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "用户研究实习生",
+      "department": "用户研究部门",
+      "name": "王鑫易"
+    },
+    {
+      "email": "lixiang@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "前端开发设计师",
+      "department": "程序中台",
+      "name": "李翔"
+    },
+    {
+      "email": "chenyu@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "平台开发工程师",
+      "department": "程序中台",
+      "name": "陈宇"
+    },
+    {
+      "email": "liuyang@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "运营专员",
+      "department": "运营部门",
+      "name": "刘阳"
+    },
+    {
+      "email": "liyun@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "用户运营实习生",
+      "department": "运营部门",
+      "name": "李云"
+    },
+    {
+      "email": "zhaomingzhe@ai-flows.com",
+      "password": "123456",
+      "role": "supervisor",
+      "title": "平台开发部主管",
+      "department": "平台开发部",
+      "name": "赵明哲"
+    },
+    {
+      "email": "sunhaoran@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "后端开发工程师",
+      "department": "平台开发部",
+      "name": "孙浩然"
+    },
+    {
+      "email": "zhoujin@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "全栈开发工程师",
+      "department": "平台开发部",
+      "name": "周瑾"
+    },
+    {
+      "email": "wujunjie@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "基础架构工程师",
+      "department": "平台开发部",
+      "name": "吴俊杰"
+    },
+    {
+      "email": "zhengsiyuan@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "DevOps工程师",
+      "department": "平台开发部",
+      "name": "郑思远"
+    },
+    {
+      "email": "fengyaqin@ai-flows.com",
+      "password": "123456",
+      "role": "supervisor",
+      "title": "数据仓库管理部主管",
+      "department": "数据仓库管理部",
+      "name": "冯雅琴"
+    },
+    {
+      "email": "hanzhigang@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "数据架构师",
+      "department": "数据仓库管理部",
+      "name": "韩志刚"
+    },
+    {
+      "email": "shenmengyao@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "ETL开发工程师",
+      "department": "数据仓库管理部",
+      "name": "沈梦瑶"
+    },
+    {
+      "email": "caoyuxuan@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "数据建模工程师",
+      "department": "数据仓库管理部",
+      "name": "曹宇轩"
+    },
+    {
+      "email": "yanhaotian@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "大数据开发工程师",
+      "department": "数据仓库管理部",
+      "name": "严浩天"
+    },
+    {
+      "email": "jiangyutong@ai-flows.com",
+      "password": "123456",
+      "role": "supervisor",
+      "title": "美术设计中心主管",
+      "department": "美术设计中心",
+      "name": "蒋雨桐"
+    },
+    {
+      "email": "qinsiyi@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "UI视觉设计师",
+      "department": "美术设计中心",
+      "name": "秦思怡"
+    },
+    {
+      "email": "youjianing@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "交互设计师",
+      "department": "美术设计中心",
+      "name": "尤嘉宁"
+    },
+    {
+      "email": "xuwenbo@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "原画设计师",
+      "department": "美术设计中心",
+      "name": "许文博"
+    },
+    {
+      "email": "hemuyang@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "动效设计师",
+      "department": "美术设计中心",
+      "name": "何沐阳"
+    },
+    {
+      "email": "tangzixuan@ai-flows.com",
+      "password": "123456",
+      "role": "supervisor",
+      "title": "AI产品部主管",
+      "department": "ai产品部",
+      "name": "唐梓萱"
+    },
+    {
+      "email": "shenzimo@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "AI产品经理",
+      "department": "ai产品部",
+      "name": "沈子墨"
+    },
+    {
+      "email": "panyuxin@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "算法产品经理",
+      "department": "ai产品部",
+      "name": "潘雨欣"
+    },
+    {
+      "email": "daiwenhao@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "数据标注工程师",
+      "department": "ai产品部",
+      "name": "戴文豪"
+    },
+    {
+      "email": "zhongzihan@ai-flows.com",
+      "password": "123456",
+      "role": "staff",
+      "title": "AI训练工程师",
+      "department": "ai产品部",
+      "name": "钟子涵"
+    }
+  ]
+}

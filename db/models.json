@@ -1,0 +1,15 @@
+{
+  "activeId": "ds-default",
+  "models": [
+    {
+      "id": "ds-default",
+      "name": "DeepSeek Chat",
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "baseUrl": "https://api.deepseek.com",
+      "apiKeyEnv": "DEEPSEEK_API_KEY",
+      "isActive": true,
+      "category": "text"
+    }
+  ]
+}

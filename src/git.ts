@@ -105,3 +105,24 @@ export async function headCommit(cwd?: string): Promise<CommitInfo | null> {
 export async function amendCommitMessage(message: string, cwd?: string): Promise<void> {
   await git(["commit", "--amend", "-m", message], cwd);
 }
+
+/** 读取 origin remote URL（https 或 ssh 均可）；非 git 仓库 / 无 origin 返回 null */
+export async function getRemoteUrl(cwd?: string): Promise<string | null> {
+  try {
+    return await git(["remote", "get-url", "origin"], cwd);
+  } catch {
+    return null;
+  }
+}
+
+/** 从 remote URL 解析出 owner/repo（兼容 https://github.com/o/r.git 与 git@github.com:o/r.git）；
+ *  非 GitHub 远端或解析失败返回 null */
+export function parseGithubRemote(url: string): { owner: string; repo: string } | null {
+  // https://github.com/owner/repo(.git)
+  const m1 = url.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/|$)/i);
+  if (m1) return { owner: m1[1], repo: m1[2] };
+  // git@github.com:owner/repo.git 或 ssh://git@github.com/owner/repo.git
+  const m2 = url.match(/github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?(?:\/|$)/i);
+  if (m2) return { owner: m2[1], repo: m2[2] };
+  return null;
+}
