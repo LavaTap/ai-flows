@@ -73,17 +73,31 @@ start "" /B /D "%PROJECT_DIR%" cmd /c "%TSX% src/index.ts logs --kind web --line
 :: 5. wait for ports (poll up to 30s), then report
 echo [5/5] Waiting for service ports...
 set /a _wait=0
+set /a SERVE_MAX=%SERVE_PORT%+9
 set /a PLAT_MAX=%PLATFORM_PORT%+9
 :waitPorts
 set "SERVE_PID="
+set "SERVE_PORT_ACTUAL="
 set "PLATFORM_PID="
 set "PLATFORM_PORT_ACTUAL="
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%SERVE_PORT%" ^| findstr "LISTENING"') do set "SERVE_PID=%%a"
-:: platform drifts to base+1..base+9 when its port is busy (see src/index.ts)
+:: both services drift to base+1..base+9 when their port is taken by a foreign app
+:: (e.g. QQ on 4310). Only trust a PID whose command line is really ours.
+for /l %%p in (%SERVE_PORT%,1,%SERVE_MAX%) do (
+    if not defined SERVE_PID for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%%p " ^| findstr "LISTENING"') do (
+        powershell -NoProfile -Command "if (-not ((Get-CimInstance Win32_Process -Filter ('ProcessId=' + %%a)).CommandLine -match 'index\.(ts|js) serve')) { exit 1 }" >nul 2>&1
+        if not errorlevel 1 (
+            set "SERVE_PID=%%a"
+            set "SERVE_PORT_ACTUAL=%%p"
+        )
+    )
+)
 for /l %%p in (%PLATFORM_PORT%,1,%PLAT_MAX%) do (
     if not defined PLATFORM_PID for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%%p " ^| findstr "LISTENING"') do (
-        set "PLATFORM_PID=%%a"
-        set "PLATFORM_PORT_ACTUAL=%%p"
+        powershell -NoProfile -Command "if (-not ((Get-CimInstance Win32_Process -Filter ('ProcessId=' + %%a)).CommandLine -match 'index\.(ts|js) platform')) { exit 1 }" >nul 2>&1
+        if not errorlevel 1 (
+            set "PLATFORM_PID=%%a"
+            set "PLATFORM_PORT_ACTUAL=%%p"
+        )
     )
 )
 if defined SERVE_PID if defined PLATFORM_PID goto portsReady
@@ -92,17 +106,6 @@ if !_wait! geq 30 goto portsReady
 ping -n 2 127.0.0.1 >nul 2>&1
 goto waitPorts
 :portsReady
-
-:: a PID found by port may belong to a foreign app squatting the port (e.g. QQ on 4312);
-:: only trust PIDs whose command line is really ours - never report/kill someone else's process
-if defined SERVE_PID (
-    powershell -NoProfile -Command "if (-not ((Get-CimInstance Win32_Process -Filter ('ProcessId=' + %SERVE_PID%)).CommandLine -match 'index\.(ts|js) serve')) { exit 1 }" >nul 2>&1
-    if errorlevel 1 set "SERVE_PID="
-)
-if defined PLATFORM_PID (
-    powershell -NoProfile -Command "if (-not ((Get-CimInstance Win32_Process -Filter ('ProcessId=' + %PLATFORM_PID%)).CommandLine -match 'index\.(ts|js) platform')) { exit 1 }" >nul 2>&1
-    if errorlevel 1 set "PLATFORM_PID="
-)
 
 if defined SERVE_PID if defined PLATFORM_PID goto ready
 :: startup failed -> treat it as a broken environment, re-init once, retry once
@@ -117,8 +120,10 @@ if not defined RETRIED (
 )
 
 :ready
+set "SERVE_URL=http://127.0.0.1:%SERVE_PORT%"
+if defined SERVE_PORT_ACTUAL set "SERVE_URL=http://127.0.0.1:%SERVE_PORT_ACTUAL%"
 if defined SERVE_PID (
-    echo   Report server PID: %SERVE_PID%
+    echo   Report server PID: %SERVE_PID%   on port %SERVE_PORT_ACTUAL%
 ) else (
     echo   WARNING: report server may have failed
 )
@@ -133,7 +138,7 @@ if defined PLATFORM_PORT_ACTUAL set "PLATFORM_URL=http://127.0.0.1:%PLATFORM_POR
 
 echo.
 echo --------------------------------------------
-echo Reports  : http://127.0.0.1:%SERVE_PORT%/
+echo Reports  : %SERVE_URL%/
 echo Platform : %PLATFORM_URL%/
 echo Logs     : %PLATFORM_URL%/logs   (Account - Logs)
 echo Logfiles : %PROJECT_DIR%\logs\ai.log / web.log
@@ -163,6 +168,7 @@ if defined PLATFORM_PID (
 )
 call :killPort %SERVE_PORT%
 call :killPort %PLATFORM_PORT%
+if defined SERVE_PORT_ACTUAL call :killPort %SERVE_PORT_ACTUAL%
 if defined PLATFORM_PORT_ACTUAL call :killPort %PLATFORM_PORT_ACTUAL%
 :: fallback: kill by command line (services + hidden log processes)
 powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { ($_.CommandLine -match 'src/index\.ts (serve|platform) --port (%SERVE_PORT%|%PLATFORM_PORT%)\b') -or ($_.CommandLine -match 'src/index\.ts logs --kind') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" >nul 2>&1

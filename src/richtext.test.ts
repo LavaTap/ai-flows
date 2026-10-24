@@ -42,6 +42,22 @@ test("should escape stray angle brackets and ampersands in text", () => {
   assert.strictEqual(sanitizeRichHtml("1 < 2 > 3"), "1 &lt; 2 &gt; 3");
 });
 
+test("should keep code blocks and not double-escape their entities", () => {
+  // 围栏代码块：pre/code 标签保留，class 被剥（展示不依赖 class）
+  assert.strictEqual(
+    sanitizeRichHtml('<pre class="lang-ts"><code>const a = 1;</code></pre>'),
+    "<pre><code>const a = 1;</code></pre>"
+  );
+  // 代码里的 &lt; / &amp; 已由编辑器转义，净化时不能再转一次（否则回显成字面 &lt;）
+  assert.strictEqual(
+    sanitizeRichHtml("<pre><code>if (a &lt; b &amp;&amp; c) {}</code></pre>"),
+    "<pre><code>if (a &lt; b &amp;&amp; c) {}</code></pre>"
+  );
+  assert.strictEqual(sanitizeRichHtml("<code>a&amp;b</code>"), "<code>a&amp;b</code>");
+  // 裸 & 仍要转义（与既有文本转义用例一致）
+  assert.strictEqual(sanitizeRichHtml("<p>a & b</p>"), "<p>a &amp; b</p>");
+});
+
 test("should detect empty rich text", () => {
   assert.strictEqual(isEmptyRichHtml("<p><br></p>"), true);
   assert.strictEqual(isEmptyRichHtml("<p>&nbsp;</p>"), true);

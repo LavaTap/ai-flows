@@ -31,3 +31,9 @@ db/avatars/
 .tmp-pptx-old/
 .tmp-pptx-export/
 ppt/
+
+# 采集产物（research-crawler 运行输出，本地生成，不入版本库）
+excel/
+output/
+__pycache__/
+*.pyc

@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname, basename, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadNodes, loadAllNodes, loadNodeById, saveNodes, saveNode, loadPipelines, loadPipeline, findPipelineByName, createPipeline, updatePipeline, deletePipeline, loadRepos, loadRepo, appendRepo, updateRepo, deleteRepo, DEFAULT_PIPELINE_ID, authenticate, loadUsers, loadDepartments, loadReviews, appendReview, appendReviews, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, setPassword, ensurePasswordBaseline, loadTickets, appendTicket, updateTicket, deleteTicket, loadPlatformMessages, appendPlatformMessage, markMessageRead, markAllMessagesRead, loadKbArticles, appendKbArticle, updateKbArticle, deleteKbArticle, TICKET_IMAGES_DIR, AVATARS_DIR, CHAT_UPLOADS_DIR, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, recordTokenUsage, loadTokenUsage, type TokenUsageRecord, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel, type ChatAttachment, type ChatRef, type ChatSkillCall, type PlatformMessage, type MessageType, type KbArticle, type KbVisibility, type RepoRecord, type PipelineRecord } from "./db.js";
+import { loadNodes, loadAllNodes, loadNodeById, saveNodes, saveNode, loadPipelines, loadPipeline, findPipelineByName, createPipeline, updatePipeline, deletePipeline, loadRepos, loadRepo, appendRepo, updateRepo, deleteRepo, DEFAULT_PIPELINE_ID, authenticate, loadUsers, loadDepartments, loadReviews, appendReview, appendReviews, updateReviewMeta, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, setPassword, ensurePasswordBaseline, loadTickets, appendTicket, updateTicket, deleteTicket, loadPlatformMessages, appendPlatformMessage, markMessageRead, markAllMessagesRead, loadKbArticles, appendKbArticle, updateKbArticle, deleteKbArticle, TICKET_IMAGES_DIR, AVATARS_DIR, CHAT_UPLOADS_DIR, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, recordTokenUsage, loadTokenUsage, type TokenUsageRecord, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel, type ChatAttachment, type ChatRef, type ChatSkillCall, type PlatformMessage, type MessageType, type KbArticle, type KbVisibility, type RepoRecord, type PipelineRecord } from "./db.js";
 import {
   callModelStream,
   callModelOnce,
@@ -374,19 +374,33 @@ function dedupReviews(reviews: ReviewRecord[]): ReviewRecord[] {
   return [...seen.values()];
 }
 
-/** 用当前报告服务地址刷新评审记录的 reportUrl（报告 JSON 文件存在于当前仓库才刷新） */
+/** 刷新评审记录的 reportUrl：报告文件出现在任一已登记仓库的报告目录时，指到对应仓库的地址 */
 async function refreshReviewUrls(
   reviews: ReviewRecord[],
-  repo: string,
+  repos: string[],
 ): Promise<ReviewRecord[]> {
-  const dir = join(repo, REPORTS_DIR);
-  const base = await ensureReportServer(repo);
+  // 只处理确有报告目录的仓库（避免为从未评审过的仓库创建空目录）
+  const live = repos.filter((r) => existsSync(join(r, REPORTS_DIR)));
+  const bases = new Map<string, string>();
+  for (const r of live) bases.set(resolve(r), await ensureReportServer(r));
   return reviews.map((r) => {
-    if (existsSync(join(dir, `${r.id}.json`))) {
-      return { ...r, reportUrl: `${base}/reports/${r.id}` };
+    for (const repo of live) {
+      if (existsSync(join(repo, REPORTS_DIR, `${r.id}.json`))) {
+        return { ...r, reportUrl: `${bases.get(resolve(repo))}/reports/${r.id}` };
+      }
     }
     return r;
   });
+}
+
+/** 当前平台需要纳入评审记录的仓库目录：平台目标仓库 + 全部已登记（申报）仓库 */
+function reviewRepos(platformRepo: string): string[] {
+  const out = new Set<string>();
+  out.add(resolve(platformRepo));
+  for (const r of loadRepos()) {
+    if (r.path) out.add(resolve(r.path));
+  }
+  return [...out];
 }
 
 /** 刷新节点的 reportUrl（报告 JSON 文件存在于当前仓库才刷新） */
@@ -870,18 +884,20 @@ function tokensHtml(user: UserAccount): string {
 function reviewsHtml(user: UserAccount, fallbackRepo: string, pipelineIdRaw: string | null): string {
   const raw = readFileSync(join(WEB_DIR, "reviews.html"), "utf8");
   const pipelines = loadPipelines();
-  const activeId = resolvePipelineId(pipelineIdRaw);
-  const active = loadPipeline(activeId);
-  const repo = pipelineRepoPath(active, fallbackRepo);
+  // ?p=all = 不按管线锁定仓库，展示全部已登记仓库的评审记录
+  const showAll = pipelineIdRaw === "all";
+  const activeId = showAll ? "all" : resolvePipelineId(pipelineIdRaw);
+  const active = showAll ? null : loadPipeline(activeId);
+  const repo = showAll ? fallbackRepo : pipelineRepoPath(active, fallbackRepo);
   const boot = {
     user: toUserView(user),
     isSupervisor: user.role === "supervisor",
     pipelines: pipelines.map((p) => ({ id: p.id, name: p.name })),
     pipelineId: activeId,
-    pipelineName: active?.name ?? "",
-    repoName: repoDirName(repo),
+    pipelineName: showAll ? "全部" : active?.name ?? "",
+    repoName: showAll ? "全部仓库" : repoDirName(repo),
     repoPath: repo,
-    repoGithub: pipelineGithub(active),
+    repoGithub: showAll ? "" : pipelineGithub(active),
   };
   const inject = `<script>window.__REVIEWS__ = ${jsonForScript(boot)};</script>\n<script src="/reviews.js" defer></script>`;
   return raw.replace("</body>", `${inject}\n</body>`);
@@ -1618,73 +1634,102 @@ function findReportsDirs(root: string, maxDepth = 3): string[] {
   return out;
 }
 
-/** 读取 scanRoots 下所有 `.ai-review-reviews/` 中的外部触发报告（hook / 手动 run 落盘），
- *  归为「外部触发」执行角色，嫁接到节点 03 所属部门，供「评审记录」面板聚合展示。
- *  跨仓库报告带 repo 字段标记来源；reportUrl 仅在报告文件存在于平台当前仓库时才回填 */
+/** 扫描平台目标仓库 + 全部已登记（申报）仓库的 `.ai-review-reports/`，把外部触发报告
+ *  （hook / 手动 run 落盘）补录进评审历史，供「评审记录」面板聚合展示。
+ *  跨仓库报告带 repo 字段标记来源；老记录缺 repo / 地址失效的一并回填。 */
 async function collectExternalReviews(
   scanRoots: string[],
   platformRepo: string
 ): Promise<ReviewRecord[]> {
   const records: ReviewRecord[] = [];
   const platformRoot = resolve(platformRepo);
-  for (const root of scanRoots) {
-    // 相对路径相对平台仓库根解析；路径穿越防护：解析后若仍在 cwd 之上且未授权则跳过
-    const absRoot = resolve(platformRoot, root);
-    const dirs = findReportsDirs(absRoot);
-    for (const dir of dirs) {
-      const repoPath = dirname(dir);
-      const repoName = basename(repoPath);
-      let files: string[];
+  // 扫描根：平台目标仓库 + 配置 scanRoots + 所有已登记仓库（仓库管理里申报过的都要扫）
+  const roots = new Set<string>([platformRoot]);
+  for (const root of scanRoots) roots.add(resolve(platformRoot, root));
+  for (const repoPath of reviewRepos(platformRoot)) roots.add(repoPath);
+
+  // 先收集报告目录（按绝对路径去重，Windows 大小写不敏感），避免同一目录被多个扫描根重复命中
+  const scanned: Array<{ dir: string; repoPath: string }> = [];
+  const seenDirs = new Set<string>();
+  for (const root of roots) {
+    for (const dir of findReportsDirs(root)) {
+      const abs = resolve(dir);
+      const key = process.platform === "win32" ? abs.toLowerCase() : abs;
+      if (seenDirs.has(key)) continue;
+      seenDirs.add(key);
+      scanned.push({ dir: abs, repoPath: dirname(abs) });
+    }
+  }
+
+  // 报告 → 记录（保留目录来源，回填 reportUrl 时按 id 定位到所属仓库）
+  const ownDir = new Map<string, string>();
+  for (const { dir, repoPath } of scanned) {
+    const repoName = basename(repoPath);
+    let files: string[];
+    try {
+      files = readdirSync(dir).filter((f) => f.endsWith(".json") && !f.startsWith("."));
+    } catch {
+      continue;
+    }
+    for (const f of files) {
       try {
-        files = readdirSync(dir).filter(
-          (f) => f.endsWith(".json") && !f.startsWith(".")
-        );
+        const view = JSON.parse(readFileSync(join(dir, f), "utf8")) as {
+          passed?: boolean;
+          generatedAt?: string;
+          counts?: { blocker?: number; warning?: number; info?: number };
+        };
+        const id = f.replace(/\.json$/, "");
+        records.push({
+          id,
+          source: "external",
+          actor: "外部触发",
+          email: "",
+          department: AI_REVIEW_DEPT,
+          role: "staff",
+          generatedAt: view.generatedAt ?? "",
+          passed: !!view.passed,
+          blockers: view.counts?.blocker ?? 0,
+          issues:
+            (view.counts?.blocker ?? 0) +
+            (view.counts?.warning ?? 0) +
+            (view.counts?.info ?? 0),
+          reportUrl: "",
+          repo: repoName,
+        });
+        ownDir.set(id, dir);
       } catch {
-        continue;
-      }
-      for (const f of files) {
-        try {
-          const view = JSON.parse(readFileSync(join(dir, f), "utf8")) as {
-            passed?: boolean;
-            generatedAt?: string;
-            counts?: { blocker?: number; warning?: number; info?: number };
-          };
-          records.push({
-            id: f.replace(/\.json$/, ""),
-            source: "external",
-            actor: "外部触发",
-            email: "",
-            department: AI_REVIEW_DEPT,
-            role: "staff",
-            generatedAt: view.generatedAt ?? "",
-            passed: !!view.passed,
-            blockers: view.counts?.blocker ?? 0,
-            issues:
-              (view.counts?.blocker ?? 0) +
-              (view.counts?.warning ?? 0) +
-              (view.counts?.info ?? 0),
-            reportUrl: "",
-            repo: repoName,
-          });
-        } catch {
-          /* 单个损坏报告跳过，不影响整体列表 */
-        }
+        /* 单个损坏报告跳过，不影响整体列表 */
       }
     }
   }
-  // 扫到的记录中，db 里不存在的批量补录（只读写一次文件）
-  if (records.length) {
-    const existingIds = new Set(loadReviews().map((r) => r.id));
-    const fresh = records.filter((r) => !existingIds.has(r.id));
-    if (fresh.length) appendReviews(fresh);
+
+  // 报告地址：报告文件在哪个仓库目录，就把该仓库目录登记到单例报告服务并按 id 拼 URL
+  const bases = new Map<string, string>();
+  for (const { dir } of scanned) {
+    const repoPath = dirname(dir);
+    if (!bases.has(repoPath)) bases.set(repoPath, await ensureReportServer(repoPath));
   }
-  // reportUrl 刷新：仅当报告 JSON 存在于平台当前仓库的 .ai-review-reports/ 时才能通过报告服务访问
+  for (const r of records) {
+    const dir = ownDir.get(r.id);
+    if (dir) r.reportUrl = `${bases.get(dirname(dir))}/reports/${r.id}`;
+  }
+
+  // 补录 db 里不存在的记录；已存在但缺 repo / 地址失效的就地回填（修复过往记录）
   if (records.length) {
-    const base = await ensureReportServer(platformRepo);
-    const dir = join(platformRepo, REPORTS_DIR);
+    const existing = new Map(loadReviews().map((r) => [r.id, r]));
+    const fresh = records.filter((r) => !existing.has(r.id));
+    if (fresh.length) appendReviews(fresh);
     for (const r of records) {
-      if (existsSync(join(dir, `${r.id}.json`))) {
-        r.reportUrl = `${base}/reports/${r.id}`;
+      const old = existing.get(r.id);
+      if (!old) continue;
+      const patch: Partial<Pick<ReviewRecord, "repo" | "reportUrl">> = {};
+      // 老平台记录未标来源仓库：按报告实际所在目录补上
+      if (!old.repo && r.repo) patch.repo = r.repo;
+      // 地址为空或与当前报告服务不一致时刷新
+      if (r.reportUrl && old.reportUrl !== r.reportUrl) patch.reportUrl = r.reportUrl;
+      if (Object.keys(patch).length) {
+        updateReviewMeta(r.id, patch);
+        Object.assign(old, patch);
       }
     }
   }
@@ -2014,10 +2059,16 @@ export async function startPlatformServer(
         sendJson(res, 401, { error: "未登录" });
         return;
       }
-      // 先扫描外部报告并补录到 db/reviews.json，再直接读 db 全量
+      // 先扫描全部已登记仓库的外部报告并补录/回填到评审历史，再直接读 db 全量
       await collectExternalReviews(scanRoots, repo);
       const all = loadReviews();
-      const refreshed = await refreshReviewUrls(all, repo);
+      const refreshed = await refreshReviewUrls(all, reviewRepos(repo));
+      // ?p=all：全部已登记仓库（仍按查看者视角过滤，不越权）
+      if (u.searchParams.get("p") === "all") {
+        const every = refreshed.sort((a, b) => b.generatedAt.localeCompare(a.generatedAt));
+        sendJson(res, 200, { reviews: filterReviewsByUser(every, user), repo: "全部仓库" });
+        return;
+      }
       // 当前仓库 = 该管线绑定仓库（未绑回退平台目标仓库）；老记录无 repo 字段按平台仓库归属
       const activeRepo = pipelineRepoPath(loadPipeline(resolvePipelineId(u.searchParams.get("p"))), repo);
       const repoName = repoDirName(activeRepo);

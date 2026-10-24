@@ -6,7 +6,8 @@
    - @提及：输入 @ 弹出成员候选，插入带 data-email 的链接（渲染端升级为「头像 + 名字」）
    - 知识库：插入知识库卡片引用（由调用方通过 opts.onPickKnowledge 提供选择弹层）
    - Markdown 识别：行首 `# `~`#### ` 即时转标题（带字号）；整行图片链接 / `![alt](url)` 转图片；
-     粘贴 Markdown 文本自动转 HTML（标题 / 图片 / 列表 / 引用 / 粗斜体 / 行内代码 / 链接）；
+     围栏代码块（三个反引号开头，可带语言）转 <pre><code>；
+     粘贴 Markdown 文本自动转 HTML（标题 / 代码块 / 图片 / 列表 / 引用 / 粗斜体 / 行内代码 / 链接）；
      保存前再兜底扫一遍。外链图片由服务端在落库时转存本地，前端只管插 <img>。
    用法：var ed = window.RichEditor.make(hostEl, { placeholder, onPickKnowledge }); */
 window.RichEditor = (function () {
@@ -26,6 +27,10 @@ window.RichEditor = (function () {
   var MD_IMG_URL_RE = /^https?:\/\/\S+\.(?:png|jpe?g|gif|webp)(?:\?\S*)?$/i;
   /** 行首标记（转标题时剥掉；快捷输入时行尾还没打空格，所以空格可有可无） */
   var MD_MARK_RE = /^\s*#{1,4}\s*/;
+  /** 代码围栏行：``` 或 ```语言 */
+  var MD_FENCE_RE = /^```([^\s`]*)\s*$/;
+  /** 代码围栏结束行：单独一行 ``` */
+  var MD_FENCE_END_RE = /^```\s*$/;
 
   function mdEsc(t) {
     return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -458,12 +463,56 @@ window.RichEditor = (function () {
       return replaced;
     }
 
+    /** 代码围栏兜底：把「```语言 / 代码行… / ```」这组连续块换成 <pre><code>。
+     *  粘贴走 mdToHtml 已能转；这里兜住手动输入与其它途径进来的字面围栏。 */
+    function normalizeCodeFences() {
+      var replaced = 0;
+      for (var guard = 0; guard < 200; guard++) {
+        var kids = Array.prototype.slice.call(body.childNodes);
+        var open = -1, lang = "", close = -1, codeLines = [];
+        for (var i = 0; i < kids.length; i++) {
+          var t = kids[i].textContent ? kids[i].textContent.trim() : "";
+          var om = t.match(MD_FENCE_RE);
+          if (!om) continue;
+          var lines = [];
+          var end = -1;
+          for (var j = i + 1; j < kids.length; j++) {
+            var lt = kids[j].textContent ? kids[j].textContent.trim() : "";
+            if (MD_FENCE_END_RE.test(lt)) { end = j; break; }
+            lines.push(kids[j].textContent.replace(/\u00a0/g, " ").replace(/\n+$/, ""));
+          }
+          if (end === -1) return replaced; // 围栏未闭合：不再往下找，避免与后面的 ``` 误配
+          open = i; lang = om[1] || ""; close = end; codeLines = lines;
+          break;
+        }
+        if (open === -1) break;
+        var firstBlock = kids[open].nodeType === 3 ? wrapBareText(kids[open]) : kids[open];
+        var pre = document.createElement("pre");
+        if (lang) pre.className = "lang-" + lang;
+        var code = document.createElement("code");
+        code.textContent = codeLines.join("\n");
+        pre.appendChild(code);
+        firstBlock.parentNode.replaceChild(pre, firstBlock);
+        // 移除原围栏首行之后的行（结束行 + 代码行）
+        var after = Array.prototype.slice.call(body.childNodes);
+        var startIdx = after.indexOf(pre);
+        if (startIdx === -1) return replaced;
+        for (var k = 1; k <= close - open; k++) {
+          var n = after[startIdx + k];
+          if (n && n.parentNode) n.parentNode.removeChild(n);
+        }
+        replaced++;
+      }
+      return replaced;
+    }
+
     /** 保存前 / 失焦时兜底扫描：编辑器仍有焦点时跳过选区所在的块，避免打乱光标 */
     function normalizeBody() {
       var focused = document.activeElement === body;
       var sel = window.getSelection();
       var anchor = focused && sel && sel.rangeCount ? sel.getRangeAt(0).commonAncestorContainer : null;
-      // 先扫表格（多行块，不受单块跳过逻辑影响）
+      // 先扫代码围栏与表格（多行块，不受单块跳过逻辑影响）
+      normalizeCodeFences();
       normalizeTables();
       Array.prototype.slice.call(body.childNodes).forEach(function (n) {
         if (n.nodeType === 3) {

@@ -2,6 +2,7 @@ import { createServer, type Server, type IncomingMessage } from "node:http";
 import { readdirSync, readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, dirname, basename, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { renderTemplate, type ReportView } from "./reporter.js";
 import { pushToTargets } from "./publisher.js";
@@ -360,19 +361,51 @@ const CLI_ENTRY = (() => {
   return join(dirname(here), here.endsWith(".ts") ? "index.ts" : "index.js");
 })();
 
-/** 单例报告服务地址（固定端口，与平台服务 4311 错开） */
-function reportServiceBase(): string {
+/** 单例报告服务固定端口（与平台服务 4311 错开） */
+function defaultReportBase(): string {
   const port = Number(process.env.AI_REVIEW_PORT || DEFAULT_REPORT_PORT);
   return `http://127.0.0.1:${port}`;
 }
 
-/** 探测单例报告服务是否在跑（/health 回 ok 即认为可用） */
+/** 单例报告服务的「实际端口」发现文件（机器级、跨仓库共享）。
+ *  4310 可能被第三方程序占用（如 QQ），此时服务自动顺延端口并写这里，
+ *  各仓库评审时据此找到同一个实例，避免打印一个打不开的地址。 */
+export const REPORT_DISCOVERY_FILE = join(tmpdir(), "ai-flows-report-service.json");
+
+interface ReportDiscovery {
+  port: number;
+  url: string;
+}
+
+/** 读取发现文件（不存在或损坏返回 null） */
+function readDiscovery(): ReportDiscovery | null {
+  try {
+    if (!existsSync(REPORT_DISCOVERY_FILE)) return null;
+    const d = JSON.parse(readFileSync(REPORT_DISCOVERY_FILE, "utf8")) as Partial<ReportDiscovery>;
+    if (typeof d.url === "string" && d.url) return { port: Number(d.port) || 0, url: d.url };
+  } catch {
+    /* 损坏视为不存在 */
+  }
+  return null;
+}
+
+/** 服务启动成功后写发现文件，供其它进程复用同一实例 */
+export function writeReportDiscovery(port: number, url: string): void {
+  try {
+    writeFileSync(REPORT_DISCOVERY_FILE, JSON.stringify({ port, url }), "utf8");
+  } catch {
+    /* 写不进去不影响服务本身 */
+  }
+}
+
+/** 探测单例报告服务是否在跑：必须是本服务（/health 回 {ok,roots} 结构的 JSON）。
+ *  仅看 HTTP 200 会把占用端口的第三方程序（如 QQ）误当成报告服务。 */
 async function reportServiceAlive(base: string, timeoutMs = 700): Promise<boolean> {
   try {
     const r = await fetch(`${base}/health`, { signal: AbortSignal.timeout(timeoutMs) });
     if (!r.ok) return false;
-    const h = JSON.parse((await r.text()).trim()) as { ok?: boolean };
-    return !!h.ok;
+    const h = JSON.parse((await r.text()).trim()) as { ok?: boolean; roots?: unknown };
+    return h.ok === true && Array.isArray(h.roots);
   } catch {
     return false;
   }
@@ -397,12 +430,18 @@ async function registerReportRoot(base: string, dir: string): Promise<void> {
 export async function ensureReportServer(repo: string): Promise<string> {
   const dir = resolve(join(repo, REPORTS_DIR));
   mkdirSync(dir, { recursive: true });
-  const base = reportServiceBase();
+  const discovered = readDiscovery();
+  // 优先用发现文件里的实际端口（服务可能已因端口占用顺延），再退回默认端口
+  const candidates = [discovered?.url, defaultReportBase()].filter(
+    (x): x is string => typeof x === "string" && !!x
+  );
 
   // 已在跑：直接登记本仓库目录即可
-  if (await reportServiceAlive(base)) {
-    await registerReportRoot(base, dir);
-    return base;
+  for (const base of candidates) {
+    if (await reportServiceAlive(base)) {
+      await registerReportRoot(base, dir);
+      return base;
+    }
   }
 
   // 后台拉起单例 serve 守护进程（detached）。复用 process.execArgv，让 tsx 的 ESM loader
@@ -415,12 +454,14 @@ export async function ensureReportServer(repo: string): Promise<string> {
 
   for (let i = 0; i < 40; i++) {
     await new Promise((r) => setTimeout(r, 150));
+    // 每轮重读发现文件：子进程可能因 4310 被占用而顺延到其它端口
+    const base = readDiscovery()?.url ?? defaultReportBase();
     if (await reportServiceAlive(base, 600)) {
       await registerReportRoot(base, dir);
       return base;
     }
   }
-  return base;
+  return readDiscovery()?.url ?? defaultReportBase();
 }
 
 /** 可复用的既有评审结果（供「无新提交则跳过评审」复用） */

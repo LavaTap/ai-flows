@@ -1,7 +1,7 @@
 /* reviews.js · 代码评审记录
    数据源：window.__REVIEWS__ = { user, isSupervisor, pipelines, pipelineId, pipelineName, repoName, repoPath, repoGithub }
-   接口：GET /api/reviews?p=<pipelineId> → { reviews, repo }
-   只展示「当前管线绑定仓库」的评审记录（已登记仓库），不再展示所有仓库的报告。 */
+   接口：GET /api/reviews?p=<pipelineId|all> → { reviews, repo }
+   默认展示「当前管线绑定仓库」的评审记录；选「全部」(?p=all) 则聚合全部已登记仓库。 */
 (function () {
   var boot = window.__REVIEWS__ || {};
   var pipelines = boot.pipelines || [];
@@ -30,7 +30,9 @@
 
   function renderPipelinePicker() {
     var sel = byId("pipelineSel");
-    sel.innerHTML = pipelines.map(function (p) {
+    // 首项「全部」= 不限管线，聚合全部已登记仓库的评审记录
+    var allOption = '<option value="all"' + (activeId === "all" ? " selected" : "") + ">全部</option>";
+    sel.innerHTML = allOption + pipelines.map(function (p) {
       return '<option value="' + esc(p.id) + '"' + (p.id === activeId ? " selected" : "") + ">" +
         esc(p.name) + "</option>";
     }).join("");
@@ -49,6 +51,8 @@
     var cls = r.passed ? "pass" : "block";
     var label = r.passed ? "PASS" : "BLOCK";
     var who = [r.actor, r.email].filter(Boolean).map(esc).join(" · ") || "外部触发";
+    // 「全部」视图下没有单一当前仓库，缺 repo 的老记录显示 —，不冒充全部仓库
+    var repoText = r.repo || (activeId === "all" ? "" : boot.repoName) || "—";
     var idCell = r.reportUrl
       ? '<a class="rev-id" href="' + esc(r.reportUrl) + '" target="_blank" rel="noopener">' + esc(r.id) + "</a>"
       : '<span class="rev-id plain">' + esc(r.id || "—") + "</span>";
@@ -60,7 +64,7 @@
         idCell +
         '<div class="rev-meta">' + who + "</div>" +
       "</div>" +
-      '<div class="rev-repo">' + esc(r.repo || boot.repoName || "—") + "</div>" +
+      '<div class="rev-repo">' + esc(repoText) + "</div>" +
       '<div class="rev-time">' + esc(fmtTime(r.generatedAt)) + "</div>" +
       '<div class="rev-counts"><span class="' + (blockers > 0 ? "blk" : "") + '"><b>' + blockers + "</b> blocker</span> · " +
         "<b>" + issues + "</b> 问题</div>" +
@@ -75,7 +79,8 @@
       .then(function (d) {
         var list = (d && d.reviews) || [];
         if (!list.length) {
-          box.innerHTML = '<div class="reviews-empty">当前仓库暂无评审记录</div>';
+          box.innerHTML = '<div class="reviews-empty">' +
+            (activeId === "all" ? "暂无评审记录" : "当前仓库暂无评审记录") + "</div>";
           return;
         }
         box.innerHTML = list.map(rowHtml).join("");

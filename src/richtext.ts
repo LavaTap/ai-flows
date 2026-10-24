@@ -84,9 +84,13 @@ function stripControl(v: string): string {
   return v.replace(/[\u0000-\u001f\u007f]/g, "");
 }
 
-/** 文本节点转义 */
+/** 文本节点转义。只转义「裸」&，已存在的 HTML 实体（&lt; / &nbsp; / &#39; …）原样保留，
+ *  否则代码块里的 `<` 会被存成 `&amp;lt;`，回显时显示成字面 `&lt;`。 */
 function escapeText(v: string): string {
-  return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return v
+    .replace(/&(?![a-zA-Z][a-zA-Z0-9]{1,31};|#\d{1,7};|#[xX][0-9a-fA-F]{1,6};)/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 /** 属性值转义（输出前统一调用） */

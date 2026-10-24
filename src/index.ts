@@ -9,7 +9,14 @@ import { decideGate, type ReviewIssue } from "./gate.js";
 import { pushToTargets, type PushResult } from "./publisher.js";
 import { isRepo, currentBranch, repoRoot, headCommit } from "./git.js";
 import { writeReviewReport, buildReportView, fetchRepoTree } from "./reporter.js";
-import { startReportServer, ensureReportServer, findReusableReview, REPORTS_DIR, DEFAULT_REPORT_PORT } from "./serve.js";
+import {
+  startReportServer,
+  ensureReportServer,
+  findReusableReview,
+  REPORTS_DIR,
+  DEFAULT_REPORT_PORT,
+  writeReportDiscovery,
+} from "./serve.js";
 import { startPlatformServer, DEFAULT_PLATFORM_PORT, matchRepoByPath } from "./platform.js";
 import { loadRepos } from "./db.js";
 import {
@@ -321,18 +328,30 @@ async function main(): Promise<void> {
 
   if (sub === "serve") {
     const args = parseArgs(process.argv.slice(3));
-    // 单例报告服务：固定端口。初始 root 取 --repo / 当前目录；其余仓库评审时经 POST /roots 自行登记。
-    const port = Number(args.port || process.env.AI_REVIEW_PORT || DEFAULT_REPORT_PORT);
+    // 单例报告服务：固定端口优先；端口被第三方程序占用时顺延 base+1..base+9，
+    // 并把实际端口写进机器级发现文件，各仓库评审时据此找到同一个实例。
+    const base = Number(args.port || process.env.AI_REVIEW_PORT || DEFAULT_REPORT_PORT);
     const repo = args.repo ? resolve(args.repo) : CWD;
     const dir = join(repo, REPORTS_DIR);
     mkdirSync(dir, { recursive: true });
-    try {
-      const srv = await startReportServer({ host: "127.0.0.1", port, roots: [dir] });
-      console.log(`${GREEN}评审报告服务已启动：${srv.url}${RESET}`);
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "EADDRINUSE") throw e;
-      console.log(`${DIM}端口 ${port} 上已有报告服务在运行（单例），本进程空闲驻留。${RESET}`);
+    let srv;
+    for (let p = base; p < base + 10; p++) {
+      // 跳过平台服务端口：serve 先启动时若抢占 4311，平台就得被迫漂移
+      if (p === DEFAULT_PLATFORM_PORT) continue;
+      try {
+        srv = await startReportServer({ host: "127.0.0.1", port: p, roots: [dir] });
+        break;
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== "EADDRINUSE") throw e;
+      }
     }
+    if (!srv) {
+      console.error(`${RED}✖ 无法启动报告服务：端口 ${base}-${base + 9} 均被占用${RESET}`);
+      process.exitCode = 1;
+      return;
+    }
+    writeReportDiscovery(srv.port, srv.url);
+    console.log(`${GREEN}评审报告服务已启动：${srv.url}${RESET}`);
     console.log(`${DIM}（Ctrl+C 停止）${RESET}`);
     await new Promise<void>(() => {});
     return;

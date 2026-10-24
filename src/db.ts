@@ -1511,6 +1511,27 @@ export function appendReviews(newRecords: ReviewRecord[]): void {
   c.transaction(() => insertReviews(c, newRecords, start))();
 }
 
+/** 回填评审记录的来源仓库 / 报告地址（跨仓库补扫时用：老记录可能缺 repo 或指向失效地址）。
+ *  只改传入的字段，未传的保持原值。 */
+export function updateReviewMeta(
+  id: string,
+  patch: Partial<Pick<ReviewRecord, "repo" | "reportUrl">>
+): void {
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  if (patch.repo !== undefined) {
+    sets.push("repo = ?");
+    vals.push(patch.repo);
+  }
+  if (patch.reportUrl !== undefined) {
+    sets.push("report_url = ?");
+    vals.push(patch.reportUrl);
+  }
+  if (!sets.length) return;
+  vals.push(id);
+  db().prepare(`UPDATE chat_reviews.reviews SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
+}
+
 // ============ 工单 ============
 
 /** 读取全部工单（含评论，按原顺序） */
