@@ -1,4 +1,5 @@
 import {
+  ActiveSelection,
   Canvas,
   Ellipse,
   FabricImage,
@@ -13,6 +14,7 @@ import {
 } from 'fabric'
 import { customAlphabet } from 'nanoid'
 import type {
+  ArtboardSize,
   EngineSnapshot,
   LayerInfo,
   LayerKind,
@@ -22,7 +24,12 @@ import type {
 } from '@/types/board'
 import { DEFAULT_STYLE } from '@/types/board'
 
-type MetaObject = FabricObject & { id?: string; name?: string; locked?: boolean }
+type MetaObject = FabricObject & {
+  id?: string
+  name?: string
+  locked?: boolean
+  artboard?: boolean
+}
 
 export interface ViewportState {
   zoom: number
@@ -39,12 +46,19 @@ interface ContentBounds {
   height: number
 }
 
-const CUSTOM_PROPS = ['id', 'name', 'locked']
+const CUSTOM_PROPS = ['id', 'name', 'locked', 'artboard']
 const createObjectId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 12)
 
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 8
 const GRID_SIZE = 24
+const CONTENT_EXPORT_PADDING = 48
+const ARTBOARD_FOCUS_PADDING = 32
+const MAX_EXPORT_PIXELS = 16_000_000
+const EXPORT_BACKGROUND = '#0b0d14'
+
+const ARTBOARD_FILL = 'rgba(255, 255, 255, 0.015)'
+const ARTBOARD_STROKE = 'rgba(124, 140, 255, 0.5)'
 
 const KIND_LABELS: Record<LayerKind, string> = {
   text: '文字',
@@ -68,6 +82,29 @@ function clamp(value: number, min: number, max: number): number {
 
 function meta(object: FabricObject): MetaObject {
   return object as MetaObject
+}
+
+/** 是否为画板区域的装饰对象（不属于用户内容） */
+function isArtboardObject(object: unknown): boolean {
+  if (!object || typeof object !== 'object') return false
+  return (object as { artboard?: unknown }).artboard === true
+}
+
+/** 序列化数据里的对象是否带画板标记（兼容早期误存进 JSON 的画板矩形） */
+function isArtboardJson(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+  return (value as { artboard?: unknown }).artboard === true
+}
+
+/** 规整画板尺寸：非法值一律按「无限画布」处理 */
+function normalizeArtboard(value: unknown): ArtboardSize | null {
+  if (!value || typeof value !== 'object') return null
+  const candidate = value as { width?: unknown; height?: unknown }
+  const width = Number(candidate.width)
+  const height = Number(candidate.height)
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return null
+  if (width < 16 || height < 16) return null
+  return { width: Math.min(20000, Math.round(width)), height: Math.min(20000, Math.round(height)) }
 }
 
 function kindOf(object: FabricObject): LayerKind {
@@ -138,6 +175,15 @@ export interface CanvasEngineOptions {
   onChange?: (snapshot: EngineSnapshot) => void
 }
 
+export interface ExportPngOptions {
+  /** 导出倍率，缺省 2（超大画布会自动降档） */
+  multiplier?: number
+  /** 深色底或透明底，缺省深色 */
+  background?: 'dark' | 'transparent'
+  /** 导出内容区域或画板区域，缺省内容区域 */
+  region?: 'content' | 'artboard'
+}
+
 /**
  * 无限画布引擎：视口（缩放/平移）、图形绘制、图层、历史记录与导出。
  * UI 层只依赖本类的公开方法，不直接操作 fabric。
@@ -150,6 +196,7 @@ export class CanvasEngine {
   private readonly resizeObserver: ResizeObserver
   private style: ShapeStyle
   private tool: ToolName = 'select'
+  private artboard: ArtboardSize | null = null
 
   private readonly stateListeners = new Set<(snapshot: EngineSnapshot) => void>()
   private readonly viewportListeners = new Set<(viewport: ViewportState) => void>()
@@ -242,7 +289,8 @@ export class CanvasEngine {
       layers: this.layers(),
       selectedIds: selected.map((object) => meta(object).id ?? '').filter(Boolean),
       selection: this.selectionInfo(selected[0]),
-      objectCount: this.canvas.getObjects().length,
+      objectCount: this.contentObjects().length,
+      artboard: this.artboard ? { ...this.artboard } : null,
       canUndo: this.historyIndex > 0,
       canRedo: this.historyIndex < this.history.length - 1,
     }
@@ -260,7 +308,7 @@ export class CanvasEngine {
   }
 
   layers(): LayerInfo[] {
-    return [...this.canvas.getObjects()].reverse().map((object) => {
+    return [...this.contentObjects()].reverse().map((object) => {
       const kind = kindOf(object)
       return {
         id: meta(object).id ?? '',
@@ -273,13 +321,122 @@ export class CanvasEngine {
     })
   }
 
+  /** 用户内容对象（排除画板区域的装饰矩形） */
+  private contentObjects(): FabricObject[] {
+    return this.canvas.getObjects().filter((object) => !isArtboardObject(object))
+  }
+
   getStyle(): ShapeStyle {
     return { ...this.style }
+  }
+
+  /* ------------------------------------------------------------- 画板区域 */
+
+  getArtboard(): ArtboardSize | null {
+    return this.artboard ? { ...this.artboard } : null
+  }
+
+  /** 设置画板尺寸；传 null 回到无限画布 */
+  setArtboard(size: ArtboardSize | null): void {
+    this.artboard = size ? normalizeArtboard(size) : null
+    this.syncArtboardRect()
+    if (this.artboard) this.focusArtboard()
+    this.canvas.requestRenderAll()
+    this.commitNow()
+    this.emitState()
+  }
+
+  /** 把视口适配到画板区域；没有画板时回退适应内容 */
+  fitArtboard(padding = 64): void {
+    const artboard = this.artboard
+    if (!artboard) {
+      this.fitContent()
+      return
+    }
+    const width = this.canvas.getWidth()
+    const height = this.canvas.getHeight()
+    const zoom = clamp(
+      Math.min((width - padding * 2) / artboard.width, (height - padding * 2) / artboard.height),
+      MIN_ZOOM,
+      1.5,
+    )
+    const offsetX = width / 2 - (artboard.width / 2) * zoom
+    const offsetY = height / 2 - (artboard.height / 2) * zoom
+    this.canvas.setViewportTransform([zoom, 0, 0, zoom, offsetX, offsetY])
+    this.canvas.requestRenderAll()
+    this.emitViewport()
   }
 
   private selectedObjects(): FabricObject[] {
     const objects = this.canvas.getActiveObjects()
     return objects.filter((object) => !meta(object).locked)
+  }
+
+  /** 把视口移到画板左上角附近 */
+  private focusArtboard(): void {
+    const zoom = clamp(this.canvas.getZoom(), MIN_ZOOM, MAX_ZOOM)
+    this.canvas.setViewportTransform([
+      zoom,
+      0,
+      0,
+      zoom,
+      ARTBOARD_FOCUS_PADDING,
+      ARTBOARD_FOCUS_PADDING,
+    ])
+    this.canvas.requestRenderAll()
+    this.emitViewport()
+  }
+
+  /** 让画板矩形与当前尺寸保持一致（先清旧的再垫到最底层） */
+  private syncArtboardRect(): void {
+    const previousQuiet = this.quiet
+    this.quiet = true
+    this.canvas
+      .getObjects()
+      .filter((object) => isArtboardObject(object))
+      .forEach((object) => this.canvas.remove(object))
+
+    if (this.artboard) {
+      const rect = this.createArtboardRect(this.artboard)
+      this.canvas.add(rect)
+      this.ensureArtboardBack()
+    }
+
+    this.quiet = previousQuiet
+    this.canvas.requestRenderAll()
+  }
+
+  /** 画板矩形始终压在最底层，避免图层下移/下沉时跑到画板下面 */
+  private ensureArtboardBack(): void {
+    const objects = this.canvas.getObjects()
+    const rect = objects.find((object) => isArtboardObject(object))
+    if (rect && objects[0] !== rect) void this.canvas.sendObjectToBack(rect)
+  }
+
+  /** 画板矩形：虚线描边 + 极淡填充，不可选中/不可擦除，也不参与导出与序列化 */
+  private createArtboardRect(size: ArtboardSize): Rect {
+    const rect = new Rect({
+      left: 0,
+      top: 0,
+      width: size.width,
+      height: size.height,
+      originX: 'left',
+      originY: 'top',
+      fill: ARTBOARD_FILL,
+      stroke: ARTBOARD_STROKE,
+      strokeWidth: 1.5,
+      strokeDashArray: [8, 6],
+      strokeUniform: true,
+      selectable: false,
+      evented: false,
+      excludeFromExport: true,
+      objectCaching: false,
+    })
+    const tagged = meta(rect)
+    tagged.artboard = true
+    tagged.locked = true
+    rect.setCoords()
+    return rect
   }
 
   private selectionInfo(object: FabricObject | undefined): SelectionInfo | null {
@@ -515,7 +672,9 @@ export class CanvasEngine {
   }
 
   deleteSelection(): void {
-    const objects = this.canvas.getActiveObjects().filter((object) => !meta(object).locked)
+    const objects = this.canvas
+      .getActiveObjects()
+      .filter((object) => !meta(object).locked && !isArtboardObject(object))
     if (!objects.length) return
     this.canvas.discardActiveObject()
     this.canvas.remove(...objects)
@@ -596,10 +755,22 @@ export class CanvasEngine {
   /* ------------------------------------------------------------- 图层 */
 
   selectLayer(id: string): void {
-    const object = this.findObject(id)
-    if (!object || meta(object).locked || object.visible === false) return
+    this.selectLayers([id])
+  }
+
+  /** 选中一批图层；两张及以上组成 ActiveSelection，可一起拖动/变换 */
+  selectLayers(ids: string[]): void {
+    const objects = ids
+      .map((id) => this.findObject(id))
+      .filter((object): object is FabricObject => Boolean(object))
+      .filter((object) => !meta(object).locked && object.visible !== false)
+
     this.canvas.discardActiveObject()
-    this.canvas.setActiveObject(object)
+    if (objects.length === 1) {
+      this.canvas.setActiveObject(objects[0]!)
+    } else if (objects.length > 1) {
+      this.canvas.setActiveObject(new ActiveSelection(objects, { canvas: this.canvas }))
+    }
     this.canvas.requestRenderAll()
     this.emitState()
   }
@@ -653,15 +824,58 @@ export class CanvasEngine {
     this.commitNow()
   }
 
-  moveLayer(id: string, direction: 'up' | 'down' | 'top' | 'bottom'): void {
-    const object = this.findObject(id)
-    if (!object) return
-    if (direction === 'up') this.canvas.bringObjectForward(object)
-    else if (direction === 'down') this.canvas.sendObjectBackwards(object)
-    else if (direction === 'top') this.canvas.bringObjectToFront(object)
-    else this.canvas.sendObjectToBack(object)
+  /** 按图层面板的自上而下顺序重排画布堆叠（面板顶部 = 画布最上层，即最后绘制） */
+  applyLayerOrder(orderedIds: string[]): void {
+    const objects = this.contentObjects()
+    const byId = new Map<string, FabricObject>()
+    objects.forEach((object) => {
+      const id = meta(object).id
+      if (id) byId.set(id, object)
+    })
+
+    const ordered: FabricObject[] = []
+    const seen = new Set<string>()
+    for (let index = orderedIds.length - 1; index >= 0; index -= 1) {
+      const id = orderedIds[index]
+      if (!id || seen.has(id)) continue
+      const object = byId.get(id)
+      if (!object) continue
+      seen.add(id)
+      ordered.push(object)
+    }
+    objects.forEach((object) => {
+      const id = meta(object).id ?? ''
+      if (!seen.has(id)) ordered.push(object)
+    })
+
+    const changed =
+      ordered.length !== objects.length || ordered.some((object, index) => object !== objects[index])
+    if (!changed) return
+
+    // remove/add 会清掉选中态，重排前先记下选中 id 并解散当前选择，重排后恢复
+    const activeIds = this.canvas
+      .getActiveObjects()
+      .map((object) => meta(object).id ?? '')
+      .filter(Boolean)
+    this.canvas.discardActiveObject()
+
+    const previousQuiet = this.quiet
+    this.quiet = true
+    objects.forEach((object) => this.canvas.remove(object))
+    ordered.forEach((object) => this.canvas.add(object))
+    this.quiet = previousQuiet
+
+    const restored = activeIds
+      .map((id) => byId.get(id))
+      .filter((object): object is FabricObject => Boolean(object))
+    if (restored.length === 1) this.canvas.setActiveObject(restored[0]!)
+    else if (restored.length > 1) {
+      this.canvas.setActiveObject(new ActiveSelection(restored, { canvas: this.canvas }))
+    }
+
+    this.ensureArtboardBack()
     this.canvas.requestRenderAll()
-    this.commitNow()
+    this.emitState()
   }
 
   private findObject(id: string): FabricObject | undefined {
@@ -687,7 +901,7 @@ export class CanvasEngine {
     window.clearTimeout(this.commitTimer)
     this.quiet = true
     try {
-      await this.canvas.loadFromJSON(JSON.parse(json))
+      await this.applyCanvasJson(JSON.parse(json))
       this.hydrate()
     } finally {
       this.quiet = false
@@ -725,14 +939,13 @@ export class CanvasEngine {
   /* ------------------------------------------------------------- 持久化 */
 
   serialize(): unknown {
-    return this.canvas.toJSON()
+    return { ...this.canvas.toJSON(), artboard: this.artboard ? { ...this.artboard } : null }
   }
 
   async load(data: unknown): Promise<void> {
     this.quiet = true
     try {
-      this.canvas.clear()
-      if (data) await this.canvas.loadFromJSON(data)
+      await this.applyCanvasJson(data)
       this.hydrate()
     } finally {
       this.quiet = false
@@ -743,27 +956,53 @@ export class CanvasEngine {
   }
 
   thumbnail(): string | null {
-    if (!this.canvas.getObjects().length) return null
-    return this.canvas.toDataURL({ format: 'png', multiplier: 0.24 })
+    if (!this.contentObjects().length) return null
+    return this.canvas.toDataURL({
+      format: 'png',
+      multiplier: 0.24,
+      filter: (object) => !isArtboardObject(object),
+    })
   }
 
-  exportPNG(padding = 48): string {
+  /** 导出 JSON 源文件（含画板尺寸，可直接回灌 load） */
+  exportJSON(): unknown {
+    return this.serialize()
+  }
+
+  /**
+   * 导出 PNG：默认导出内容区域、深色底、2 倍；画板区域按 (0,0,width,height) 导出。
+   * 导出结束后恢复画布尺寸、视口与底色。
+   */
+  exportPNG(options: ExportPngOptions = {}): string {
+    const region = options.region ?? 'content'
+    const background = options.background ?? 'dark'
+    const artboard = this.artboard
+    const useArtboard = region === 'artboard' && Boolean(artboard)
+
     // 导出时补上与编辑器一致的深色底，避免浅色描边在透明底上不可见
     const previousBackground = this.canvas.backgroundColor
-    this.canvas.backgroundColor = '#0b0d14'
+    if (background === 'dark') this.canvas.backgroundColor = EXPORT_BACKGROUND
 
-    const bounds = this.contentBounds()
+    const bounds: ContentBounds | null = useArtboard && artboard
+      ? { left: 0, top: 0, width: artboard.width, height: artboard.height }
+      : this.contentBounds()
+
     if (!bounds) {
-      const url = this.canvas.toDataURL({ format: 'png', multiplier: 1 })
+      const url = this.canvas.toDataURL({
+        format: 'png',
+        multiplier: 1,
+        filter: (object) => !isArtboardObject(object),
+      })
       this.canvas.backgroundColor = previousBackground
       this.canvas.requestRenderAll()
       return url
     }
 
+    const padding = useArtboard ? 0 : CONTENT_EXPORT_PADDING
     const width = Math.ceil(bounds.width + padding * 2)
     const height = Math.ceil(bounds.height + padding * 2)
-    let multiplier = 2
-    while (width * multiplier * height * multiplier > 16_000_000 && multiplier > 0.5) {
+    let multiplier = options.multiplier ?? 2
+    while (width * multiplier * height * multiplier > MAX_EXPORT_PIXELS && multiplier > 0.5) {
       multiplier -= 0.25
     }
 
@@ -780,7 +1019,11 @@ export class CanvasEngine {
 
     this.canvas.setDimensions({ width, height })
     this.canvas.setViewportTransform([1, 0, 0, 1, -bounds.left + padding, -bounds.top + padding])
-    const url = this.canvas.toDataURL({ format: 'png', multiplier })
+    const url = this.canvas.toDataURL({
+      format: 'png',
+      multiplier,
+      filter: (object) => !isArtboardObject(object),
+    })
 
     this.canvas.setDimensions({ width: previousWidth, height: previousHeight })
     this.canvas.setViewportTransform(previousTransform)
@@ -790,8 +1033,29 @@ export class CanvasEngine {
     return url
   }
 
+  /** 清空画布并按数据重建内容与画板矩形（原 JSON 里的画板对象会被剔除） */
+  private async applyCanvasJson(data: unknown): Promise<void> {
+    const payload =
+      data && typeof data === 'object'
+        ? ({ ...(data as Record<string, unknown>) } as Record<string, unknown>)
+        : null
+
+    if (payload) {
+      this.artboard = normalizeArtboard(payload.artboard)
+      delete payload.artboard
+      if (Array.isArray(payload.objects)) {
+        payload.objects = payload.objects.filter((object) => !isArtboardJson(object))
+      }
+      await this.canvas.loadFromJSON(payload)
+    } else {
+      this.canvas.clear()
+      this.artboard = null
+    }
+    this.syncArtboardRect()
+  }
+
   private contentBounds(): ContentBounds | null {
-    const objects = this.canvas.getObjects().filter((object) => object.visible !== false)
+    const objects = this.contentObjects().filter((object) => object.visible !== false)
     if (!objects.length) return null
 
     let left = Number.POSITIVE_INFINITY
@@ -837,6 +1101,7 @@ export class CanvasEngine {
     const labelPattern = /^(.*?)\s+(\d+)$/
 
     this.canvas.getObjects().forEach((object) => {
+      if (isArtboardObject(object)) return
       if (!meta(object).id) meta(object).id = createObjectId()
       if (!meta(object).name) meta(object).name = typeLabelOf(object)
 
@@ -1126,7 +1391,7 @@ export class CanvasEngine {
     const target = this.canvas.findTarget(event as MouseEvent)
     this.canvas.skipTargetFind = previousSkipTargetFind
 
-    if (!target || meta(target).locked) return
+    if (!target || meta(target).locked || isArtboardObject(target)) return
     if (this.canvas.getActiveObjects().includes(target)) this.canvas.discardActiveObject()
     this.canvas.remove(target)
     this.canvas.requestRenderAll()

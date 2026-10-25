@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import {
   ArrowLeftOutlined,
+  BorderOutlined,
   DownloadOutlined,
   FullscreenOutlined,
   RedoOutlined,
@@ -15,6 +16,7 @@ const props = defineProps<{
   saveState: SaveState
   canUndo: boolean
   canRedo: boolean
+  hasArtboard: boolean
 }>()
 
 const emit = defineEmits<{
@@ -23,9 +25,21 @@ const emit = defineEmits<{
   save: []
   undo: []
   redo: []
-  export: []
+  export: [kind: 'png' | 'png-board' | 'json']
+  artboard: []
   fit: []
 }>()
+
+const exportItems = computed(() => [
+  { key: 'png', label: '导出 PNG（内容）', onClick: () => emit('export', 'png') },
+  {
+    key: 'png-board',
+    label: '导出 PNG（画板区域）',
+    disabled: !props.hasArtboard,
+    onClick: () => emit('export', 'png-board'),
+  },
+  { key: 'json', label: '导出 JSON 源文件', onClick: () => emit('export', 'json') },
+])
 
 const draftName = ref(props.name)
 const focused = ref(false)
@@ -110,11 +124,19 @@ function onEnter(event: KeyboardEvent): void {
           <template #icon><FullscreenOutlined /></template>
         </a-button>
       </a-tooltip>
-      <a-tooltip title="导出 PNG">
-        <a-button type="text" size="small" @click="emit('export')">
-          <template #icon><DownloadOutlined /></template>
+      <a-tooltip title="画板尺寸">
+        <a-button type="text" size="small" @click="emit('artboard')">
+          <template #icon><BorderOutlined /></template>
         </a-button>
       </a-tooltip>
+      <a-dropdown :trigger="['click']" placement="bottomRight">
+        <a-button type="text" size="small" title="导出">
+          <template #icon><DownloadOutlined /></template>
+        </a-button>
+        <template #overlay>
+          <a-menu :items="exportItems" />
+        </template>
+      </a-dropdown>
       <a-tooltip title="保存 · Ctrl+S">
         <a-button type="primary" size="small" @click="emit('save')">
           <template #icon><SaveOutlined /></template>

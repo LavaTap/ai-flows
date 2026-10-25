@@ -3,17 +3,22 @@ import type { CanvasEngine } from '@/core/canvas/CanvasEngine'
 import type { LayerEntry, LayerNode } from '@/types/board'
 import {
   MAX_FOLDER_DEPTH,
-  canMoveNode,
+  canMoveNodes,
   collectEffectiveStates,
   detachNode,
   dissolveFolder,
   findNode,
+  flattenLayerIds,
   insertNode,
+  layerIdsOf,
+  moveLayerNodes,
+  type MoveTarget,
   newFolderId,
   nextFolderName,
   normalizeTree,
   patchNode,
   pruneLayers,
+  reorderNode,
 } from '@/core/layers/tree'
 
 interface LayerTreeOptions {
@@ -37,6 +42,11 @@ export function useLayerTree(getEngine: () => CanvasEngine | null, options: Laye
     const engine = getEngine()
     if (!engine) return
     engine.applyLayerStates(collectEffectiveStates(tree.value))
+  }
+
+  /** 把面板顺序同步成画布堆叠顺序（面板顶部 = 最上层） */
+  function syncOrder(): void {
+    getEngine()?.applyLayerOrder(flattenLayerIds(tree.value))
   }
 
   /** 与画布对象对账：补上新建对象，清理已删除对象，保持文件夹与状态 */
@@ -71,12 +81,14 @@ export function useLayerTree(getEngine: () => CanvasEngine | null, options: Laye
       tree.value = next
     }
     applyStates()
+    syncOrder()
   }
 
   function hydrate(saved: LayerNode[] | null | undefined): void {
     tree.value = normalizeTree(saved ?? [])
     reconcile()
     applyStates()
+    syncOrder()
   }
 
   function serialize(): LayerNode[] {
@@ -128,6 +140,7 @@ export function useLayerTree(getEngine: () => CanvasEngine | null, options: Laye
       // 解散文件夹，内容回到父级，不删除画布内容
       tree.value = dissolveFolder(tree.value, id)
       applyStates()
+      syncOrder()
       notify()
       return
     }
@@ -138,13 +151,23 @@ export function useLayerTree(getEngine: () => CanvasEngine | null, options: Laye
     notify()
   }
 
-  function moveNode(id: string, targetFolderId: string | null): boolean {
-    if (!canMoveNode(tree.value, id, targetFolderId)) return false
-    const { nodes, node } = detachNode(tree.value, id)
-    if (!node) return false
-
-    tree.value = insertNode(nodes, targetFolderId, node)
+  /** 批量移动图层/文件夹到目标位置；文件夹连同其内容整体移动 */
+  function moveNodes(ids: string[], target: MoveTarget): boolean {
+    const next = moveLayerNodes(tree.value, ids, target)
+    if (!next) return false
+    tree.value = next
     applyStates()
+    syncOrder()
+    notify()
+    return true
+  }
+
+  /** 同级重排（属性面板的上移/下移/置顶/置底） */
+  function reorder(id: string, direction: 'up' | 'down' | 'top' | 'bottom'): boolean {
+    const next = reorderNode(tree.value, id, direction)
+    if (!next) return false
+    tree.value = next
+    syncOrder()
     notify()
     return true
   }
@@ -172,8 +195,18 @@ export function useLayerTree(getEngine: () => CanvasEngine | null, options: Laye
     notify()
   }
 
-  function canDrop(id: string, targetFolderId: string | null): boolean {
-    return canMoveNode(tree.value, id, targetFolderId)
+  function canDrop(ids: string[], targetFolderId: string | null): boolean {
+    return canMoveNodes(tree.value, ids, targetFolderId)
+  }
+
+  /** 面板选中节点（可含文件夹）→ 画布图层 id */
+  function layerIdsFor(ids: string[]): string[] {
+    return layerIdsOf(tree.value, ids)
+  }
+
+  /** 节点是否还在树里（删除/解散后用于清理面板选中态） */
+  function hasNode(id: string): boolean {
+    return findNode(tree.value, id) !== null
   }
 
   return {
@@ -184,10 +217,13 @@ export function useLayerTree(getEngine: () => CanvasEngine | null, options: Laye
     createFolder,
     renameNode,
     removeNode,
-    moveNode,
+    moveNodes,
+    reorder,
     toggleVisible,
     toggleLocked,
     toggleCollapse,
     canDrop,
+    layerIdsFor,
+    hasNode,
   }
 }

@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, shallowRef } from 'vue'
+import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { FullscreenOutlined, ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons-vue'
+import AiCapabilityDialog from '@/components/canvas/AiCapabilityDialog.vue'
 import AiPanel from '@/components/canvas/AiPanel.vue'
+import AiToolBar from '@/components/canvas/AiToolBar.vue'
 import CanvasStage from '@/components/canvas/CanvasStage.vue'
 import EditorHeader from '@/components/canvas/EditorHeader.vue'
 import LayerPanel from '@/components/canvas/LayerPanel.vue'
@@ -12,11 +14,12 @@ import PropertyPanel from '@/components/canvas/PropertyPanel.vue'
 import ToolRail from '@/components/canvas/ToolRail.vue'
 import { boardApi } from '@/api/board'
 import { assetApi, type AssetSource } from '@/api/asset'
+import type { AiCapability } from '@/core/ai/capabilities'
 import { CanvasEngine, type ViewportState } from '@/core/canvas/CanvasEngine'
 import { MAX_FOLDER_DEPTH } from '@/core/layers/tree'
 import { useBoardHotkeys } from '@/composables/useBoardHotkeys'
 import { useLayerTree } from '@/composables/useLayerTree'
-import type { BoardMeta, EngineSnapshot, SaveState, ToolName } from '@/types/board'
+import type { ArtboardSize, BoardMeta, EngineSnapshot, SaveState, ToolName } from '@/types/board'
 
 const route = useRoute()
 const router = useRouter()
@@ -40,6 +43,7 @@ const snapshot = ref<EngineSnapshot>({
   selectedIds: [],
   selection: null,
   objectCount: 0,
+  artboard: null,
   canUndo: false,
   canRedo: false,
 })
@@ -52,11 +56,63 @@ const viewport = ref<ViewportState>({
   spacePressed: false,
 })
 
+const hasArtboard = computed(() => snapshot.value.artboard !== null)
+
+/** 图层面板里选中的节点（可含文件夹），与画布选中对象互为映射 */
+const selectedNodeIds = ref<string[]>([])
+/** 面板发起的选中：画布回传时要跳过，否则文件夹/锁定图层的选择会被替换成图层 id */
+let selectionFromPanel = false
+
+/** 缩放百分比输入：聚焦时暂停跟随视口，提交后再同步 */
+const zoomText = ref('100')
+const zoomEditing = ref(false)
+
+/** AI 能力参数面板（骨架，提交按钮禁用） */
+const capability = ref<AiCapability | null>(null)
+const capabilityOpen = ref(false)
+
+/** 画板尺寸弹窗 */
+interface ArtboardPreset {
+  key: string
+  label: string
+  width: number | null
+  height: number | null
+}
+
+const ARTBOARD_PRESETS: ArtboardPreset[] = [
+  { key: 'infinite', label: '无限画布', width: null, height: null },
+  { key: '1920x1080', label: '1920 × 1080', width: 1920, height: 1080 },
+  { key: '1080x1080', label: '1080 × 1080', width: 1080, height: 1080 },
+  { key: '1200x1600', label: '1200 × 1600', width: 1200, height: 1600 },
+  { key: '1240x1754', label: '1240 × 1754（A4）', width: 1240, height: 1754 },
+  { key: 'custom', label: '自定义宽高', width: null, height: null },
+]
+
+const artboardOpen = ref(false)
+const artboardPresetKey = ref('infinite')
+const customWidth = ref(1920)
+const customHeight = ref(1080)
+
 let saveTimer: number | undefined
 let destroyed = false
 
 const layerTree = useLayerTree(() => engine.value, { onChange: () => scheduleSave() })
 const layerNodes = layerTree.tree
+
+/** 画布上的选中变化（直接点选/框选/撤销）反向同步到面板 */
+watch(
+  () => snapshot.value.selectedIds,
+  (ids) => {
+    if (selectionFromPanel) {
+      selectionFromPanel = false
+      return
+    }
+    const expanded = layerTree.layerIdsFor(selectedNodeIds.value)
+    // 用集合比较：画布返回的是堆叠顺序，面板给的是树顺序，顺序不同不算变化
+    const same = expanded.length === ids.length && expanded.every((id) => ids.includes(id))
+    if (!same) selectedNodeIds.value = [...ids]
+  },
+)
 
 function handleReady(instance: CanvasEngine): void {
   engine.value = instance
@@ -88,7 +144,8 @@ async function bootstrap(instance: CanvasEngine): Promise<void> {
     board.value = record.meta
     await instance.load(record.canvas)
     layerTree.hydrate(record.tree ?? null)
-    if (record.meta.objectCount > 0) instance.fitContent()
+    if (instance.getArtboard()) instance.fitArtboard()
+    else if (record.meta.objectCount > 0) instance.fitContent()
     saveState.value = 'saved'
   } catch (error) {
     message.error(error instanceof Error ? error.message : '画板加载失败')
@@ -158,12 +215,40 @@ function handleLayerRename(id: string, name: string): void {
 
 function handleLayerRemove(id: string): void {
   layerTree.removeNode(id)
+  // 解散文件夹/删除图层后，面板里可能残留已不存在的节点
+  selectedNodeIds.value = selectedNodeIds.value.filter((nodeId) => layerTree.hasNode(nodeId))
 }
 
-function handleLayerMove(id: string, targetFolderId: string | null): void {
-  if (!layerTree.moveNode(id, targetFolderId)) {
-    message.warning(`文件夹最多 ${MAX_FOLDER_DEPTH} 层，无法移入`)
-  }
+function handleLayerSelect(payload: { id: string; additive: boolean }): void {
+  const current = selectedNodeIds.value
+  const next = payload.additive
+    ? current.includes(payload.id)
+      ? current.filter((id) => id !== payload.id)
+      : [...current, payload.id]
+    : [payload.id]
+  selectedNodeIds.value = next
+  const instance = engine.value
+  if (!instance) return
+  selectionFromPanel = true
+  instance.selectLayers(layerTree.layerIdsFor(next))
+}
+
+function handleLayerMove(payload: { ids: string[]; parentId: string | null; beforeId: string | null }): void {
+  const ok = layerTree.moveNodes(payload.ids, {
+    parentId: payload.parentId,
+    beforeId: payload.beforeId,
+  })
+  if (!ok) message.warning(`文件夹最多 ${MAX_FOLDER_DEPTH} 层，无法移到该位置`)
+}
+
+/** 属性面板的上移/下移/置顶/置底：按图层树同级顺序调整，并同步画布遮挡 */
+function handleLayerOrder(direction: 'up' | 'down' | 'top' | 'bottom'): void {
+  const id =
+    selectedNodeIds.value.length === 1
+      ? selectedNodeIds.value[0]
+      : (snapshot.value.selectedIds[0] ?? '')
+  if (!id) return
+  layerTree.reorder(id, direction)
 }
 
 function handleLayerToggleVisible(id: string): void {
@@ -267,23 +352,131 @@ async function handleInsertAsset(url: string): Promise<void> {
   }
 }
 
-function handleExport(): void {
+/** 触发浏览器下载；blob 地址用完即回收 */
+function downloadFile(href: string, filename: string): void {
+  const link = document.createElement('a')
+  link.href = href
+  link.download = filename
+  link.click()
+  if (href.startsWith('blob:')) URL.revokeObjectURL(href)
+}
+
+function safeBoardName(): string {
+  return (board.value?.name ?? 'free-canvas').replace(/[\\/:*?"<>|]/g, '_')
+}
+
+function handleExport(kind: 'png' | 'png-board' | 'json'): void {
   const instance = engine.value
   if (!instance) return
-  if (!snapshot.value.objectCount) {
+
+  if (kind === 'json') {
+    try {
+      const blob = new Blob([JSON.stringify(instance.exportJSON(), null, 2)], {
+        type: 'application/json',
+      })
+      downloadFile(URL.createObjectURL(blob), `${safeBoardName()}.json`)
+      message.success('JSON 源文件已导出')
+    } catch {
+      message.error('导出失败')
+    }
+    return
+  }
+
+  if (kind === 'png-board' && !instance.getArtboard()) {
+    message.info('尚未设置画板尺寸')
+    return
+  }
+  if (kind === 'png' && !snapshot.value.objectCount) {
     message.info('画布还是空的，先画点什么吧')
     return
   }
+
   try {
-    const url = instance.exportPNG()
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${(board.value?.name ?? 'free-canvas').replace(/[\\/:*?"<>|]/g, '_')}.png`
-    link.click()
-    message.success('PNG 已导出')
+    const url = instance.exportPNG({
+      region: kind === 'png-board' ? 'artboard' : 'content',
+    })
+    downloadFile(url, `${safeBoardName()}.png`)
+    message.success(kind === 'png-board' ? '画板区域 PNG 已导出' : 'PNG 已导出')
   } catch {
     message.error('导出失败')
   }
+}
+
+/* ------------------------------------------------------------- 缩放输入 */
+
+watch(
+  () => viewport.value.zoom,
+  (zoom) => {
+    if (!zoomEditing.value) zoomText.value = String(Math.round(zoom * 100))
+  },
+  { immediate: true },
+)
+
+function commitZoom(): void {
+  zoomEditing.value = false
+  const percent = Number(zoomText.value.replace('%', '').trim())
+  if (!Number.isFinite(percent) || percent < 10 || percent > 800) {
+    zoomText.value = String(Math.round(viewport.value.zoom * 100))
+    return
+  }
+  engine.value?.setZoom(percent / 100)
+  zoomText.value = String(Math.round(viewport.value.zoom * 100))
+}
+
+/* ------------------------------------------------------------- AI 能力 */
+
+function openCapability(next: AiCapability): void {
+  capability.value = next
+  capabilityOpen.value = true
+}
+
+/* ------------------------------------------------------------- 画板尺寸 */
+
+function openArtboardDialog(): void {
+  const current = snapshot.value.artboard
+  if (!current) {
+    artboardPresetKey.value = 'infinite'
+    customWidth.value = 1920
+    customHeight.value = 1080
+  } else {
+    const matched = ARTBOARD_PRESETS.find(
+      (preset) => preset.width === current.width && preset.height === current.height,
+    )
+    if (matched) {
+      artboardPresetKey.value = matched.key
+    } else {
+      artboardPresetKey.value = 'custom'
+    }
+    customWidth.value = current.width
+    customHeight.value = current.height
+  }
+  artboardOpen.value = true
+}
+
+function applyArtboard(): void {
+  const instance = engine.value
+  if (!instance) return
+
+  let size: ArtboardSize | null = null
+  if (artboardPresetKey.value === 'custom') {
+    const width = Number(customWidth.value)
+    const height = Number(customHeight.value)
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width < 16 || height < 16) {
+      message.warning('自定义宽高需在 16 到 20000 之间')
+      return
+    }
+    size = { width: Math.round(width), height: Math.round(height) }
+  } else if (artboardPresetKey.value !== 'infinite') {
+    const preset = ARTBOARD_PRESETS.find((item) => item.key === artboardPresetKey.value)
+    if (preset?.width && preset.height) {
+      size = { width: preset.width, height: preset.height }
+    }
+  }
+
+  instance.setArtboard(size)
+  instance.fitArtboard()
+  artboardOpen.value = false
+  message.success(size ? `画板已设为 ${size.width} × ${size.height}` : '已切换为无限画布')
 }
 
 async function handleBack(): Promise<void> {
@@ -307,21 +500,25 @@ onBeforeUnmount(() => {
       :save-state="saveState"
       :can-undo="snapshot.canUndo"
       :can-redo="snapshot.canRedo"
+      :has-artboard="hasArtboard"
       @back="handleBack"
       @rename="handleRename"
       @save="persist(false)"
       @undo="engine?.undo()"
       @redo="engine?.redo()"
       @export="handleExport"
+      @artboard="openArtboardDialog"
       @fit="engine?.fitContent()"
     />
+
+    <AiToolBar @pick="openCapability" />
 
     <div class="editor-body">
       <ToolRail :tool="snapshot.tool" @update:tool="handleTool" @upload="openFilePicker" />
 
       <div class="stage-wrap">
         <CanvasStage
-          :empty="!loading && snapshot.objectCount === 0"
+          :empty="!loading && snapshot.objectCount === 0 && !hasArtboard"
           @ready="handleReady"
           @image-file="handleStageImage"
         />
@@ -340,9 +537,16 @@ onBeforeUnmount(() => {
           <button type="button" class="icon-btn" title="缩小" @click="engine?.zoomOut()">
             <ZoomOutOutlined />
           </button>
-          <span class="zoom-value" title="点击恢复 100%" @click="engine?.resetView()">
-            {{ Math.round(viewport.zoom * 100) }}%
-          </span>
+          <input
+            v-model="zoomText"
+            class="zoom-input"
+            inputmode="numeric"
+            title="输入缩放百分比（10%–800%），回车或失焦生效"
+            @focus="zoomEditing = true"
+            @blur="commitZoom"
+            @keydown.enter.prevent="commitZoom"
+          />
+          <span class="zoom-suffix">%</span>
           <button type="button" class="icon-btn" title="放大" @click="engine?.zoomIn()">
             <ZoomInOutlined />
           </button>
@@ -361,9 +565,9 @@ onBeforeUnmount(() => {
             <LayerPanel
               :tree="layerNodes"
               :layers="snapshot.layers"
-              :selected-ids="snapshot.selectedIds"
+              :selected-ids="selectedNodeIds"
               :max-depth="MAX_FOLDER_DEPTH"
-              @select="(id) => engine?.selectLayer(id)"
+              @select="handleLayerSelect"
               @create-folder="handleCreateFolder"
               @rename="handleLayerRename"
               @remove="handleLayerRemove"
@@ -380,7 +584,7 @@ onBeforeUnmount(() => {
               @patch="(patch) => engine?.setStyle(patch)"
               @delete="engine?.deleteSelection()"
               @duplicate="engine?.duplicateSelection()"
-              @move="(direction) => engine?.moveLayer(snapshot.selectedIds[0] ?? '', direction)"
+              @move="handleLayerOrder"
             />
           </a-tab-pane>
 
@@ -402,5 +606,41 @@ onBeforeUnmount(() => {
       style="display: none"
       @change="handleFileChange"
     />
+
+    <AiCapabilityDialog v-model:open="capabilityOpen" :capability="capability" />
+
+    <a-modal
+      v-model:open="artboardOpen"
+      title="画板尺寸"
+      :width="440"
+      ok-text="应用"
+      cancel-text="取消"
+      @ok="applyArtboard"
+    >
+      <div class="artboard-dialog">
+        <p class="artboard-note">设置画板区域后，适配与导出会以该尺寸为准；选无限画布则不限制边界。</p>
+        <div class="artboard-presets">
+          <button
+            v-for="preset in ARTBOARD_PRESETS"
+            :key="preset.key"
+            type="button"
+            class="artboard-preset"
+            :class="{ active: artboardPresetKey === preset.key }"
+            @click="artboardPresetKey = preset.key"
+          >
+            {{ preset.label }}
+          </button>
+        </div>
+        <div v-if="artboardPresetKey === 'custom'" class="artboard-custom">
+          <a-input-number v-model:value="customWidth" :min="16" :max="20000" :step="10" />
+          <span class="artboard-times">×</span>
+          <a-input-number v-model:value="customHeight" :min="16" :max="20000" :step="10" />
+          <span class="artboard-unit">px</span>
+        </div>
+        <p v-else-if="hasArtboard" class="artboard-current">
+          当前画板：{{ snapshot.artboard?.width }} × {{ snapshot.artboard?.height }}
+        </p>
+      </div>
+    </a-modal>
   </div>
 </template>

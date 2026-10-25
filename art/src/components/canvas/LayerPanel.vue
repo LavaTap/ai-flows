@@ -19,10 +19,12 @@ import {
   UnlockOutlined,
 } from '@ant-design/icons-vue'
 import {
-  canMoveNode,
+  canMoveNodes,
   collectEffectiveStates,
   flattenTree,
+  sanitizeMoveIds,
   type FlatLayerRow,
+  type MoveTarget,
 } from '@/core/layers/tree'
 import type { LayerInfo, LayerKind, LayerNode } from '@/types/board'
 
@@ -34,11 +36,11 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  select: [id: string]
+  select: [payload: { id: string; additive: boolean }]
   'create-folder': [parentId: string | null]
   rename: [id: string, name: string]
   remove: [id: string]
-  move: [id: string, targetFolderId: string | null]
+  move: [payload: { ids: string[] } & MoveTarget]
   'toggle-visible': [id: string]
   'toggle-lock': [id: string]
   'toggle-collapse': [id: string]
@@ -60,8 +62,8 @@ const icons: Record<LayerKind, Component> = {
 
 const editingId = ref<string | null>(null)
 const draftName = ref('')
-const draggingId = ref<string | null>(null)
-const dropTargetId = ref<string | null>(null)
+const dragIds = ref<string[]>([])
+const dropZone = ref<{ id: string; mode: 'before' | 'after' | 'inside' } | null>(null)
 const rootHover = ref(false)
 
 const vFocus = {
@@ -93,12 +95,8 @@ function stateOf(node: LayerNode): { visible: boolean; locked: boolean } {
   return effective.value[node.id] ?? { visible: node.visible, locked: node.locked }
 }
 
-function onRowClick(row: FlatLayerRow): void {
-  if (row.node.type === 'folder') {
-    emit('toggle-collapse', row.node.id)
-    return
-  }
-  emit('select', row.node.id)
+function onRowClick(row: FlatLayerRow, event: MouseEvent): void {
+  emit('select', { id: row.node.id, additive: event.shiftKey })
 }
 
 function startRename(row: FlatLayerRow): void {
@@ -135,8 +133,47 @@ function onMenu(info: { key: string | number }, row: FlatLayerRow): void {
   else if (key === 'remove') emit('remove', row.node.id)
 }
 
-function canDrop(id: string, targetFolderId: string | null): boolean {
-  return canMoveNode(props.tree, id, targetFolderId)
+function canDrop(ids: string[], parentId: string | null): boolean {
+  return canMoveNodes(props.tree, ids, parentId)
+}
+
+function clearDrop(): void {
+  dropZone.value = null
+  rootHover.value = false
+}
+
+/** 同一父级里排在该行后面那一个兄弟节点；没有则落到该层末尾 */
+function nextSiblingId(row: FlatLayerRow): string | null {
+  const index = rows.value.findIndex((item) => item.node.id === row.node.id)
+  for (let i = index + 1; i < rows.value.length; i += 1) {
+    const candidate = rows.value[i]
+    if (!candidate) continue
+    if (candidate.depth === row.depth) return candidate.node.id
+    if (candidate.depth < row.depth) return null
+  }
+  return null
+}
+
+/** 命中位置：文件夹上/下 1/3 为同级前后，中间为放入文件夹内部 */
+function resolveDrop(
+  row: FlatLayerRow,
+  ratio: number,
+): { target: MoveTarget; mode: 'before' | 'after' | 'inside' } | null {
+  if (row.node.type === 'folder') {
+    if (ratio >= 0.3 && ratio <= 0.7) {
+      const first = row.node.children[0]
+      return {
+        target: { parentId: row.node.id, beforeId: first ? first.id : null },
+        mode: 'inside',
+      }
+    }
+    return ratio < 0.3
+      ? { target: { parentId: row.parentId, beforeId: row.node.id }, mode: 'before' }
+      : { target: { parentId: row.parentId, beforeId: nextSiblingId(row) }, mode: 'after' }
+  }
+  return ratio < 0.5
+    ? { target: { parentId: row.parentId, beforeId: row.node.id }, mode: 'before' }
+    : { target: { parentId: row.parentId, beforeId: nextSiblingId(row) }, mode: 'after' }
 }
 
 function onDragStart(event: DragEvent, row: FlatLayerRow): void {
@@ -144,47 +181,81 @@ function onDragStart(event: DragEvent, row: FlatLayerRow): void {
     event.preventDefault()
     return
   }
-  draggingId.value = row.node.id
-  event.dataTransfer?.setData('text/plain', row.node.id)
+  const selected = props.selectedIds.includes(row.node.id)
+    ? props.selectedIds
+    : [row.node.id]
+  dragIds.value = sanitizeMoveIds(props.tree, selected)
+  event.dataTransfer?.setData('text/plain', dragIds.value.join(','))
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
 }
 
 function onDragEnd(): void {
-  draggingId.value = null
-  dropTargetId.value = null
+  dragIds.value = []
+  dropZone.value = null
   rootHover.value = false
 }
 
-function onFolderDragOver(event: DragEvent, row: FlatLayerRow): void {
-  if (row.node.type !== 'folder' || !draggingId.value) return
-  if (!canDrop(draggingId.value, row.node.id)) return
+function onRowDragOver(event: DragEvent, row: FlatLayerRow): void {
+  if (!dragIds.value.length) return
+  const element = event.currentTarget as HTMLElement
+  const rect = element.getBoundingClientRect()
+  const ratio = (event.clientY - rect.top) / Math.max(1, rect.height)
+  const hit = resolveDrop(row, ratio)
+
+  const invalid =
+    !hit ||
+    dragIds.value.includes(row.node.id) ||
+    (hit.target.beforeId ? dragIds.value.includes(hit.target.beforeId) : false) ||
+    !canDrop(dragIds.value, hit.target.parentId)
+  if (invalid) {
+    clearDrop()
+    return
+  }
+
   event.preventDefault()
-  dropTargetId.value = row.node.id
+  event.stopPropagation()
+  dropZone.value = { id: row.node.id, mode: hit.mode }
+  rootHover.value = false
 }
 
-function onFolderDragLeave(row: FlatLayerRow): void {
-  if (dropTargetId.value === row.node.id) dropTargetId.value = null
+function onRowDragLeave(row: FlatLayerRow): void {
+  if (dropZone.value?.id === row.node.id) dropZone.value = null
 }
 
-function onFolderDrop(event: DragEvent, row: FlatLayerRow): void {
-  if (row.node.type !== 'folder') return
+function onRowDrop(event: DragEvent, row: FlatLayerRow): void {
   event.preventDefault()
-  const id = draggingId.value
-  if (id && canDrop(id, row.node.id)) emit('move', id, row.node.id)
+  event.stopPropagation()
+  const zone = dropZone.value
+  if (zone?.id === row.node.id && dragIds.value.length) {
+    const element = event.currentTarget as HTMLElement
+    const rect = element.getBoundingClientRect()
+    const ratio = (event.clientY - rect.top) / Math.max(1, rect.height)
+    const hit = resolveDrop(row, ratio)
+    if (hit && canDrop(dragIds.value, hit.target.parentId)) {
+      emit('move', { ids: dragIds.value, ...hit.target })
+    }
+  }
   onDragEnd()
 }
 
 function onRootDragOver(event: DragEvent): void {
-  if (!draggingId.value) return
+  if (!dragIds.value.length) return
+  if (!canDrop(dragIds.value, null)) return
   event.preventDefault()
   rootHover.value = true
-  dropTargetId.value = null
+  dropZone.value = null
 }
 
 function onRootDrop(event: DragEvent): void {
   event.preventDefault()
-  const id = draggingId.value
-  if (id) emit('move', id, null)
+  if (dragIds.value.length && canDrop(dragIds.value, null)) {
+    const first = props.tree[0]
+    emit('move', {
+      ids: dragIds.value,
+      parentId: null,
+      beforeId: first ? first.id : null,
+    })
+  }
   onDragEnd()
 }
 
@@ -217,12 +288,14 @@ function onRootDragLeave(): void {
         :key="row.node.id"
         class="layer-row"
         :class="{
-          active: row.node.type === 'layer' && props.selectedIds.includes(row.node.id),
+          active: props.selectedIds.includes(row.node.id),
           'is-folder': row.node.type === 'folder',
           hidden: !stateOf(row.node).visible,
           locked: stateOf(row.node).locked,
-          dragging: draggingId === row.node.id,
-          'drop-target': dropTargetId === row.node.id,
+          dragging: dragIds.includes(row.node.id),
+          'drop-target': dropZone?.id === row.node.id && dropZone.mode === 'inside',
+          'drop-before': dropZone?.id === row.node.id && dropZone.mode === 'before',
+          'drop-after': dropZone?.id === row.node.id && dropZone.mode === 'after',
         }"
         :style="{ paddingLeft: `${8 + row.depth * 14}px` }"
         :data-node-id="row.node.id"
@@ -230,10 +303,10 @@ function onRootDragLeave(): void {
         :draggable="editingId !== row.node.id"
         @dragstart="onDragStart($event, row)"
         @dragend="onDragEnd"
-        @dragover="onFolderDragOver($event, row)"
-        @dragleave="onFolderDragLeave(row)"
-        @drop="onFolderDrop($event, row)"
-        @click="onRowClick(row)"
+        @dragover="onRowDragOver($event, row)"
+        @dragleave="onRowDragLeave(row)"
+        @drop="onRowDrop($event, row)"
+        @click="onRowClick(row, $event)"
       >
         <button
           v-if="row.node.type === 'folder'"
@@ -321,8 +394,9 @@ function onRootDragLeave(): void {
       从左侧选择工具开始绘制，或先新建一个文件夹
     </div>
 
-    <div v-if="draggingId" class="panel-note">
-      拖到文件夹上可归类；拖到上方标题栏可移出文件夹。文件夹最多 {{ props.maxDepth }} 层。
+    <div v-if="dragIds.length" class="panel-note">
+      拖到行上半区插到前面、下半区插到后面；拖到文件夹中间放入该文件夹；拖到标题栏移出到顶层。
+      按住 Shift 点选可多选，多个图层/文件夹会一起移动。文件夹最多 {{ props.maxDepth }} 层。
     </div>
   </div>
 </template>

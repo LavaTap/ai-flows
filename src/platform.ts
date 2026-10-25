@@ -1013,12 +1013,10 @@ function serveStatic(res: ServerResponse, route: string): boolean {
   }
 }
 
-/** 美术平台静态文件白名单（启动后首次访问扫描 web/art 与 web/art/assets，只收录真实存在的文件）。
+/** 美术平台静态文件白名单（每次请求扫描 web/art 与 web/art/assets，只收录真实存在的文件；
+ *  不缓存，重新构建后带 hash 的新文件名立刻可访问）。
  *  走「目录扫描生成 URL → 绝对路径」的表，不把请求路径拼进文件系统，天然免疫路径穿越。 */
-let artStaticTableCache: Record<string, { file: string; type: string }> | null = null;
-
 function artStaticTable(): Record<string, { file: string; type: string }> {
-  if (artStaticTableCache) return artStaticTableCache;
   const table: Record<string, { file: string; type: string }> = {};
   const addDir = (dir: string, urlPrefix: string): void => {
     if (!existsSync(dir)) return;
@@ -1034,7 +1032,6 @@ function artStaticTable(): Record<string, { file: string; type: string }> {
   };
   addDir(ART_DIR, "/art/");
   addDir(join(ART_DIR, "assets"), "/art/assets/");
-  artStaticTableCache = table;
   return table;
 }
 

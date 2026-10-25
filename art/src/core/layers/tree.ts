@@ -194,6 +194,168 @@ export function patchNode(nodes: LayerNode[], id: string, patch: LayerNodePatch)
   })
 }
 
+/** 面板展示顺序（自上而下，顶层在最前）对应的纯图层 id，文件夹不计只展开子节点 */
+export function flattenLayerIds(nodes: LayerNode[]): string[] {
+  const ids: string[] = []
+  const walk = (list: LayerNode[]): void => {
+    list.forEach((node) => {
+      if (node.type === 'folder') walk(node.children)
+      else ids.push(node.id)
+    })
+  }
+  walk(nodes)
+  return ids
+}
+
+/** 把面板里的选中节点（可含文件夹）展开成画布图层 id，结果按面板顺序排列 */
+export function layerIdsOf(nodes: LayerNode[], ids: string[]): string[] {
+  if (!ids.length) return []
+  const wanted = new Set<string>()
+  ids.forEach((id) => {
+    const found = findNode(nodes, id)
+    if (!found) return
+    if (found.node.type === 'folder') {
+      flattenLayerIds(found.node.children).forEach((childId) => wanted.add(childId))
+    } else {
+      wanted.add(id)
+    }
+  })
+  if (!wanted.size) return []
+  return flattenLayerIds(nodes).filter((id) => wanted.has(id))
+}
+
+/** 批量移动前剔除已被选中文件夹包含的子孙节点，避免重复搬动 */
+export function sanitizeMoveIds(nodes: LayerNode[], ids: string[]): string[] {
+  const selected = ids.filter((id) => findNode(nodes, id) !== null)
+  return selected.filter((id) => {
+    const holder = selected.find((otherId) => {
+      if (otherId === id) return false
+      const other = findNode(nodes, otherId)
+      return other?.node.type === 'folder' && findNode(other.node.children, id) !== null
+    })
+    return holder === undefined
+  })
+}
+
+export function canMoveNodes(
+  nodes: LayerNode[],
+  ids: string[],
+  targetFolderId: string | null,
+): boolean {
+  const moved = sanitizeMoveIds(nodes, ids)
+  if (!moved.length) return false
+  return moved.every((id) => canMoveNode(nodes, id, targetFolderId))
+}
+
+/** 目标位置：parentId 为 null 表示根层，beforeId 为 null 表示放到该层末尾 */
+export interface MoveTarget {
+  parentId: string | null
+  beforeId: string | null
+}
+
+function insertInList(
+  list: LayerNode[],
+  beforeId: string | null,
+  block: LayerNode[],
+): LayerNode[] {
+  if (!beforeId) return [...list, ...block]
+  const index = list.findIndex((node) => node.id === beforeId)
+  if (index < 0) return [...list, ...block]
+  return [...list.slice(0, index), ...block, ...list.slice(index)]
+}
+
+function insertNodesAt(
+  nodes: LayerNode[],
+  parentId: string | null,
+  beforeId: string | null,
+  block: LayerNode[],
+): LayerNode[] | null {
+  if (!parentId) return insertInList(nodes, beforeId, block)
+
+  let found = false
+  const walk = (list: LayerNode[]): LayerNode[] =>
+    list.map((node) => {
+      if (node.type !== 'folder') return node
+      if (node.id === parentId) {
+        found = true
+        return {
+          ...node,
+          collapsed: false,
+          children: insertInList(node.children, beforeId, block),
+        }
+      }
+      return { ...node, children: walk(node.children) }
+    })
+
+  const next = walk(nodes)
+  return found ? next : null
+}
+
+/** 批量移动节点（文件夹连同其子节点整体移动），保持源顺序 */
+export function moveLayerNodes(
+  nodes: LayerNode[],
+  rawIds: string[],
+  target: MoveTarget,
+): LayerNode[] | null {
+  const ids = sanitizeMoveIds(nodes, rawIds)
+  if (!ids.length) return null
+  if (!canMoveNodes(nodes, ids, target.parentId)) return null
+  if (target.beforeId && ids.includes(target.beforeId)) return null
+  if (target.parentId && ids.includes(target.parentId)) return null
+
+  const order: string[] = []
+  const collect = (list: LayerNode[]): void => {
+    list.forEach((node) => {
+      order.push(node.id)
+      if (node.type === 'folder') collect(node.children)
+    })
+  }
+  collect(nodes)
+
+  let rest = nodes
+  const block: LayerNode[] = []
+  order
+    .filter((id) => ids.includes(id))
+    .forEach((id) => {
+      const detached = detachNode(rest, id)
+      if (!detached.node) return
+      rest = detached.nodes
+      block.push(detached.node)
+    })
+  if (!block.length) return null
+  return insertNodesAt(rest, target.parentId, target.beforeId, block)
+}
+
+/** 同级重排：上移 / 下移 / 置顶 / 置底（不改变所属文件夹） */
+export function reorderNode(
+  nodes: LayerNode[],
+  id: string,
+  direction: 'up' | 'down' | 'top' | 'bottom',
+): LayerNode[] | null {
+  if (!findNode(nodes, id)) return null
+
+  const walk = (list: LayerNode[]): LayerNode[] => {
+    const index = list.findIndex((node) => node.id === id)
+    if (index >= 0) {
+      const next = [...list]
+      const [item] = next.splice(index, 1)
+      if (!item) return list
+      let target = index
+      if (direction === 'up') target = Math.max(0, index - 1)
+      else if (direction === 'down') target = Math.min(next.length, index + 1)
+      else if (direction === 'top') target = 0
+      else target = next.length
+      next.splice(target, 0, item)
+      return next
+    }
+    return list.map((node) =>
+      node.type === 'folder' ? { ...node, children: walk(node.children) } : node,
+    )
+  }
+
+  return walk(nodes)
+}
+
 export function detachNode(
   nodes: LayerNode[],
   id: string,

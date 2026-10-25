@@ -63,6 +63,12 @@ export interface SelectionInfo {
   style: ShapeStyle
 }
 
+/** 可选画板区域尺寸（未设置时画布为无限大） */
+export interface ArtboardSize {
+  width: number
+  height: number
+}
+
 export interface EngineSnapshot {
   tool: ToolName
   zoom: number
@@ -72,6 +78,7 @@ export interface EngineSnapshot {
   selectedIds: string[]
   selection: SelectionInfo | null
   objectCount: number
+  artboard: ArtboardSize | null
   canUndo: boolean
   canRedo: boolean
 }

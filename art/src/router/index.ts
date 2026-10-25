@@ -10,6 +10,11 @@ const router = createRouter({
       component: () => import('@/views/BoardListView.vue'),
     },
     {
+      path: '/assets',
+      name: 'assets-library',
+      component: () => import('@/views/AssetsLibraryView.vue'),
+    },
+    {
       path: '/board/:id',
       name: 'board-editor',
       component: () => import('@/views/BoardEditorView.vue'),
