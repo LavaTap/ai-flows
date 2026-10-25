@@ -130,10 +130,17 @@ window.MemberSearch = (function () {
             action = document.createElement("button");
             action.type = "button";
             action.className = "ms-action";
-            action.textContent = opts.actionLabel;
-            action.addEventListener("click", function () {
-              if (opts.onAction) opts.onAction(u, action);
-            });
+            /* 不可加入的候选（如已在目标部门）：保留在列表里，按钮置灰并换文案 */
+            var blockedLabel = opts.disabledAction ? opts.disabledAction(u) : null;
+            action.textContent = blockedLabel || opts.actionLabel;
+            if (blockedLabel) {
+              action.disabled = true;
+              action.title = blockedLabel;
+            } else {
+              action.addEventListener("click", function () {
+                if (opts.onAction) opts.onAction(u, action);
+              });
+            }
           }
           list.appendChild(row(u, {
             action: action,

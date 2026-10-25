@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync, unlinkSync } from "node:fs";
 import { join, dirname, basename, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadNodes, loadAllNodes, loadNodeById, saveNodes, saveNode, loadPipelines, loadPipeline, findPipelineByName, createPipeline, updatePipeline, deletePipeline, loadRepos, loadRepo, appendRepo, updateRepo, deleteRepo, DEFAULT_PIPELINE_ID, authenticate, loadUsers, loadDepartments, loadReviews, appendReview, appendReviews, updateReviewMeta, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, setPassword, ensurePasswordBaseline, loadTickets, appendTicket, updateTicket, deleteTicket, loadPlatformMessages, appendPlatformMessage, markMessageRead, markAllMessagesRead, loadKbArticles, appendKbArticle, updateKbArticle, deleteKbArticle, TICKET_IMAGES_DIR, AVATARS_DIR, CHAT_UPLOADS_DIR, ART_ASSETS_DIR, loadArtBoards, loadArtBoard, createArtBoard, saveArtBoard, duplicateArtBoard, deleteArtBoard, loadArtAssets, loadArtAsset, appendArtAsset, deleteArtAsset, artStats, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, recordTokenUsage, loadTokenUsage, type TokenUsageRecord, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel, type ChatAttachment, type ChatRef, type ChatSkillCall, type PlatformMessage, type MessageType, type KbArticle, type KbVisibility, type RepoRecord, type PipelineRecord } from "./db.js";
+import { loadNodes, loadAllNodes, loadNodeById, saveNodes, saveNode, loadPipelines, loadPipeline, findPipelineByName, createPipeline, updatePipeline, deletePipeline, loadRepos, loadRepo, appendRepo, updateRepo, deleteRepo, DEFAULT_PIPELINE_ID, authenticate, loadUsers, loadDepartments, loadReviews, appendReview, appendReviews, updateReviewMeta, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, setPassword, ensurePasswordBaseline, loadTickets, appendTicket, updateTicket, deleteTicket, loadPlatformMessages, appendPlatformMessage, markMessageRead, markAllMessagesRead, loadKbArticles, appendKbArticle, updateKbArticle, deleteKbArticle, loadKbComments, findKbComment, appendKbComment, deleteKbComment, countKbLikes, likedKbTargetIds, toggleKbLike, kbLikeNames, type KbComment, TICKET_IMAGES_DIR, AVATARS_DIR, CHAT_UPLOADS_DIR, ART_ASSETS_DIR, loadArtBoards, loadArtBoard, createArtBoard, saveArtBoard, duplicateArtBoard, deleteArtBoard, loadArtAssets, loadArtAsset, appendArtAsset, deleteArtAsset, artStats, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, recordTokenUsage, loadTokenUsage, type TokenUsageRecord, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel, type ChatAttachment, type ChatRef, type ChatSkillCall, type PlatformMessage, type MessageType, type KbArticle, type KbVisibility, type RepoRecord, type PipelineRecord } from "./db.js";
 import {
   callModelStream,
   callModelOnce,
@@ -480,7 +480,7 @@ interface NodeView extends NodeState {
   canEdit: boolean;
   /** 挂在该节点上的需求工单 id（每节点一张，未挂单不允许执行/审核） */
   ticketId?: string;
-  /** 执行角色列表（部门成员 ∪ 显式添加 − 显式排除），前端直接渲染角色卡片 */
+  /** 执行人列表（部门成员 ∪ 显式添加 − 显式排除），前端直接渲染角色卡片 */
   executorList: UserView[];
 }
 
@@ -582,7 +582,7 @@ function toNodeView(user: UserAccount, node: NodeState, tickets?: TicketRecord[]
   };
 }
 
-/** 节点执行角色集合 = 部门成员 ∪ 显式添加名单 − 显式排除名单（按部门/邮箱去重） */
+/** 节点执行人集合 = 部门成员 ∪ 显式添加名单 − 显式排除名单（按部门/邮箱去重） */
 function nodeExecutors(node: NodeState, users: UserAccount[]): UserAccount[] {
   const removed = new Set(node.removedExecutors ?? []);
   const map = new Map<string, UserAccount>();
@@ -596,7 +596,7 @@ function nodeExecutors(node: NodeState, users: UserAccount[]): UserAccount[] {
   return Array.from(map.values());
 }
 
-/** 把员工挂到节点执行角色（幂等）。from 记录加入前部门，删除时可回滚 */
+/** 把员工挂到节点执行人（幂等）。from 记录加入前部门，删除时可回滚 */
 function addNodeExecutor(node: NodeState, email: string): NodeState | null {
   const target = loadUsers().find((u) => u.email === email);
   if (!target) return null;
@@ -618,7 +618,7 @@ function addNodeExecutor(node: NodeState, email: string): NodeState | null {
   return next;
 }
 
-/** 从节点执行角色移除员工（显式添加的回滚部门；部门派生的记入排除名单） */
+/** 从节点执行人移除员工（显式添加的回滚部门；部门派生的记入排除名单） */
 function removeNodeExecutor(node: NodeState, email: string): NodeState | null {
   const cur = loadNodeById(node.id);
   if (!cur) return null;
@@ -714,7 +714,42 @@ function toTicketView(t: TicketRecord, user: UserAccount): TicketView {
   };
 }
 
-/** 知识库文章视图（含正文，供详情渲染与编辑器回填；canEdit = 撰写人本人或主管） */
+/** 知识库评论视图（mine = 本人所发，canDelete = 本人或主管；likes/liked 为该评论的点赞态） */
+interface KbCommentView {
+  id: string;
+  author: string;
+  email: string;
+  department: string;
+  content: string;
+  at: string;
+  mine: boolean;
+  canDelete: boolean;
+  likes: number;
+  liked: boolean;
+}
+
+function toKbCommentView(
+  c: KbComment,
+  user: UserAccount,
+  likeCount: Map<string, number>,
+  likedIds: Set<string>
+): KbCommentView {
+  return {
+    id: c.id,
+    author: c.author,
+    email: c.email,
+    department: c.department,
+    content: c.content,
+    at: c.at,
+    mine: c.email === user.email,
+    canDelete: c.email === user.email || canApprove(user),
+    likes: likeCount.get(c.id) ?? 0,
+    liked: likedIds.has(c.id),
+  };
+}
+
+/** 知识库文章视图（含正文，供详情渲染与编辑器回填；canEdit = 撰写人本人或主管）。
+ *  批量接口传 likeCount / likedIds 预取结果，避免逐篇查库；withComments 时才加载评论与点赞人名单。 */
 interface KbView {
   id: string;
   title: string;
@@ -729,9 +764,37 @@ interface KbView {
   updatedByEmail: string;
   mine: boolean;
   canEdit: boolean;
+  /** 评论列表（按时间正序；仅详情视图填充） */
+  commentList: KbCommentView[];
+  /** 文章点赞数 */
+  likes: number;
+  /** 当前用户是否已点赞该文章 */
+  liked: boolean;
+  /** 点赞人姓名（按时间正序，供悬停提示；仅详情视图填充） */
+  likeNames: string[];
 }
 
-function toKbView(a: KbArticle, user: UserAccount): KbView {
+function toKbView(
+  a: KbArticle,
+  user: UserAccount,
+  opts?: {
+    likeCount?: Map<string, number>;
+    likedIds?: Set<string>;
+    withComments?: boolean;
+  }
+): KbView {
+  const likeCount = opts?.likeCount ?? countKbLikes("article");
+  const likedIds = opts?.likedIds ?? likedKbTargetIds("article", user.email);
+  let commentList: KbCommentView[] = [];
+  let likeNames: string[] = [];
+  if (opts?.withComments) {
+    const commentLikeCount = countKbLikes("comment");
+    const commentLikedIds = likedKbTargetIds("comment", user.email);
+    commentList = loadKbComments(a.id).map((c) =>
+      toKbCommentView(c, user, commentLikeCount, commentLikedIds)
+    );
+    likeNames = kbLikeNames("article", a.id);
+  }
   return {
     id: a.id,
     title: a.title,
@@ -746,6 +809,10 @@ function toKbView(a: KbArticle, user: UserAccount): KbView {
     updatedByEmail: a.updatedByEmail,
     mine: a.authorEmail === user.email,
     canEdit: a.authorEmail === user.email || canApprove(user),
+    commentList,
+    likes: likeCount.get(a.id) ?? 0,
+    liked: likedIds.has(a.id),
+    likeNames,
   };
 }
 
@@ -993,6 +1060,7 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   "/richtext-editor.js": { file: "richtext-editor.js", type: "text/javascript; charset=utf-8" },
   "/member-search.js": { file: "member-search.js", type: "text/javascript; charset=utf-8" },
   "/user-card.js": { file: "user-card.js", type: "text/javascript; charset=utf-8" },
+  "/comment-input.js": { file: "comment-input.js", type: "text/javascript; charset=utf-8" },
   "/kb.js": { file: "kb.js", type: "text/javascript; charset=utf-8" },
   "/logs.js": { file: "logs.js", type: "text/javascript; charset=utf-8" },
   "/tokens.js": { file: "tokens.js", type: "text/javascript; charset=utf-8" },
@@ -1253,12 +1321,14 @@ function kbHtml(user: UserAccount): string {
   const articles = filterKbByUser(loadKbArticles(), user).sort((a, b) =>
     b.updatedAt.localeCompare(a.updatedAt)
   );
+  const likeCount = countKbLikes("article");
+  const likedIds = likedKbTargetIds("article", user.email);
   const boot = {
     user: toUserView(user),
     isSupervisor: user.role === "supervisor",
     members: allUsers.map(toUserView),
     departments: loadDepartments().map((d) => d.name),
-    articles: articles.map((a) => toKbView(a, user)),
+    articles: articles.map((a) => toKbView(a, user, { likeCount, likedIds })),
   };
   const inject = `<script>window.__KB__ = ${jsonForScript(boot)};</script>\n<script src="/kb.js" defer></script>`;
   return raw.replace("</body>", `${inject}\n</body>`);
@@ -3377,7 +3447,7 @@ export async function startPlatformServer(
         sendJson(res, 404, { error: "员工不存在" });
         return;
       }
-      // 挂到节点执行角色（部门对齐 + 记录原部门，删除可回滚）
+      // 挂到节点执行人（部门对齐 + 记录原部门，删除可回滚）
       addNodeExecutor(node, target.email);
       const reqTicket = ensureNodeRequirementTicket(node);
       // 同一员工同一节点只建一张指派工单（幂等）
@@ -3417,7 +3487,7 @@ export async function startPlatformServer(
       return;
     }
 
-    // 移除节点执行角色（仅主管）：显式加入的回滚原部门，部门派生的记入排除名单
+    // 移除节点执行人（仅主管）：显式加入的回滚原部门，部门派生的记入排除名单
     const exd = path.match(/^\/api\/nodes\/([^/\\]+)\/executors\/([^/\\]+)$/);
     if (exd && req.method === "DELETE") {
       const user = currentUser(req);
@@ -3426,7 +3496,7 @@ export async function startPlatformServer(
         return;
       }
       if (!canApprove(user)) {
-        sendJson(res, 403, { error: "仅部门主管可移除执行角色" });
+        sendJson(res, 403, { error: "仅部门主管可移除执行人" });
         return;
       }
       const node = loadNodeById(exd[1]);
@@ -3450,7 +3520,7 @@ export async function startPlatformServer(
         return;
       }
       const name = target.name?.trim() || target.email.split("@")[0];
-      notify(email, "node", `你已被移出「${node.step}」节点的执行角色`, {
+      notify(email, "node", `你已被移出「${node.step}」节点的执行人`, {
         body: `操作人：${user.name?.trim() || user.email}`,
         refType: "node",
         refId: node.id,
@@ -3787,6 +3857,8 @@ export async function startPlatformServer(
         return;
       }
       const q = (u.searchParams.get("q") ?? "").trim().toLowerCase();
+      const likeCount = countKbLikes("article");
+      const likedIds = likedKbTargetIds("article", user.email);
       const list = filterKbByUser(loadKbArticles(), user)
         .filter(
           (a) =>
@@ -3796,7 +3868,7 @@ export async function startPlatformServer(
             )
         )
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-        .map((a) => toKbView(a, user));
+        .map((a) => toKbView(a, user, { likeCount, likedIds }));
       sendJson(res, 200, { articles: list });
       return;
     }
@@ -3887,7 +3959,7 @@ export async function startPlatformServer(
         sendJson(res, 404, { error: "文章不存在或不可见" });
         return;
       }
-      sendJson(res, 200, { article: toKbView(article, user) });
+      sendJson(res, 200, { article: toKbView(article, user, { withComments: true }) });
       return;
     }
 
@@ -3964,7 +4036,7 @@ export async function startPlatformServer(
         refType: "kb",
         refId: article.id,
       });
-      sendJson(res, 200, { article: toKbView(updated as KbArticle, user) });
+      sendJson(res, 200, { article: toKbView(updated as KbArticle, user, { withComments: true }) });
       return;
     }
 
@@ -3986,6 +4058,125 @@ export async function startPlatformServer(
       }
       deleteKbArticle(article.id);
       sendJson(res, 200, { ok: true, id: article.id });
+      return;
+    }
+
+    // 知识库评论点赞 / 取消点赞（能看到评论所属文章即可点赞）
+    const kbclm = path.match(/^\/api\/kb\/comments\/([^/\\]+)\/like$/);
+    if (kbclm && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const target = findKbComment(kbclm[1]);
+      const owner = target ? loadKbArticles().find((a) => a.id === target.articleId) : undefined;
+      if (!target || !owner || !canViewKb(owner, user)) {
+        sendJson(res, 404, { error: "评论不存在或不可见" });
+        return;
+      }
+      const state = toggleKbLike(
+        "comment",
+        target.id,
+        user.email,
+        user.name?.trim() || user.email.split("@")[0]
+      );
+      sendJson(res, 200, { id: target.id, liked: state.liked, likes: state.count });
+      return;
+    }
+
+    // 删除知识库评论（评论人本人或主管；文章不可见按不存在处理）
+    const kbcdm = path.match(/^\/api\/kb\/[^/\\]+\/comments\/([^/\\]+)$/);
+    if (kbcdm && req.method === "DELETE") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const target = findKbComment(kbcdm[1]);
+      const owner = target ? loadKbArticles().find((a) => a.id === target.articleId) : undefined;
+      if (!target || !owner || !canViewKb(owner, user)) {
+        sendJson(res, 404, { error: "评论不存在或不可见" });
+        return;
+      }
+      if (target.email !== user.email && !canApprove(user)) {
+        sendJson(res, 403, { error: "仅评论人或部门主管可删除该评论" });
+        return;
+      }
+      deleteKbComment(target.id);
+      sendJson(res, 200, { ok: true, id: target.id });
+      return;
+    }
+
+    // 知识库文章点赞 / 取消点赞（可见即可点赞）
+    const kblm = path.match(/^\/api\/kb\/([^/\\]+)\/like$/);
+    if (kblm && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const article = loadKbArticles().find((a) => a.id === kblm[1]);
+      if (!article || !canViewKb(article, user)) {
+        sendJson(res, 404, { error: "文章不存在或不可见" });
+        return;
+      }
+      const state = toggleKbLike(
+        "article",
+        article.id,
+        user.email,
+        user.name?.trim() || user.email.split("@")[0]
+      );
+      sendJson(res, 200, { id: article.id, liked: state.liked, likes: state.count });
+      return;
+    }
+
+    // 新增知识库评论（能看见文章即可评论；正文净化后落库，@提及走站内消息）
+    const kbcm = path.match(/^\/api\/kb\/([^/\\]+)\/comments$/);
+    if (kbcm && req.method === "POST") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      const article = loadKbArticles().find((a) => a.id === kbcm[1]);
+      if (!article || !canViewKb(article, user)) {
+        sendJson(res, 404, { error: "文章不存在或不可见" });
+        return;
+      }
+      let rawContent: unknown = "";
+      try {
+        const body = JSON.parse(await readBody(req, 64 * 1024)) as { content?: unknown };
+        rawContent = body.content;
+      } catch {
+        sendJson(res, 400, { error: "请求体过大或不是合法 JSON" });
+        return;
+      }
+      const content = await normalizeRichField(rawContent);
+      if (content === null || isEmptyRichHtml(content)) {
+        sendJson(res, 400, { error: "评论内容不能为空或过长" });
+        return;
+      }
+      const comment: KbComment = {
+        id: `c-${randomBytes(4).toString("hex")}`,
+        articleId: article.id,
+        author: user.name?.trim() || user.email.split("@")[0],
+        email: user.email,
+        department: user.department,
+        content,
+        at: new Date().toISOString(),
+      };
+      appendKbComment(comment);
+      // 给评论里 @提及到的人发消息（自己不会收到）
+      const senderName = comment.author;
+      notifyMentioned(content, user.email, senderName, {
+        type: "kb_mention",
+        title: `${senderName} 在知识库「${article.title}」的评论中@了你`,
+        body: htmlToPlainText(content).slice(0, 120),
+        refType: "kb",
+        refId: article.id,
+      });
+      sendJson(res, 201, { article: toKbView(article, user, { withComments: true }) });
       return;
     }
 
@@ -4165,7 +4356,7 @@ export async function startPlatformServer(
       return;
     }
 
-    // 指派工单负责人（仅主管；被指派者收到消息，绑定节点的工单同时把人挂进节点执行角色）
+    // 指派工单负责人（仅主管；被指派者收到消息，绑定节点的工单同时把人挂进节点执行人）
     const tas = path.match(/^\/api\/tickets\/([^/\\]+)\/assignee$/);
     if (tas && req.method === "POST") {
       const user = currentUser(req);
@@ -4214,7 +4405,7 @@ export async function startPlatformServer(
           refId: ticket.id,
         });
       }
-      // 工单挂在管线上：负责人自动挂进该节点的执行角色
+      // 工单挂在管线上：负责人自动挂进该节点的执行人
       if (email && ticket.nodeId) {
         const node = loadNodeById(ticket.nodeId);
         if (node) addNodeExecutor(node, email);

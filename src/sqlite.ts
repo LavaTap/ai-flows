@@ -206,10 +206,12 @@ CREATE TABLE IF NOT EXISTS tickets.ticket_comments (
 CREATE INDEX IF NOT EXISTS tickets.idx_ticket_comments_ticket ON ticket_comments(ticket_id);
 `;
 
-/** 知识库库 DDL：文章（类似工单但独立于管线节点）。
+/** 知识库库 DDL：文章 + 评论 + 点赞（类似工单但独立于管线节点）。
  *  可见范围 visibility：all=全体 / departments=指定部门（departments 存部门编号 JSON 数组）/ private=仅撰写人。
- *  故意不加外键：users 行整体替换（saveUsers 先 DELETE 再插）会级联清空文章，
- *  撰写人 / 更新人与账号的关联靠 email 逻辑匹配。 */
+ *  评论与点赞都故意不加外键：saveKbArticles 是「先 DELETE 全部文章再重建」的整体替换，
+ *  一旦带 ON DELETE CASCADE，改一次文章就会把全站评论连带清空（工单靠同事务重建父子行规避，
+ *  知识库的文章更新不重建子表），因此删文章时由 deleteKbCommentsOfArticle / deleteKbLikesOfTarget 显式清理。
+ *  department 存部门编号（departments.id），点赞的 target_type 取 article / comment。 */
 const KB_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS kb.kb_articles (
   ord              INTEGER NOT NULL,
@@ -226,7 +228,30 @@ CREATE TABLE IF NOT EXISTS kb.kb_articles (
   updated_by_name  TEXT
 );
 
+CREATE TABLE IF NOT EXISTS kb.kb_comments (
+  ord         INTEGER NOT NULL,
+  id          TEXT PRIMARY KEY,
+  article_id  TEXT NOT NULL,
+  author      TEXT NOT NULL,
+  email       TEXT NOT NULL,
+  department  TEXT NOT NULL,
+  content     TEXT NOT NULL,
+  at          TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS kb.kb_likes (
+  ord         INTEGER NOT NULL,
+  id          TEXT PRIMARY KEY,
+  target_type TEXT NOT NULL,
+  target_id   TEXT NOT NULL,
+  email       TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  at          TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS kb.idx_kb_updated ON kb_articles(updated_at);
+CREATE INDEX IF NOT EXISTS kb.idx_kb_comments_article ON kb_comments(article_id);
+CREATE INDEX IF NOT EXISTS kb.idx_kb_likes_target ON kb_likes(target_type, target_id);
 `;
 
 /** AI 对话与评审库 DDL：会话 / 消息 / 模型配置 / 评审记录。
@@ -385,6 +410,8 @@ function migrateLegacyLayout(c: Database.Database): void {
   try {
     for (const t of MAIN_DOMAIN_TABLES) moveSchemaTable(c, AI_FLOWS_SCHEMA, "main", t);
     moveSchemaTable(c, AI_FLOWS_SCHEMA, KB_SCHEMA, "kb_articles");
+    moveSchemaTable(c, AI_FLOWS_SCHEMA, KB_SCHEMA, "kb_comments");
+    moveSchemaTable(c, AI_FLOWS_SCHEMA, KB_SCHEMA, "kb_likes");
     for (const t of CHAT_REVIEWS_TABLES)
       if (hasTable(c, AI_FLOWS_SCHEMA, t)) moveSchemaTable(c, AI_FLOWS_SCHEMA, CHAT_REVIEWS_SCHEMA, t);
     for (const t of TICKETS_TABLES)
@@ -450,6 +477,7 @@ function collectDepartmentNames(c: Database.Database): string[] {
   scanCol(AI_FLOWS_SCHEMA, "nodes", "department");
   scanCol(TICKETS_SCHEMA, "tickets", "department");
   scanCol(TICKETS_SCHEMA, "ticket_comments", "department");
+  scanCol(KB_SCHEMA, "kb_comments", "department");
   scanCol(CHAT_REVIEWS_SCHEMA, "reviews", "department");
 
   // JSON 列：kb_articles.departments（数组）、nodes.executors/removed_executors（元素 .from）
@@ -523,6 +551,7 @@ function normalizeDepartmentColumns(c: Database.Database): void {
   upd(AI_FLOWS_SCHEMA, "nodes", "department");
   upd(TICKETS_SCHEMA, "tickets", "department");
   upd(TICKETS_SCHEMA, "ticket_comments", "department");
+  upd(KB_SCHEMA, "kb_comments", "department");
   upd(CHAT_REVIEWS_SCHEMA, "reviews", "department");
 
   const idOf = new Map(pairs.map((p) => [p.name, p.id]));
@@ -627,7 +656,7 @@ export function getDb(): Database.Database {
   ensureColumn(c, "main", "users", "password_changed_at", "password_changed_at TEXT");
   // 老库补列（AI-Flows 域：仓库登记人账号）
   ensureColumn(c, AI_FLOWS_SCHEMA, "repos", "owner_email", "owner_email TEXT");
-  // 老库补列（节点执行角色：显式添加名单 / 显式排除名单）
+  // 老库补列（节点执行人：显式添加名单 / 显式排除名单）
   ensureColumn(c, AI_FLOWS_SCHEMA, "nodes", "executors", "executors TEXT");
   ensureColumn(c, AI_FLOWS_SCHEMA, "nodes", "removed_executors", "removed_executors TEXT");
   // 老库补列（节点归属管线；老节点留空，由 db.ts 启动时挂到默认管线）

@@ -73,7 +73,7 @@
     ".d-actions .result.fail{color:var(--led);}",
     ".d-actions .btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;transform:none;}",
     ".user-chip .rname{color:var(--ink-soft);font-weight:500;}",
-    /* 执行角色：紧凑列表（小头像 + 名字），hover 弹出详情卡片 */
+    /* 执行人：紧凑列表（小头像 + 名字），hover 弹出详情卡片 */
     ".d-roles{margin-top:12px;border-top:1px solid var(--glass-line);padding-top:10px;}",
     ".d-roles-head{font:600 12px/18px var(--font-sans);color:var(--ink-soft);margin-bottom:8px;display:flex;align-items:center;gap:6px;position:relative;}",
     ".d-roles-list{display:flex;gap:8px;flex-wrap:wrap;}",
@@ -84,7 +84,7 @@
     "color:#fff;font:600 11px/1 var(--font-sans);flex:none;box-shadow:0 1px 3px rgba(20,20,20,.15);cursor:pointer;overflow:hidden;}",
     ".rc-chip-avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%;}",
     ".rc-chip-name{font:500 12px/18px var(--font-sans);color:var(--ink-soft);cursor:pointer;padding-right:2px;}",
-    /* 执行角色 chip 上的删除图标（主管可见） */
+    /* 执行人 chip 上的删除图标（主管可见） */
     ".rc-chip-del{flex:none;width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;",
     "background:transparent;border:none;color:var(--muted);cursor:pointer;padding:0;font-size:12px;line-height:1;",
     "transition:background .12s ease,color .12s ease;margin-right:4px;}",
@@ -119,7 +119,7 @@
     "display:inline-flex;align-items:center;justify-content:center;transition:all 150ms ease;position:relative;}",
     ".role-add-btn:hover{background:var(--led);color:#fff;border-color:var(--led);}",
     ".role-add-btn.active{background:var(--led);color:#fff;border-color:var(--led);}",
-    /* 悬浮搜索面板：浮在执行角色板块右上方 */
+    /* 悬浮搜索面板：浮在执行人板块右上方 */
     ".role-search-panel{position:absolute;top:calc(100% + 6px);right:0;width:280px;",
     "border:1px solid var(--glass-line-strong);border-radius:10px;background:var(--glass-fill);",
     "padding:8px;display:none;z-index:30;box-shadow:0 8px 24px rgba(15,23,42,.14),0 2px 6px rgba(15,23,42,.08);}",
@@ -471,25 +471,25 @@
 
   /* ────────────────────────────── 角色卡片 ────────────────────────────── */
 
-  /** 渲染本节点部门的执行角色：紧凑头像+名字列表，hover 弹出长方形详情卡 */
+  /** 渲染本节点部门的执行人：紧凑头像+名字列表，hover 弹出长方形详情卡 */
   function renderRoles(idx, panel) {
     var node = nodes[idx];
     if (!node) return;
     var old = panel.querySelector(".d-roles");
     if (old) old.remove();
     var isSuper = boot && boot.user && boot.user.role === "supervisor";
-    /* 执行角色由服务端算好（部门成员 ∪ 显式添加 − 显式排除） */
+    /* 执行人由服务端算好（部门成员 ∪ 显式添加 − 显式排除） */
     var team = (node.executorList || members.filter(function (m) { return m.department === node.department; })).slice();
     var box = document.createElement("div");
     box.className = "d-roles";
     var head = document.createElement("div");
     head.className = "d-roles-head";
-    head.appendChild(document.createTextNode("执行角色"));
+    head.appendChild(document.createTextNode("执行人"));
     if (isSuper) {
       var addBtn = document.createElement("button");
       addBtn.type = "button";
       addBtn.className = "role-add-btn";
-      addBtn.title = "添加执行角色";
+      addBtn.title = "添加执行人";
       addBtn.textContent = "+";
       addBtn.addEventListener("click", function (e) { e.stopPropagation(); toggleRoleSearcher(head, node, idx, addBtn); });
       head.appendChild(addBtn);
@@ -498,7 +498,7 @@
     if (!team.length) {
       var empty = document.createElement("div");
       empty.className = "d-roles-empty";
-      empty.textContent = "暂无执行角色";
+      empty.textContent = "暂无执行人";
       box.appendChild(empty);
       panel.appendChild(box);
       return;
@@ -519,17 +519,17 @@
       chip.appendChild(chipAv);
       chip.appendChild(chipNm);
 
-      /* chip 上的删除图标（主管直接可见，hover 变红，点了移除该执行角色） */
+      /* chip 上的删除图标（主管直接可见，hover 变红，点了移除该执行人） */
       if (isSuper) {
         var chipDel = document.createElement("button");
         chipDel.type = "button";
         chipDel.className = "rc-chip-del";
-        chipDel.title = "移出执行角色：" + displayName(m);
+        chipDel.title = "移出执行人：" + displayName(m);
         chipDel.textContent = "×";
         chipDel.addEventListener("click", function (e) {
           e.preventDefault();
           e.stopPropagation();
-          if (!window.confirm("确定把 " + displayName(m) + " 移出本节点的执行角色？")) return;
+          if (!window.confirm("确定把 " + displayName(m) + " 移出本节点的执行人？")) return;
           chipDel.disabled = true;
           fetch("/api/nodes/" + encodeURIComponent(node.id) + "/executors/" + encodeURIComponent(m.email), {
             method: "DELETE"
@@ -584,12 +584,12 @@
         var del = document.createElement("button");
         del.type = "button";
         del.className = "rc-del";
-        del.textContent = "移出执行角色";
-        del.title = "移出后该员工不再出现在本节点的执行角色里";
+        del.textContent = "移出执行人";
+        del.title = "移出后该员工不再出现在本节点的执行人里";
         del.addEventListener("click", function (e) {
           e.preventDefault();
           e.stopPropagation();
-          if (!window.confirm("确定把 " + displayName(m) + " 移出本节点的执行角色？")) return;
+          if (!window.confirm("确定把 " + displayName(m) + " 移出本节点的执行人？")) return;
           del.disabled = true;
           del.textContent = "移除中…";
           fetch("/api/nodes/" + encodeURIComponent(node.id) + "/executors/" + encodeURIComponent(m.email), {
@@ -601,7 +601,7 @@
             if (!r) return;
             if (!r.ok) {
               del.disabled = false;
-              del.textContent = "移出执行角色";
+              del.textContent = "移出执行人";
               window.alert((r.data && r.data.error) || "移除失败");
               return;
             }
@@ -610,7 +610,7 @@
             refreshNodes();
           }).catch(function () {
             del.disabled = false;
-            del.textContent = "移出执行角色";
+            del.textContent = "移出执行人";
             window.alert("网络异常");
           });
         });
@@ -638,7 +638,7 @@
       card.addEventListener("mouseenter", showCard);
       card.addEventListener("mouseleave", hideCardSoon);
 
-      /* 点击头像 → 卡片侧边展开「移出执行角色」按钮（再点收起） */
+      /* 点击头像 → 卡片侧边展开「移出执行人」按钮（再点收起） */
       chipAv.addEventListener("click", function (e) {
         e.preventDefault();
         e.stopPropagation();
@@ -728,11 +728,15 @@
       errorEl.style.display = "none";
     }
 
-    /* 统一员工搜索面板：与工单/知识库 @提及、团队管理同源（GET /api/search?type=user）同款 */
+    /* 统一员工搜索面板：与工单/知识库 @提及、团队管理同源（GET /api/search?type=user）同款
+       不再整段隐藏本部门成员（否则按部门/职位搜不到任何结果）：本部门的人照样列出，
+       只是「加入」按钮置灰为「已在部门」 */
     var ms = window.MemberSearch.createPanel({
       placeholder: "搜索姓名 / 邮箱 / 部门 / 职位…",
-      excludeDepartments: [node.department],
       actionLabel: "加入",
+      disabledAction: function (mem) {
+        return mem.department === node.department ? "已在部门" : null;
+      },
       emptyText: "暂无可添加的员工",
       onAction: function (mem, btn) {
         hideError();

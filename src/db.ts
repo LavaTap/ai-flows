@@ -82,11 +82,11 @@ export interface NodeArtifact {
   at: string;
 }
 
-/** 显式挂到节点的执行角色：邮箱 + 加入前的原部门（删除时回滚部门用） */
+/** 显式挂到节点的执行人：邮箱 + 加入前的原部门（删除时回滚部门用） */
 export interface NodeExecutor {
   /** 员工邮箱 */
   email: string;
-  /** 加入节点部门之前的部门（主管删除该执行角色时回滚；缺省不回滚） */
+  /** 加入节点部门之前的部门（主管删除该执行人时回滚；缺省不回滚） */
   from?: string;
 }
 
@@ -124,9 +124,9 @@ export interface NodeState {
   reportUrl?: string;
   /** 最近一次执行选用的输出目录（相对目标仓库根） */
   outputDir?: string;
-  /** 显式挂到本节点的执行角色（主管「+」添加 / 工单负责人自动挂载） */
+  /** 显式挂到本节点的执行人（主管「+」添加 / 工单负责人自动挂载） */
   executors?: NodeExecutor[];
-  /** 显式从本节点执行角色中排除的邮箱（删除部门派生成员时记入） */
+  /** 显式从本节点执行人中排除的邮箱（删除部门派生成员时记入） */
   removedExecutors?: string[];
 }
 
@@ -136,7 +136,7 @@ export interface ReviewRecord {
   id: string;
   /** 来源：platform=管线页「执行」触发；external=hook / 手动 run 产生 */
   source: "platform" | "external";
-  /** 执行角色名（岗位/电话），外部触发视为「外部触发」 */
+  /** 执行人名（岗位/电话），外部触发视为「外部触发」 */
   actor: string;
   /** 执行人邮箱（platform 记录有值；external 为空串） */
   email: string;
@@ -303,6 +303,49 @@ export interface KbArticle {
   updatedByName: string;
   /** 最近更新人邮箱 */
   updatedByEmail: string;
+}
+
+/** 知识库评论（表 kb_comments）。可见性跟随所属文章，由上层按 canViewKb 判定 */
+export interface KbComment {
+  /** 评论 id（c- 前缀 + 随机 hex，与工单评论同源） */
+  id: string;
+  /** 所属文章 id */
+  articleId: string;
+  /** 评论人姓名 */
+  author: string;
+  /** 评论人邮箱 */
+  email: string;
+  /** 评论人部门 */
+  department: string;
+  /** 评论正文（白名单净化后的富文本 HTML） */
+  content: string;
+  /** ISO 时间戳 */
+  at: string;
+}
+
+/** 点赞对象类型：article=知识库文章 / comment=知识库评论 */
+export type KbLikeTarget = "article" | "comment";
+
+/** 知识库点赞（表 kb_likes）。同一人对同一对象只记一条，再点一次即取消 */
+export interface KbLike {
+  /** 点赞 id */
+  id: string;
+  /** 点赞对象类型 */
+  targetType: KbLikeTarget;
+  /** 点赞对象 id */
+  targetId: string;
+  /** 点赞人邮箱（统一小写） */
+  email: string;
+  /** 点赞人姓名 */
+  name: string;
+  /** ISO 时间戳 */
+  at: string;
+}
+
+/** 某对象被点赞后的结果：like=当前是否已点赞，count=最新点赞数 */
+export interface KbLikeState {
+  liked: boolean;
+  count: number;
 }
 
 /** Token 用量明细（表 token_usage，主库）。一次模型请求记一条，供 Token 面板按人/时段聚合。
@@ -1687,9 +1730,191 @@ export function updateKbArticle(id: string, mutate: (a: KbArticle) => void): KbA
   return article;
 }
 
-/** 按 id 删除知识库文章；返回是否命中 */
+/** 按 id 删除知识库文章（评论与点赞无外键，这里显式清理）；返回是否命中 */
 export function deleteKbArticle(id: string): boolean {
-  return db().prepare("DELETE FROM kb.kb_articles WHERE id = ?").run(id).changes > 0;
+  const c = db();
+  const hit = c.prepare("DELETE FROM kb.kb_articles WHERE id = ?").run(id).changes > 0;
+  if (!hit) return false;
+  c.prepare("DELETE FROM kb.kb_comments WHERE article_id = ?").run(id);
+  c.prepare("DELETE FROM kb.kb_likes WHERE target_type = 'comment' AND target_id IN (SELECT id FROM kb.kb_comments WHERE article_id = ?)").run(id);
+  c.prepare("DELETE FROM kb.kb_likes WHERE target_type = 'article' AND target_id = ?").run(id);
+  return true;
+}
+
+// ============ 知识库评论 ============
+
+interface KbCommentRow {
+  id: string;
+  article_id: string;
+  author: string;
+  email: string;
+  department: string;
+  content: string;
+  at: string;
+}
+
+function rowToKbComment(r: KbCommentRow): KbComment {
+  return {
+    id: r.id,
+    articleId: r.article_id,
+    author: r.author,
+    email: r.email,
+    department: departmentNameOf(r.department),
+    content: r.content,
+    at: r.at,
+  };
+}
+
+function kbCommentParams(c: KbComment, ord: number): Record<string, unknown> {
+  return {
+    ord,
+    id: c.id,
+    articleId: c.articleId,
+    author: c.author,
+    email: c.email,
+    department: departmentIdOf(c.department),
+    content: c.content,
+    at: c.at,
+  };
+}
+
+const KB_COMMENT_INSERT_SQL =
+  "INSERT OR REPLACE INTO kb.kb_comments (ord,id,article_id,author,email,department,content,at) VALUES (@ord,@id,@articleId,@author,@email,@department,@content,@at)";
+
+/** 读取某篇文章的全部评论（按时间正序） */
+export function loadKbComments(articleId: string): KbComment[] {
+  return (
+    db()
+      .prepare("SELECT * FROM kb.kb_comments WHERE article_id = ? ORDER BY ord")
+      .all(articleId) as KbCommentRow[]
+  ).map(rowToKbComment);
+}
+
+/** 按 id 找一条知识库评论（不存在返回 null） */
+export function findKbComment(id: string): KbComment | null {
+  const row = db()
+    .prepare("SELECT * FROM kb.kb_comments WHERE id = ?")
+    .get(id) as KbCommentRow | undefined;
+  return row ? rowToKbComment(row) : null;
+}
+
+/** 追加一条知识库评论 */
+export function appendKbComment(comment: KbComment): void {
+  const c = db();
+  c.prepare(KB_COMMENT_INSERT_SQL).run(kbCommentParams(comment, nextOrd(c, "kb.kb_comments")));
+}
+
+/** 按 id 删除知识库评论（其点赞一并清理）；返回是否命中 */
+export function deleteKbComment(id: string): boolean {
+  const c = db();
+  const hit = c.prepare("DELETE FROM kb.kb_comments WHERE id = ?").run(id).changes > 0;
+  if (hit) c.prepare("DELETE FROM kb.kb_likes WHERE target_type = 'comment' AND target_id = ?").run(id);
+  return hit;
+}
+
+// ============ 知识库点赞 ============
+
+interface KbLikeRow {
+  id: string;
+  target_type: string;
+  target_id: string;
+  email: string;
+  name: string;
+  at: string;
+}
+
+function rowToKbLike(r: KbLikeRow): KbLike {
+  return {
+    id: r.id,
+    targetType: (r.target_type === "comment" ? "comment" : "article") as KbLikeTarget,
+    targetId: r.target_id,
+    email: r.email,
+    name: r.name,
+    at: r.at,
+  };
+}
+
+function kbLikeParams(l: KbLike, ord: number): Record<string, unknown> {
+  return {
+    ord,
+    id: l.id,
+    targetType: l.targetType,
+    targetId: l.targetId,
+    email: l.email.toLowerCase(),
+    name: l.name,
+    at: l.at,
+  };
+}
+
+const KB_LIKE_INSERT_SQL =
+  "INSERT OR REPLACE INTO kb.kb_likes (ord,id,target_type,target_id,email,name,at) VALUES (@ord,@id,@targetType,@targetId,@email,@name,@at)";
+
+/** 读取某类对象的全部点赞记录 */
+export function loadKbLikes(targetType: KbLikeTarget): KbLike[] {
+  return (
+    db()
+      .prepare("SELECT * FROM kb.kb_likes WHERE target_type = ? ORDER BY ord")
+      .all(targetType) as KbLikeRow[]
+  ).map(rowToKbLike);
+}
+
+/** 批量统计某类对象的点赞数：targetId → 点赞数（用于列表页一次算完，避免逐条查） */
+export function countKbLikes(targetType: KbLikeTarget): Map<string, number> {
+  const rows = db()
+    .prepare("SELECT target_id, COUNT(*) AS n FROM kb.kb_likes WHERE target_type = ? GROUP BY target_id")
+    .all(targetType) as { target_id: string; n: number }[];
+  return new Map(rows.map((r) => [r.target_id, r.n]));
+}
+
+/** 批量取某人已点赞的对象 id（用于渲染「我已点赞」态） */
+export function likedKbTargetIds(targetType: KbLikeTarget, email: string): Set<string> {
+  const rows = db()
+    .prepare("SELECT target_id FROM kb.kb_likes WHERE target_type = ? AND email = ?")
+    .all(targetType, (email ?? "").trim().toLowerCase()) as { target_id: string }[];
+  return new Set(rows.map((r) => r.target_id));
+}
+
+/** 点赞 / 取消点赞：同一人重复调用即为切换，返回切换后的状态与最新点赞数 */
+export function toggleKbLike(
+  targetType: KbLikeTarget,
+  targetId: string,
+  email: string,
+  name: string
+): KbLikeState {
+  const c = db();
+  const mail = (email ?? "").trim().toLowerCase();
+  const exist = c
+    .prepare("SELECT id FROM kb.kb_likes WHERE target_type = ? AND target_id = ? AND email = ?")
+    .get(targetType, targetId, mail) as { id: string } | undefined;
+  if (exist) {
+    c.prepare("DELETE FROM kb.kb_likes WHERE id = ?").run(exist.id);
+  } else {
+    c.prepare(KB_LIKE_INSERT_SQL).run(
+      kbLikeParams(
+        {
+          id: newId("kl"),
+          targetType,
+          targetId,
+          email: mail,
+          name: name || mail.split("@")[0] || mail,
+          at: new Date().toISOString(),
+        },
+        nextOrd(c, "kb.kb_likes")
+      )
+    );
+  }
+  const row = c
+    .prepare("SELECT COUNT(*) AS n FROM kb.kb_likes WHERE target_type = ? AND target_id = ?")
+    .get(targetType, targetId) as { n: number };
+  return { liked: !exist, count: row.n };
+}
+
+/** 列出某对象的点赞人姓名（按时间正序；用于鼠标悬停提示） */
+export function kbLikeNames(targetType: KbLikeTarget, targetId: string): string[] {
+  const rows = db()
+    .prepare("SELECT name FROM kb.kb_likes WHERE target_type = ? AND target_id = ? ORDER BY ord")
+    .all(targetType, targetId) as { name: string }[];
+  return rows.map((r) => r.name);
 }
 
 // ============ 站内消息 ============

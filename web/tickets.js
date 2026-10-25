@@ -43,8 +43,8 @@
   /* ────────────── 成员与用户卡片（共享实现：/user-card.js） ────────────── */
 
   var members = boot.members || [];
-  /** @提及选中过的成员缓存（姓名 → 用户对象），供 buildCommentHtml 把 @姓名 转成带 email 的链接 */
-  var mentionUserCache = {};
+  /** 评论区句柄（@提及下拉的 close，提交成功后收起）；实现见共享模块 /comment-input.js */
+  var commentInput = null;
   var UC = window.UserCard;
   UC.setMembers(members);
 
@@ -297,61 +297,6 @@
     decorateKbCards(root);
   }
 
-  /**
-   * 纯文本评论 → 落库 HTML：转义 + 换行转 <br> + @姓名 转带 data-email 的提及链接
-   * （评论输入为纯文本，这里只做最小转换，仍由服务端 sanitizeRichHtml 二次净化）
-   */
-  function buildCommentHtml(text) {
-    var names = [];
-    var byName = {};
-    members.forEach(function (m) {
-      var nm = (m.name || "").trim();
-      if (!nm || byName[nm]) return;
-      byName[nm] = m;
-      names.push(nm);
-    });
-    // 把 @提及 候选里选过的人也加进来（搜索接口返回的可能不在 members 里）
-    Object.keys(mentionUserCache || {}).forEach(function (nm) {
-      if (!byName[nm]) {
-        byName[nm] = mentionUserCache[nm];
-        names.push(nm);
-      }
-    });
-    names.sort(function (a, b) { return b.length - a.length; });
-
-    function escText(s) {
-      return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    }
-
-    var out = "";
-    var plain = "";
-    function flush() {
-      if (plain) { out += escText(plain); plain = ""; }
-    }
-    var i = 0;
-    while (i < text.length) {
-      var ch = text.charAt(i);
-      if (ch === "@" && (i === 0 || /[\s\u3000]/.test(text.charAt(i - 1)))) {
-        var hit = null;
-        for (var k = 0; k < names.length; k++) {
-          if (text.substr(i + 1, names[k].length) === names[k]) { hit = names[k]; break; }
-        }
-        if (hit) {
-          flush();
-          var m = byName[hit];
-          out += '<a href="' + esc(profileUrl(m.email)) + '" data-email="' + esc(m.email) + '">@' + escText(hit) + "</a>";
-          i += hit.length + 1;
-          continue;
-        }
-      }
-      if (ch === "\n") { flush(); out += "<br>"; i++; continue; }
-      plain += ch;
-      i++;
-    }
-    flush();
-    return out;
-  }
-
   function renderStatusBar(t) {
     var bar = byId("dStatusBar");
     bar.innerHTML = "";
@@ -493,7 +438,7 @@
     var title = document.createElement("div");
     title.className = "ap-title";
     title.textContent = t.nodeId
-      ? "指派负责人（该员工会加入关联节点的执行角色）"
+      ? "指派负责人（该员工会加入关联节点的执行人）"
       : "指派负责人（被指派者会收到消息提醒）";
     pop.appendChild(title);
     var search = document.createElement("input");
@@ -783,150 +728,11 @@
       .catch(function () { alert("删除失败，请稍后重试"); });
   }
 
-  /* ────────────── 纯文本评论输入（@提及成员） ────────────── */
+  /* ────────────── 纯文本评论输入（@提及成员，共享实现：/comment-input.js） ────────────── */
 
-  var cm = { active: false, start: -1, query: "", list: [], idx: 0 };
-
-  function cmClose() {
-    cm.active = false;
-    cm.query = "";
-    cm.list = [];
-    var pop = byId("commentPop");
-    if (pop) { pop.hidden = true; pop.innerHTML = ""; }
-  }
-
-  /** 评论输入框：监听 @ 触发成员候选（纯文本输入，选中后插入 @姓名） */
+  /** 挂载评论框的 @提及下拉，返回句柄（提交成功后调 close 收起） */
   function initCommentInput() {
-    var input = byId("commentInput");
-    var box = input.parentNode;
-    var pop = document.createElement("div");
-    pop.className = "mention-pop";
-    pop.id = "commentPop";
-    pop.hidden = true;
-    box.appendChild(pop);
-
-    /** 调用全局搜索接口搜员工（姓名 / 邮箱 / 部门 / 职位都能命中） */
-    var searchTimer = null;
-    function searchUsers(q, cb) {
-      if (searchTimer) { clearTimeout(searchTimer); searchTimer = null; }
-      var ql = (q || "").trim();
-      if (!ql) {
-        cb(members.slice(0, 8));
-        return;
-      }
-      searchTimer = setTimeout(function () {
-        fetch("/api/search?type=user&q=" + encodeURIComponent(ql),
-          { headers: { Accept: "application/json" } })
-          .then(function (r) { return r.json().catch(function () { return {}; }); })
-          .then(function (d) {
-            var results = (d && d.results) ? d.results : [];
-            cb(results);
-          })
-          .catch(function () { cb([]); });
-      }, 200);
-    }
-
-    /* 回退行：MemberSearch 缺失时也产出同款 .ms-row 结构，保证与管线面板一致 */
-    function fallbackMentionRow(u) {
-      var el = document.createElement("div");
-      el.className = "ms-row";
-      el.appendChild(makeAvatar(u, u.email, "ms-avatar"));
-      var info = document.createElement("div");
-      info.className = "ms-info";
-      var nm = document.createElement("div");
-      nm.className = "ms-name";
-      nm.textContent = u.name || u.email;
-      var mt = document.createElement("div");
-      mt.className = "ms-meta";
-      mt.textContent = [u.department, u.title].filter(Boolean).join(" · ") || "—";
-      info.appendChild(nm);
-      info.appendChild(mt);
-      el.appendChild(info);
-      return el;
-    }
-
-    function cmRender() {
-      if (!cm.active) return;
-      pop.innerHTML = "";
-      if (!cm.list.length) {
-        var empty = document.createElement("div");
-        empty.className = "ms-empty";
-        empty.textContent = "没有匹配的成员";
-        pop.appendChild(empty);
-      }
-      cm.list.forEach(function (u, i) {
-        /* 复用统一员工搜索行（MemberSearch.row → .ms-row），与管线「指派执行人」面板同款 */
-        var item = window.MemberSearch ? window.MemberSearch.row(u, {}) : fallbackMentionRow(u);
-        item.classList.add("mention-row");
-        if (i === cm.idx) item.classList.add("on");
-        item.addEventListener("mousedown", function (e) { e.preventDefault(); cmInsert(u); });
-        pop.appendChild(item);
-      });
-      var r = input.getBoundingClientRect();
-      var br = box.getBoundingClientRect();
-      pop.style.left = Math.max(0, r.left - br.left) + "px";
-      pop.style.top = (r.bottom - br.top + 4) + "px";
-      pop.hidden = false;
-    }
-
-    function cmCheck() {
-      var pos = input.selectionStart;
-      var before = input.value.slice(0, pos);
-      var m = before.match(/(^|[\s\u3000])@([^\s@]{0,20})$/);
-      if (!m) { cmClose(); return; }
-      cm.active = true;
-      cm.start = pos - m[2].length - 1;
-      cm.query = m[2];
-      cm.idx = 0;
-      // 先本地快速渲染一版，接口返回后再替换
-      cm.list = (m[2] ? members.filter(function (u) {
-        return ((u.name || "") + " " + u.email).toLowerCase().indexOf(m[2].toLowerCase()) !== -1;
-      }) : members).slice(0, 8);
-      cmRender();
-      searchUsers(m[2], function (results) {
-        if (!cm.active) return;
-        cm.list = results.slice(0, 8);
-        cm.idx = 0;
-        cmRender();
-      });
-    }
-
-    function cmInsert(u) {
-      var nm = u.name || u.email.split("@")[0];
-      // 把选中的人缓存起来，buildCommentHtml 用它把 @姓名 转成带 email 的链接
-      if (nm && u.email) mentionUserCache[nm] = u;
-      var pos = input.selectionStart;
-      var v = input.value;
-      input.value = v.slice(0, cm.start) + "@" + nm + " " + v.slice(pos);
-      var np = cm.start + nm.length + 2;
-      input.setSelectionRange(np, np);
-      cmClose();
-      input.focus();
-    }
-
-    input.addEventListener("input", cmCheck);
-    input.addEventListener("click", cmCheck);
-    input.addEventListener("keydown", function (e) {
-      if (!cm.active) return;
-      if (e.key === "Escape") {
-        e.preventDefault();
-        cmClose();
-      } else if (e.key === "ArrowDown") {
-        e.preventDefault();
-        if (cm.list.length) { cm.idx = (cm.idx + 1) % cm.list.length; cmRender(); }
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        if (cm.list.length) { cm.idx = (cm.idx - 1 + cm.list.length) % cm.list.length; cmRender(); }
-      } else if (e.key === "Enter" || e.key === "Tab") {
-        if (cm.list.length && cm.list[cm.idx]) {
-          e.preventDefault();
-          cmInsert(cm.list[cm.idx]);
-        }
-      }
-    });
-    document.addEventListener("mousedown", function (e) {
-      if (!box.contains(e.target)) cmClose();
-    });
+    return window.CommentInput.attach(byId("commentInput"), function () { return members; });
   }
 
   function addComment() {
@@ -941,7 +747,9 @@
     }
     var btn = byId("commentSubmit");
     btn.disabled = true;
-    post("/api/tickets/" + encodeURIComponent(state.current.id) + "/comments", { content: buildCommentHtml(text) })
+    post("/api/tickets/" + encodeURIComponent(state.current.id) + "/comments", {
+      content: window.CommentInput.buildHtml(text, members),
+    })
       .then(function (r) {
         btn.disabled = false;
         if (!r.ok) {
@@ -951,7 +759,7 @@
         }
         err.hidden = true;
         input.value = "";
-        cmClose();
+        if (commentInput) commentInput.close();
         var ticket = r.data.ticket;
         state.current = ticket;
         renderComments(ticket);
@@ -1019,7 +827,7 @@
     initTopbar();
     initUserCard();
     initFilters();
-    initCommentInput();
+    commentInput = initCommentInput();
     byId("newBtn").addEventListener("click", openCreate);
     byId("cancelBtn").addEventListener("click", onCancelEdit);
     byId("cancelBtn2").addEventListener("click", onCancelEdit);

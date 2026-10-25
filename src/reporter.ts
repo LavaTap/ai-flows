@@ -118,15 +118,19 @@ function rich(text: string): string {
   return esc(text).replace(/`([^`]+)`/g, "<code>$1</code>");
 }
 
-/** 参考模板样式（Vela 暖暗黑）。内联以保证报告 HTML 自包含、可离线打开 */
+/** 代码评审报告页样式——视觉风格与 ai-pipeline 平台页对齐。
+ *  内联以保证报告 HTML 自包含、可离线打开。 */
 const REPORT_CSS = `
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap");
+
 :root {
-  /* ===== ai-pipeline 标准变量（亮色） ===== */
+  /* ===== 与 ai-pipeline.css 一致的标准变量（亮色） ===== */
   --paper:#f8fafc; --paper-2:#f1f5f9;
   --ink:#0f172a; --ink-soft:#334155; --copy:#334155;
   --muted:#64748b; --muted-2:#94a3b8;
   --glass-line:#e2e8f0; --glass-line-strong:#cbd5e1;
   --glass-fill:#ffffff; --glass-fill-soft:#ffffff;
+  --surface:#ffffff;
   --led:#4f46e5; --led-soft:rgba(79,70,229,.10); --led-glow:rgba(79,70,229,.30);
   --ok:#10b981; --block:#ef4444; --amber:#f59e0b;
   --amber-soft:rgba(245,158,11,.12); --amber-line:rgba(245,158,11,.35);
@@ -137,7 +141,7 @@ const REPORT_CSS = `
   --font-sans:"Inter","PingFang SC",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   --font-mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
 
-  /* ===== 评审页旧变量名（别名，指向标准变量） ===== */
+  /* ===== 评审页旧变量名（别名，指向标准变量，向后兼容） ===== */
   --bg:var(--paper);
   --surface:var(--glass-fill);
   --surface-2:var(--paper-2);
@@ -163,14 +167,14 @@ const REPORT_CSS = `
   --sans:var(--font-sans);
   --mono:var(--font-mono);
 }
-/* 暗色主题 */
+/* 暗色主题（保留评审页独有暗色模式，变量与管线页暗色调性一致） */
 [data-theme="dark"] {
-  /* ===== ai-pipeline 标准变量（暗色） ===== */
   --paper:#0f172a; --paper-2:#1e293b;
   --ink:#f1f5f9; --ink-soft:#cbd5e1; --copy:#cbd5e1;
   --muted:#94a3b8; --muted-2:#64748b;
   --glass-line:rgba(148,163,184,.15); --glass-line-strong:rgba(148,163,184,.25);
   --glass-fill:#1e293b; --glass-fill-soft:#1e293b;
+  --surface:#1e293b;
   --led:#818cf8; --led-soft:rgba(129,140,248,.14); --led-glow:rgba(129,140,248,.30);
   --ok:#34d399; --block:#f87171; --amber:#fbbf24;
   --amber-soft:rgba(251,191,36,.14); --amber-line:rgba(251,191,36,.35);
@@ -178,7 +182,6 @@ const REPORT_CSS = `
   --purple:#a78bfa; --purple-soft:rgba(167,139,250,.14); --purple-line:rgba(167,139,250,.35);
   --info:#60a5fa; --info-soft:rgba(96,165,250,.14);
 
-  /* ===== 评审页旧变量名（别名） ===== */
   --bg:var(--paper);
   --surface:var(--glass-fill);
   --surface-2:var(--paper-2);
@@ -210,30 +213,31 @@ const REPORT_CSS = `
 [data-theme="dark"] .theme-toggle .icon-moon { display:none; }
 * { box-sizing:border-box; }
 html, body { margin:0; padding:0; background:var(--bg); color:var(--text); font-family:var(--sans); font-size:14px; line-height:20px; -webkit-font-smoothing:antialiased; text-rendering:geometricPrecision; }
-body { background:var(--bg); min-height:100vh; }
+body { background:var(--bg); min-height:100vh; padding-top:56px; }
 a { color:var(--info); text-decoration:none; }
 a:hover { text-decoration:underline; }
-/* 顶栏：与管线页风格一致（纯白底 + 细边框 + LED 圆点 + 三级标题） */
-.topbar { width:100%; padding:14px 28px; display:flex; align-items:center; justify-content:space-between; gap:16px; border-bottom:1px solid var(--border); background:var(--surface); position:sticky; top:0; z-index:10; }
+/* 顶栏：与管线页风格一致（fixed 56px + 白底 + 细边框 + LED 圆点 + 三级标题） */
+.topbar { position:fixed; top:0; left:0; right:0; z-index:100; height:56px; padding:0 24px; display:flex; align-items:center; justify-content:space-between; gap:16px; border-bottom:1px solid var(--border); background:var(--surface); }
 .brand { display:flex; align-items:center; gap:12px; min-width:0; }
-/* LED 品牌圆点 */
-.brand-dot { width:10px; height:10px; border-radius:50%; background:var(--accent); box-shadow:0 0 6px var(--accent-soft), 0 0 12px var(--accent-soft); flex:none; }
-/* 顶栏标题：管线名 / 仓库名 / report */
-.brand-title { display:flex; align-items:baseline; gap:0; margin:0; font-size:19px; font-weight:300; line-height:1.15; letter-spacing:.01em; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* LED 品牌圆点（与管线页 .brand .dot 一致） */
+.brand .dot { width:10px; height:10px; border-radius:50%; background:var(--accent); box-shadow:0 0 6px var(--led-glow), 0 0 12px var(--led-glow); flex:none; }
+/* 顶栏标题：管线名 / 仓库名 / report —— 与管线页一致 */
+.brand-title { display:flex; align-items:baseline; gap:0; margin:0; font-size:19px; font-weight:300; line-height:1.15; letter-spacing:.01em; color:var(--ink-soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .brand-title .tt-pipeline { color:var(--accent); font-weight:500; }
-.brand-title .tt-sep { color:var(--dim); margin:0 .35em; font-weight:300; }
-.brand-title .tt-repo { color:var(--text); font-weight:400; }
+.brand-title .tt-sep { color:var(--muted-2); margin:0 .35em; font-weight:300; }
+.brand-title .tt-repo { color:var(--ink-soft); font-weight:400; }
 .brand-title .tt-page { color:var(--muted); font-weight:300; font-family:var(--mono); font-size:16px; }
-.topbar-actions { display:flex; align-items:center; gap:8px; flex:none; }
+.top-right { display:flex; align-items:center; gap:8px; flex:none; }
 .account-info { display:inline-flex; align-items:center; gap:8px; padding:4px 12px; border:1px solid var(--border); border-radius:999px; font-family:var(--mono); font-size:11.5px; color:var(--muted); background:var(--surface); flex-wrap:wrap; max-width:100%; }
 .account-info .ai-badge { display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius:999px; background:var(--accent-soft); color:var(--accent); font-weight:700; letter-spacing:.5px; font-size:10.5px; }
 .account-info .acc-sep { color:var(--dim); }
 .account-info .acc-ref { color:var(--accent); }
 .account-info .acc-time { color:var(--muted); }
 .account-info .acc-author { color:var(--dim); }
-.submit-toggle { appearance:none; border:1px solid var(--border); background:var(--surface-2); color:var(--text); font:500 12px/18px var(--sans); padding:4px 12px; border-radius:999px; cursor:pointer; white-space:nowrap; display:inline-flex; align-items:center; gap:6px; transition:all 150ms ease; }
-.submit-toggle:hover { border-color:var(--border-strong); background:var(--surface); }
-.submit-toggle .dot { width:6px; height:6px; border-radius:50%; background:var(--accent); box-shadow:0 0 4px var(--accent-soft); }
+/* 提交按钮（顶栏）——与管线页按钮风格一致：pill 形 */
+.submit-toggle { appearance:none; border:1px solid var(--accent); background:var(--accent); color:#fff; font-family:var(--sans); font-size:12px; font-weight:600; padding:5px 14px; border-radius:999px; cursor:pointer; transition:all 150ms ease; display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
+.submit-toggle:hover { background:#4338ca; border-color:#4338ca; }
+.submit-toggle .dot { width:6px; height:6px; border-radius:50%; background:#fff; }
 .back-link { font-size:12px; color:var(--muted); padding:4px 12px; border:1px solid var(--border); border-radius:999px; transition:all 150ms ease; text-decoration:none; white-space:nowrap; }
 .back-link:hover { color:var(--text); border-color:var(--border-strong); background:var(--surface-2); text-decoration:none; }
 .main { width:100%; padding:0; }
@@ -248,7 +252,6 @@ a:hover { text-decoration:underline; }
 .verdict.block .verdict-icon { background:var(--block-soft); }
 .verdict.block .verdict-icon svg { stroke:var(--block); }
 .verdict-pill.block { color:var(--block); background:var(--block-soft); border-color:var(--block-line); }
-.topbar-actions { display:inline-flex; align-items:center; gap:8px; }
 .summary { padding:20px 0; border-top:1px solid var(--border); }
 .summary-head { display:flex; align-items:center; justify-content:space-between; gap:12px; cursor:pointer; user-select:none; }
 .summary h2 { margin:0; font-size:12px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:var(--dim); }
@@ -316,7 +319,7 @@ code { font-family:var(--mono); font-size:.92em; }
 /* ===== 主体两栏：左 320 + 右 1fr ===== */
 .workspace { display:grid; grid-template-columns:300px 1fr; gap:0; align-items:stretch; }
 /* 左侧：单一面板，内含仓库目录/变更文件/违反条例三段，冻结不随页面滚动 */
-.left-stack { position:sticky; top:64px; height:calc(100vh - 84px); border-right:1px solid var(--border); }
+.left-stack { position:sticky; top:56px; height:calc(100vh - 56px); border-right:1px solid var(--border); }
 .left-panel { height:100%; overflow:hidden; display:flex; flex-direction:column; }
 .left-panel-body { flex:1; min-height:0; overflow:auto; }
 .left-panel-body::-webkit-scrollbar { width:6px; }
@@ -379,10 +382,6 @@ code { font-family:var(--mono); font-size:.92em; }
 .result-body .stat .lbl { font-size:10px; }
 .result-body .pushes { margin-top:10px; padding:12px 0; }
 
-/* 提交按钮（顶栏） */
-.submit-toggle { appearance:none; border:1px solid var(--accent); background:var(--accent); color:#fff; font-family:var(--sans); font-size:13px; font-weight:700; padding:7px 16px; border-radius:8px; cursor:pointer; transition:all 150ms ease; display:inline-flex; align-items:center; gap:6px; }
-.submit-toggle:hover { background:#4338ca; border-color:#4338ca; }
-.submit-toggle .dot { width:7px; height:7px; border-radius:50%; background:var(--accent); ; }
 /* 确认提交栏（顶栏下方展开） */
 .submit-bar-wrap { max-height:0; overflow:hidden; transition:max-height 300ms ease; }
 .submit-bar-wrap.open { max-height:300px; }
@@ -469,11 +468,85 @@ code { font-family:var(--mono); font-size:.92em; }
 @media (max-width:980px) { .diff-panel { position:static; max-height:none; } }
 @media (max-width:860px) { .stats { grid-template-columns:repeat(3,1fr); } }
 @media (max-width:560px) {
-  .topbar { flex-wrap:wrap; padding:16px 18px; }
+  .topbar { height:auto; padding:10px 16px; gap:8px; }
+  body { padding-top:56px; }
   .main { padding:24px 18px 60px; }
   .verdict { flex-direction:column; align-items:flex-start; gap:14px; padding:20px; }
   .stats { grid-template-columns:repeat(2,1fr); } .stat .num { font-size:24px; }
 }
+
+/* ===== 与管线页一致的顶栏组件：导航链接 / 用户菜单 / 消息铃铛 ===== */
+.nav-link { font:500 12px/18px var(--sans); color:var(--ink-soft); text-decoration:none;
+  padding:4px 10px; border-radius:999px; white-space:nowrap; transition:color 150ms ease, background 150ms ease; cursor:pointer; }
+.nav-link:hover { background:var(--paper-2); text-decoration:none; }
+.nav-link.active { color:var(--led); background:var(--led-soft); }
+
+.user-menu { position:relative; display:inline-flex; }
+.user-chip { display:flex; align-items:center; gap:8px; padding:4px 12px;
+  border:1px solid var(--glass-line); border-radius:999px; font-size:12px; line-height:18px;
+  color:var(--copy); white-space:nowrap; background:var(--glass-fill); cursor:pointer; }
+.user-chip .avatar { width:16px; height:16px; border-radius:50%; background:var(--paper-2);
+  border:1px solid var(--glass-line); overflow:hidden; display:inline-flex; align-items:center;
+  justify-content:center; font-size:10px; font-weight:700; color:#fff; }
+.user-panel { position:absolute; top:calc(100% + 8px); right:0; z-index:90; width:260px;
+  background:var(--glass-fill); border:1px solid var(--glass-line); border-radius:12px;
+  box-shadow:0 12px 32px rgba(15,23,42,.12), 0 2px 6px rgba(15,23,42,.06); overflow:hidden; }
+.user-panel[hidden] { display:none; }
+.user-panel-head { display:flex; align-items:center; gap:10px; padding:14px 16px; cursor:pointer; }
+.user-panel-head:hover { background:var(--paper-2); }
+.user-panel-head .avatar { width:36px; height:36px; border-radius:50%;
+  background:var(--paper-2); border:1px solid var(--glass-line); overflow:hidden;
+  display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:700; color:#fff; flex:none; }
+.user-panel-meta { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.user-panel-meta strong { font:600 13px/18px var(--sans); color:var(--ink); }
+.user-panel-email { font:400 11.5px/16px var(--mono); color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.user-panel-sep { height:1px; background:var(--glass-line); }
+.user-panel-item { display:flex; align-items:center; gap:10px; padding:10px 16px;
+  font:500 12.5px/18px var(--sans); color:var(--ink-soft); background:transparent;
+  border:none; width:100%; text-align:left; cursor:pointer; text-decoration:none; }
+.user-panel-item:hover { background:var(--paper-2); color:var(--ink); text-decoration:none; }
+.user-panel-ico { width:18px; text-align:center; color:var(--muted); }
+.user-panel-logout { color:var(--block); }
+.user-panel-logout:hover { background:rgba(239,68,68,.08); color:var(--block); }
+
+/* 消息铃铛 */
+.msg-bell { position:relative; display:inline-flex; align-items:center; justify-content:center;
+  width:30px; height:30px; border:1px solid var(--glass-line); border-radius:999px;
+  background:var(--glass-fill); color:var(--copy); cursor:pointer;
+  transition:color .15s ease, border-color .15s ease, background .15s ease; padding:0; }
+.msg-bell:hover, .msg-bell[aria-expanded="true"] { color:var(--led); border-color:var(--led); }
+.msg-bell svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:1.7;
+  stroke-linecap:round; stroke-linejoin:round; pointer-events:none; }
+.msg-bell .msg-dot { position:absolute; top:-1px; right:-1px; width:8px; height:8px;
+  border-radius:50%; background:#e5484d; box-shadow:0 0 0 2px var(--paper); }
+.msg-bell .msg-dot[hidden] { display:none; }
+.msg-pop { position:absolute; top:calc(100% + 8px); right:0; z-index:80; width:340px;
+  max-height:420px; display:flex; flex-direction:column; background:var(--glass-fill);
+  border:1px solid var(--glass-line); border-radius:12px;
+  box-shadow:0 12px 32px rgba(15,23,42,.12), 0 2px 6px rgba(15,23,42,.06); overflow:hidden; }
+.msg-pop[hidden] { display:none; }
+.msg-pop-head { display:flex; align-items:center; justify-content:space-between; padding:12px 16px;
+  border-bottom:1px solid var(--glass-line); font:600 13px/20px var(--sans); color:var(--ink-soft); }
+.msg-pop-head .mp-count { font:400 11px/16px var(--sans); color:var(--muted); }
+.msg-pop-list { list-style:none; margin:0; padding:0; overflow-y:auto; flex:1; min-height:0; }
+.msg-pop-item { display:flex; gap:10px; padding:10px 16px; cursor:pointer;
+  border-bottom:1px solid var(--glass-line); transition:background .12s ease; }
+.msg-pop-item:last-child { border-bottom:none; }
+.msg-pop-item:hover { background:var(--paper-2); }
+.msg-pop-item .mpi-ico { flex:none; width:28px; height:28px; border-radius:8px;
+  display:flex; align-items:center; justify-content:center; background:var(--led-soft);
+  color:var(--led); font-size:13px; }
+.msg-pop-item .mpi-body { flex:1; min-width:0; }
+.msg-pop-item .mpi-title { font:500 12.5px/18px var(--sans); color:var(--ink-soft);
+  display:flex; align-items:center; gap:6px; }
+.msg-pop-item .mpi-title .mpi-dot { flex:none; width:6px; height:6px; border-radius:50%; background:var(--led); }
+.msg-pop-item .mpi-text { font:400 11.5px/16px var(--sans); color:var(--muted);
+  margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.msg-pop-item .mpi-time { font:400 10.5px/14px var(--mono); color:var(--muted-2); margin-top:3px; }
+.msg-pop-empty { padding:32px 16px; text-align:center; font:400 12px/18px var(--sans); color:var(--muted-2); }
+.msg-pop-foot { border-top:1px solid var(--glass-line); padding:10px 16px; text-align:center; }
+.msg-pop-foot a { font:500 12.5px/18px var(--sans); color:var(--led); text-decoration:none; }
+.msg-pop-foot a:hover { text-decoration:underline; }
 `;
 
 /** 顶栏左对齐标题：管线名 / 仓库名 / report。
@@ -489,11 +562,12 @@ function titleParts(v: ReportView): { pipeline: string; repo: string } {
   return { pipeline, repo };
 }
 
-/** 顶栏标题 HTML：pipeline / repo / report —— 与管线页 .brand-title 结构一致 */
+/** 顶栏标题 HTML：代码评审 / 仓库名 / report —— 与管线页结构一致
+ *  首段固定为「代码评审」，仓库名取 repo 或 repoCwd 末段。 */
 function titleHtml(v: ReportView): string {
-  const { pipeline, repo } = titleParts(v);
+  const { repo } = titleParts(v);
   return `<h1 class="brand-title">
-    <span class="tt-pipeline">${esc(pipeline)}</span>
+    <span class="tt-pipeline">代码评审</span>
     <span class="tt-sep">/</span>
     <span class="tt-repo">${esc(repo)}</span>
     <span class="tt-sep">/</span>
@@ -938,17 +1012,32 @@ export function renderTemplate(v: ReportView): string {
 
 <header class="topbar">
   <div class="brand">
-    <span class="brand-dot" aria-hidden="true"></span>
+    <span class="dot" aria-hidden="true"></span>
     ${titleHtml(v)}
   </div>
-  <div class="topbar-actions">
-    <span class="account-info">${accountHtml(v)}</span>
+  <div class="top-right">
+    <a class="nav-link" href="/reviews">全部评审报告</a>
     <button type="button" class="submit-toggle" id="submitToggle" title="展开确认提交栏"><span class="dot"></span>提交</button>
     <button type="button" class="theme-toggle" id="themeToggle" title="切换日间/夜间主题" aria-label="切换日间/夜间主题">
       <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
       <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><line x1="12" y1="2" x2="12" y2="5"></line><line x1="12" y1="19" x2="12" y2="22"></line><line x1="2" y1="12" x2="5" y2="12"></line><line x1="19" y1="12" x2="22" y2="12"></line><line x1="4.6" y1="4.6" x2="6.7" y2="6.7"></line><line x1="17.3" y1="17.3" x2="19.4" y2="19.4"></line><line x1="4.6" y1="19.4" x2="6.7" y2="17.3"></line><line x1="17.3" y1="6.7" x2="19.4" y2="4.6"></line></svg>
     </button>
-    <a class="back-link" href="/">&larr; 全部报告</a>
+    <div class="user-menu">
+      <span class="user-chip" id="userChip" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false"><span class="avatar" aria-hidden="true"></span><span id="userName">未登录</span></span>
+      <div class="user-panel" id="userPanel" hidden>
+        <div class="user-panel-head">
+          <span class="avatar" aria-hidden="true"></span>
+          <div class="user-panel-meta">
+            <strong id="userPanelName">未登录</strong>
+            <span class="user-panel-email" id="userPanelEmail"></span>
+          </div>
+        </div>
+        <div class="user-panel-sep"></div>
+        <a class="user-panel-item" href="/account"><span class="user-panel-ico" aria-hidden="true">⚙</span>设置</a>
+        <div class="user-panel-sep"></div>
+        <button class="user-panel-item user-panel-logout" type="button"><span class="user-panel-ico" aria-hidden="true">⏻</span>退出登录</button>
+      </div>
+    </div>
   </div>
 </header>
 
@@ -1048,6 +1137,189 @@ export function renderTemplate(v: ReportView): string {
       applyTheme(next);
     });
   }
+  /* ===== 用户菜单（与管线页一致） ===== */
+  (function(){
+    var chip = document.getElementById('userChip');
+    var panel = document.getElementById('userPanel');
+    if(!chip || !panel) return;
+    function setOpen(open){ panel.hidden = !open; chip.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+    chip.addEventListener('click', function(e){ e.stopPropagation(); setOpen(panel.hidden); });
+    chip.addEventListener('keydown', function(e){
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); setOpen(panel.hidden); }
+    });
+    document.addEventListener('click', function(e){
+      if(panel.hidden) return;
+      if(chip.contains(e.target) || panel.contains(e.target)) return;
+      setOpen(false);
+    });
+    document.addEventListener('keydown', function(e){ if(e.key === 'Escape') setOpen(false); });
+
+    function colorOf(email){
+      var s = String(email || ''), h = 0;
+      for(var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+      return 'hsl(' + (h % 360) + ', 55%, 55%)';
+    }
+    function paintAvatar(el, u){
+      if(!el) return;
+      el.style.background = colorOf(u.email);
+      el.style.color = '#fff';
+      el.textContent = (u.name && u.name.charAt(0)) || (u.email && u.email.charAt(0).toUpperCase()) || '?';
+    }
+    function applyUser(u){
+      if(!u) return;
+      var nameEl = document.getElementById('userName');
+      if(nameEl && (!nameEl.textContent || nameEl.textContent === '未登录'))
+        nameEl.textContent = u.name || u.email || '';
+      var av1 = chip.querySelector('.avatar');
+      if(av1) paintAvatar(av1, u);
+      var pn = document.getElementById('userPanelName');
+      if(pn) pn.textContent = u.name || u.email || '';
+      var pe = document.getElementById('userPanelEmail');
+      if(pe) pe.textContent = u.email || '';
+      var pa = panel.querySelector('.user-panel-head .avatar');
+      if(pa) paintAvatar(pa, u);
+    }
+    /* 拉登录态，失败就保留「未登录」 */
+    fetch('/api/me', { headers: { Accept: 'application/json' } })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){ if(d && d.user) applyUser(d.user); })
+      .catch(function(){});
+
+    var logoutBtn = panel.querySelector('.user-panel-logout');
+    if(logoutBtn){
+      logoutBtn.addEventListener('click', function(){
+        fetch('/api/logout', { method: 'POST' }).finally(function(){ location.href = '/login'; });
+      });
+    }
+  })();
+  /* ===== 消息铃铛（与管线页一致） ===== */
+  (function(){
+    var chip = document.getElementById('userChip');
+    if(!chip) return;
+    var anchor = chip.closest('.user-menu') || chip;
+
+    var wrap = document.createElement('div');
+    wrap.style.position = 'relative';
+    wrap.style.display = 'inline-flex';
+
+    var bell = document.createElement('button');
+    bell.type = 'button';
+    bell.className = 'msg-bell';
+    bell.id = 'msgBell';
+    bell.title = '消息';
+    bell.setAttribute('aria-label', '消息');
+    bell.setAttribute('aria-expanded', 'false');
+    bell.setAttribute('aria-haspopup', 'true');
+    bell.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg><span class="msg-dot" id="msgDot" hidden></span>';
+
+    var pop = document.createElement('div');
+    pop.className = 'msg-pop';
+    pop.id = 'msgPop';
+    pop.hidden = true;
+    pop.innerHTML =
+      '<div class="msg-pop-head"><span>消息</span><span class="mp-count" id="msgPopCount">0 条未读</span></div>' +
+      '<ul class="msg-pop-list" id="msgPopList"></ul>' +
+      '<div class="msg-pop-foot"><a href="/messages">浏览所有消息 →</a></div>';
+
+    wrap.appendChild(bell);
+    wrap.appendChild(pop);
+    if(anchor.parentNode) anchor.parentNode.insertBefore(wrap, anchor);
+
+    var dot = bell.querySelector('.msg-dot');
+    var listEl = pop.querySelector('#msgPopList');
+    var countEl = pop.querySelector('#msgPopCount');
+    var TYPE_ICON = { ticket_assign:'📌', ticket_comment:'💬', ticket_mention:'👋', node:'🔗', kb:'📘', kb_mention:'👋', system:'🔔' };
+
+    function fmtTimeShort(iso){
+      if(!iso) return '';
+      var d = new Date(iso);
+      if(isNaN(d.getTime())) return '';
+      var diff = (new Date() - d) / 1000;
+      if(diff < 60) return '刚刚';
+      if(diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
+      if(diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
+      if(diff < 86400 * 7) return Math.floor(diff / 86400) + ' 天前';
+      var m = String(d.getMonth() + 1).padStart(2, '0');
+      var day = String(d.getDate()).padStart(2, '0');
+      return m + '-' + day;
+    }
+    function paintUnread(n){
+      if(!dot) return;
+      dot.hidden = !(n > 0);
+      bell.title = n > 0 ? '消息（' + n + ' 条未读）' : '消息';
+      if(countEl) countEl.textContent = n > 0 ? n + ' 条未读' : '全部已读';
+    }
+    function renderList(items){
+      listEl.innerHTML = '';
+      if(!items || !items.length){
+        var empty = document.createElement('li');
+        empty.className = 'msg-pop-empty';
+        empty.textContent = '暂无消息';
+        listEl.appendChild(empty);
+        return;
+      }
+      items.slice(0, 5).forEach(function(m){
+        var li = document.createElement('li');
+        li.className = 'msg-pop-item';
+        var ico = document.createElement('span');
+        ico.className = 'mpi-ico';
+        ico.textContent = TYPE_ICON[m.type] || TYPE_ICON.system;
+        var body = document.createElement('div');
+        body.className = 'mpi-body';
+        var titleRow = document.createElement('div');
+        titleRow.className = 'mpi-title';
+        if(!m.read){ var rd = document.createElement('span'); rd.className = 'mpi-dot'; titleRow.appendChild(rd); }
+        var tt = document.createElement('span');
+        tt.textContent = m.title || '新消息';
+        titleRow.appendChild(tt);
+        var textRow = document.createElement('div');
+        textRow.className = 'mpi-text';
+        textRow.textContent = m.body || '';
+        var timeRow = document.createElement('div');
+        timeRow.className = 'mpi-time';
+        timeRow.textContent = fmtTimeShort(m.at);
+        body.appendChild(titleRow); body.appendChild(textRow); body.appendChild(timeRow);
+        li.appendChild(ico); li.appendChild(body);
+        li.addEventListener('click', function(){
+          if(!m.read && m.id){
+            fetch('/api/messages/' + encodeURIComponent(m.id) + '/read', { method: 'POST' }).catch(function(){});
+          }
+          window.location.href = m.link || '/messages';
+        });
+        listEl.appendChild(li);
+      });
+    }
+    var loaded = false;
+    function loadPop(){
+      if(loaded) return;
+      loaded = true;
+      fetch('/api/messages', { headers: { Accept: 'application/json' } })
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(d){
+          if(d && d.messages){
+            renderList(d.messages);
+            paintUnread(d.unread != null ? d.unread : (d.messages || []).filter(function(x){ return !x.read; }).length);
+          }
+        })
+        .catch(function(){ renderList([]); });
+    }
+    function openPop(){ pop.hidden = false; bell.setAttribute('aria-expanded', 'true'); loadPop(); }
+    function closePop(){ pop.hidden = true; bell.setAttribute('aria-expanded', 'false'); }
+    function togglePop(){ if(pop.hidden) openPop(); else closePop(); }
+    bell.addEventListener('click', function(e){ e.stopPropagation(); togglePop(); });
+    document.addEventListener('click', function(e){ if(pop.hidden) return; if(!wrap.contains(e.target)) closePop(); });
+    document.addEventListener('keydown', function(e){ if(e.key === 'Escape' && !pop.hidden) closePop(); });
+
+    function refresh(){
+      fetch('/api/messages/unread', { headers: { Accept: 'application/json' } })
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(d){ if(d) paintUnread(d.unread || 0); })
+        .catch(function(){});
+    }
+    refresh();
+    setInterval(refresh, 30000);
+    document.addEventListener('visibilitychange', function(){ if(!document.hidden) refresh(); });
+  })();
   /* 摘要展开/收纳 */
   var summaryHead = document.getElementById('summaryHead');
   var summary = document.getElementById('summary');

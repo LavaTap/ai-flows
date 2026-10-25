@@ -51,7 +51,7 @@
     return "全体可见";
   }
 
-  var state = { articles: [], current: null, q: "", editing: false };
+  var state = { articles: [], current: null, q: "", editing: false, commentInput: null };
   var createEditor = null;
 
   function sortArticles() {
@@ -101,6 +101,11 @@
       var time = document.createElement("span");
       time.textContent = formatTime(a.updatedAt);
       meta.appendChild(time);
+      if (a.likes) {
+        var like = document.createElement("span");
+        like.textContent = "♥ " + a.likes;
+        meta.appendChild(like);
+      }
 
       li.appendChild(title);
       li.appendChild(meta);
@@ -186,7 +191,201 @@
     var contentEl = byId("dContent");
     contentEl.innerHTML = a.content; // 服务端已净化
     UC.decorateMentions(contentEl);
+    renderLikeBar(a);
+    renderComments(a);
     renderList();
+  }
+
+  /* ────────────── 点赞 ────────────── */
+
+  /** 文章底部点赞条：点一次点赞，再点一次取消；点赞人名单作悬停提示 */
+  function renderLikeBar(a) {
+    var btn = byId("likeBtn");
+    btn.classList.toggle("on", !!a.liked);
+    byId("likeText").textContent = a.liked ? "已点赞" : "点赞";
+    byId("likeCount").textContent = a.likes || 0;
+    var names = a.likeNames || [];
+    var namesEl = byId("likeNames");
+    namesEl.textContent = names.length ? names.join("、") + " 赞了这篇" : "";
+    namesEl.title = names.length ? names.join("、") : "";
+    btn.onclick = function () { toggleArticleLike(a); };
+  }
+
+  /** 点赞后同步内存里的文章对象（列表卡片上的点赞数跟着变） */
+  function applyLikeState(a, liked, likes) {
+    a.liked = liked;
+    a.likes = likes;
+    var nm = user.name || user.email || "";
+    var rest = (a.likeNames || []).filter(function (x) { return x !== nm; });
+    a.likeNames = liked ? rest.concat([nm]) : rest;
+    state.articles = state.articles.map(function (x) {
+      if (x.id !== a.id) return x;
+      x.likes = a.likes;
+      x.liked = a.liked;
+      return x;
+    });
+    renderLikeBar(a);
+    renderList();
+  }
+
+  function toggleArticleLike(a) {
+    var btn = byId("likeBtn");
+    btn.disabled = true;
+    post("/api/kb/" + encodeURIComponent(a.id) + "/like", {})
+      .then(function (r) {
+        btn.disabled = false;
+        if (!r.ok) {
+          alert((r.data && r.data.error) || "点赞失败");
+          return;
+        }
+        applyLikeState(a, !!r.data.liked, r.data.likes || 0);
+      })
+      .catch(function () {
+        btn.disabled = false;
+        alert("点赞失败，请稍后重试");
+      });
+  }
+
+  /** 评论点赞（与文章点赞同一套接口，target 换成 comment） */
+  function toggleCommentLike(c, btn, countEl) {
+    btn.disabled = true;
+    post("/api/kb/comments/" + encodeURIComponent(c.id) + "/like", {})
+      .then(function (r) {
+        btn.disabled = false;
+        if (!r.ok) {
+          alert((r.data && r.data.error) || "点赞失败");
+          return;
+        }
+        c.liked = !!r.data.liked;
+        c.likes = r.data.likes || 0;
+        btn.classList.toggle("on", c.liked);
+        countEl.textContent = c.likes;
+      })
+      .catch(function () {
+        btn.disabled = false;
+        alert("点赞失败，请稍后重试");
+      });
+  }
+
+  /* ────────────── 评论区（与工单页同款：纯文本 + @提及成员） ────────────── */
+
+  function renderComments(a) {
+    var host = byId("dComments");
+    host.innerHTML = "";
+    var list = a.commentList || [];
+    byId("dCommentTitle").textContent = "评论（" + list.length + "）";
+    list.forEach(function (c) {
+      var row = document.createElement("div");
+      row.className = "tk-comment";
+      row.appendChild(makeAvatar(memberByEmail(c.email), c.email, "tk-avatar"));
+
+      var main = document.createElement("div");
+      main.className = "tk-comment-main";
+
+      var who = document.createElement("div");
+      who.className = "tk-comment-who";
+      var whoLink = document.createElement("a");
+      whoLink.href = profileUrl(c.email);
+      whoLink.className = "author-link";
+      whoLink.textContent = c.author;
+      whoLink.addEventListener("click", function (e) {
+        e.preventDefault();
+        goProfile(c.email, c.author, c.department);
+      });
+      bindUserCard(whoLink, c.email);
+      who.appendChild(whoLink);
+      var sub = document.createElement("span");
+      sub.textContent = (c.department ? c.department + " · " : "") + formatTime(c.at);
+      who.appendChild(sub);
+      main.appendChild(who);
+
+      var body = document.createElement("div");
+      body.className = "tk-comment-body";
+      body.innerHTML = c.content; // 服务端已净化
+      UC.decorateMentions(body);
+      main.appendChild(body);
+
+      /* 评论底部：点赞 + 删除（本人或主管可见删除） */
+      var foot = document.createElement("div");
+      foot.className = "tk-comment-foot";
+      var likeBtn = document.createElement("button");
+      likeBtn.type = "button";
+      likeBtn.className = "kb-like-mini" + (c.liked ? " on" : "");
+      var ico = document.createElement("span");
+      ico.setAttribute("aria-hidden", "true");
+      ico.textContent = "♥";
+      var countEl = document.createElement("span");
+      countEl.textContent = c.likes || 0;
+      likeBtn.appendChild(ico);
+      likeBtn.appendChild(countEl);
+      likeBtn.addEventListener("click", function () { toggleCommentLike(c, likeBtn, countEl); });
+      foot.appendChild(likeBtn);
+      if (c.canDelete) {
+        var del = document.createElement("button");
+        del.type = "button";
+        del.className = "tk-comment-del";
+        del.textContent = "删除";
+        del.addEventListener("click", function () { removeComment(c); });
+        foot.appendChild(del);
+      }
+      main.appendChild(foot);
+
+      row.appendChild(main);
+      host.appendChild(row);
+    });
+  }
+
+  function addComment() {
+    if (!state.current) return;
+    var err = byId("commentError");
+    var input = byId("commentInput");
+    var text = input.value.replace(/\r\n?/g, "\n").trim();
+    if (!text) {
+      err.textContent = "评论内容不能为空";
+      err.hidden = false;
+      return;
+    }
+    var btn = byId("commentSubmit");
+    btn.disabled = true;
+    post("/api/kb/" + encodeURIComponent(state.current.id) + "/comments", {
+      content: window.CommentInput.buildHtml(text, boot.members || []),
+    })
+      .then(function (r) {
+        btn.disabled = false;
+        if (!r.ok) {
+          err.textContent = (r.data && r.data.error) || "评论失败";
+          err.hidden = false;
+          return;
+        }
+        err.hidden = true;
+        input.value = "";
+        if (state.commentInput) state.commentInput.close();
+        // 服务端回的是带评论列表的完整文章视图，直接重渲染
+        renderDetail(r.data.article);
+      })
+      .catch(function () {
+        btn.disabled = false;
+        err.textContent = "评论失败，请稍后重试";
+        err.hidden = false;
+      });
+  }
+
+  /** 删除评论（评论人本人或主管；服务端二次校验） */
+  function removeComment(c) {
+    if (!state.current) return;
+    if (!window.confirm("确定删除这条评论？")) return;
+    request(
+      "DELETE",
+      "/api/kb/" + encodeURIComponent(state.current.id) + "/comments/" + encodeURIComponent(c.id)
+    )
+      .then(function (r) {
+        if (!r.ok) {
+          alert((r.data && r.data.error) || "删除失败");
+          return;
+        }
+        openDetail(state.current.id); // 重新拉详情刷新评论区
+      })
+      .catch(function () { alert("删除失败，请稍后重试"); });
   }
 
   /* ────────────── 可见范围控件 ────────────── */
@@ -402,6 +601,11 @@
     byId("cancelBtn").addEventListener("click", onCancelEdit);
     byId("cancelBtn2").addEventListener("click", onCancelEdit);
     byId("saveBtn").addEventListener("click", saveArticle);
+    byId("commentSubmit").addEventListener("click", addComment);
+    // 评论框的 @提及下拉（与工单页共用 /comment-input.js）
+    state.commentInput = window.CommentInput.attach(byId("commentInput"), function () {
+      return boot.members || [];
+    });
     byId("searchInput").addEventListener("input", function () {
       state.q = this.value;
       renderList();
