@@ -136,6 +136,37 @@ export async function headCommit(cwd?: string): Promise<CommitInfo | null> {
   return { hash, short, author, date, subject, message: (body.join("\x1f") || subject).trim() };
 }
 
+/** 读取指定提交（缺省 HEAD）的作者姓名与邮箱；ref 非法或读取失败返回 null */
+export async function commitAuthor(
+  cwd?: string,
+  ref = "HEAD"
+): Promise<{ name: string; email: string } | null> {
+  // ref 可能来自报告 JSON（外部文件），只接受 7~40 位十六进制 hash 或 HEAD，避免选项注入
+  if (ref !== "HEAD" && !/^[0-9a-f]{7,40}$/i.test(ref)) return null;
+  const out = await git(["log", "-1", "--pretty=format:%an%x1f%ae", ref], cwd).catch(() => null);
+  if (!out) return null;
+  const [name = "", email = ""] = out.split("\x1f");
+  if (!name && !email) return null;
+  return { name: name.trim(), email: email.trim() };
+}
+
+/** 读取某时刻之前的最后一次提交作者（老报告没记被评提交时回退用）；
+ *  time 只接受日期时间字符，读取失败返回 null */
+export async function commitAuthorBefore(
+  cwd: string,
+  time: string
+): Promise<{ name: string; email: string } | null> {
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9]{2}:[0-9]{2}/.test(time.trim())) return null;
+  const out = await git(
+    ["log", "-1", `--before=${time.trim()}`, "--pretty=format:%an%x1f%ae"],
+    cwd
+  ).catch(() => null);
+  if (!out) return null;
+  const [name = "", email = ""] = out.split("\x1f");
+  if (!name && !email) return null;
+  return { name: name.trim(), email: email.trim() };
+}
+
 /** 改写最近一次提交的提交信息（amend，仅改信息不改变更内容；失败抛错） */
 export async function amendCommitMessage(message: string, cwd?: string): Promise<void> {
   await git(["commit", "--amend", "-m", message], cwd);

@@ -7,7 +7,7 @@
   var target = boot.target || {};
   var articles = boot.articles || [];
 
-  var ROLE_LABEL = { supervisor: "主管", staff: "员工" };
+  var ROLE_LABEL = { 0: "实习生", 1: "员工", 2: "组长", 3: "主管" };
   var VIS_LABEL = { all: "全体", departments: "部门", private: "仅自己" };
 
   function byId(id) { return document.getElementById(id); }
@@ -79,9 +79,9 @@
     byId("profileName").textContent = target.name || target.email;
     byId("profileEmailLine").textContent = target.email || "";
 
-    // 角色标签
+    // 角色标签（身份编码 0 实习生 / 1 员工 / 2 组长 / 3 主管）
     var roleTag = byId("roleTag");
-    var roleCls = target.role === "supervisor" ? "supervisor" : "staff";
+    var roleCls = { 0: "intern", 1: "staff", 2: "lead", 3: "supervisor" }[target.role] || "staff";
     roleTag.className = "role-tag " + roleCls;
     roleTag.textContent = ROLE_LABEL[target.role] || "员工";
 

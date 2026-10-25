@@ -2,7 +2,8 @@
 (function () {
   var boot = window.__ACCOUNT_REPO__ || {};
   var user = boot.user || {};
-  var isSuper = !!boot.isSupervisor;
+  /* 管线管理（新建 / 编辑 / 删除 / 选绑仓库）仅主管可操作，员工只读 */
+  var isSupervisor = !!boot.isSupervisor;
   var pipelines = Array.isArray(boot.pipelines) ? boot.pipelines.slice() : [];
   var repos = Array.isArray(boot.repos) ? boot.repos.slice() : [];
   var editingId = null;
@@ -40,10 +41,6 @@
 
   /* ────────────── 顶栏 ────────────── */
   function initTopbar() {
-    if (isSuper) {
-      var teamLink = byId("teamLink");
-      if (teamLink) teamLink.style.display = "";
-    }
     var chip = document.querySelector(".user-chip");
     if (chip) {
       var av = chip.querySelector(".avatar");
@@ -98,7 +95,7 @@
       ? '<span class="v">' + esc(r.path) + '</span>'
       : '<span class="v empty">—</span>';
 
-    if (editingId === p.id) {
+    if (editingId === p.id && isSupervisor) {
       return ''
         + '<div class="pl-card" data-id="' + esc(p.id) + '">'
         +   '<div class="pl-card-head"><span class="pl-name">编辑管线</span></div>'
@@ -118,13 +115,19 @@
       + '<div class="pl-card" data-id="' + esc(p.id) + '">'
       +   '<div class="pl-card-head">'
       +     '<span class="pl-name">' + esc(p.name) + '</span>'
-      +     '<div class="pl-actions">'
-      +       '<button class="btn sm" data-act="edit">编辑</button>'
-      +       '<button class="btn sm danger" data-act="delete">删除</button>'
-      +     '</div>'
+      +     (isSupervisor
+        ? '<div class="pl-actions">'
+          +   '<button class="btn sm" data-act="edit">编辑</button>'
+          +   '<button class="btn sm danger" data-act="delete">删除</button>'
+          + '</div>'
+        : '')
       +   '</div>'
       +   '<div class="pl-meta">'
-      +     '<div class="row"><span class="k">绑定仓库</span><span class="select-wrap"><select data-act="repo">' + repoOptions(p.repoId || "") + '</select></span></div>'
+      +     '<div class="row"><span class="k">绑定仓库</span>'
+      +       (isSupervisor
+        ? '<span class="select-wrap"><select data-act="repo">' + repoOptions(p.repoId || "") + '</select></span>'
+        : '<span class="v' + (r ? '' : ' empty') + '">' + esc(r ? repoOptionLabel(r) : "未绑定仓库") + '</span>')
+      +     '</div>'
       +     '<div class="row"><span class="k">本机目录</span>' + repoPath + '</div>'
       +     '<div class="row"><span class="k">GitHub</span>' + github + '</div>'
       +   '</div>'
@@ -216,7 +219,14 @@
   /* ────────────── 新增管线 ────────────── */
 
   function initAdd() {
-    byId("plForm").addEventListener("submit", function (e) {
+    var form = byId("plForm");
+    if (!isSupervisor) {
+      /* 员工只读：隐藏「新增管线」整块 */
+      var sec = form ? form.closest(".section") : null;
+      if (sec) sec.style.display = "none";
+      return;
+    }
+    form.addEventListener("submit", function (e) {
       e.preventDefault();
       var btn = byId("addBtn");
       var msg = byId("addMsg");

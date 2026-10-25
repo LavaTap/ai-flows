@@ -49,7 +49,8 @@
     .meta-item b{font-weight:600;color:var(--ink-soft);margin-right:4px;}
     .badge{display:inline-block;padding:2px 8px;border-radius:999px;font:500 11px/16px var(--font-sans);}
     .badge.supervisor{background:var(--led-soft);color:var(--led);}
-    .badge.staff{background:var(--teal-soft);color:var(--teal);}
+    .badge.staff,.badge.lead{background:var(--teal-soft);color:var(--teal);}
+    .badge.intern{background:var(--paper-2);color:var(--muted);}
     .gh-section{display:flex;flex-direction:column;gap:12px;}
     .gh-row{display:flex;align-items:center;gap:12px;}
     .gh-icon{width:28px;height:28px;border-radius:50%;background:#24292f;display:flex;align-items:center;justify-content:center;
@@ -148,9 +149,7 @@
         <a href="/account/repos">仓库管理</a>
         <a href="/account" class="active">账号管理</a>
         <a href="/account/security">账号安全</a>
-        <a href="/team" id="teamLink" style="display:none;">团队管理</a>
         <a href="/logs">日志</a>
-        <a href="/tokens">Token 面板</a>
       </nav>
     </aside>
 

@@ -20,8 +20,43 @@ export const CHAT_UPLOADS_DIR = join(DB_DIR, "chat-uploads");
 /** AI 美术平台素材目录 db/art-assets/（已 gitignore，二进制不入库，素材表只存文件名） */
 export const ART_ASSETS_DIR = join(DB_DIR, "art-assets");
 
-/** 身份：员工 / 部门主管（主管权限最高，可操控并批准所有节点） */
-export type Role = "staff" | "supervisor";
+/** 身份编码：0 实习生 / 1 员工 / 2 组长 / 3 主管（数字存库，前端按编码展示文案）。
+ *  权限上只有主管(3)特殊（不限部门、可批准所有节点）；组长(2) 仅是身份标签，权限与员工一致。 */
+export const ROLE_INTERN = 0;
+export const ROLE_STAFF = 1;
+export const ROLE_LEAD = 2;
+export const ROLE_SUPERVISOR = 3;
+
+export type Role = typeof ROLE_INTERN | typeof ROLE_STAFF | typeof ROLE_LEAD | typeof ROLE_SUPERVISOR;
+
+/** 角色名（内部日志/兜底展示用；前端各页有各自的文案映射） */
+export const ROLE_LABELS: Record<Role, string> = {
+  [ROLE_INTERN]: "实习生",
+  [ROLE_STAFF]: "员工",
+  [ROLE_LEAD]: "组长",
+  [ROLE_SUPERVISOR]: "主管",
+};
+
+/** 把库里的历史值（'staff' / 'supervisor' / '0'~'3' / 数字）统一收敛成角色编码。
+ *  老库与旧 JSON 种子里的字符串身份靠这里一次性翻译，避免调用方各自兼容。 */
+export function toRole(v: unknown): Role {
+  if (typeof v === "number") {
+    return v === ROLE_INTERN || v === ROLE_LEAD || v === ROLE_SUPERVISOR ? v : ROLE_STAFF;
+  }
+  const s = String(v ?? "").trim().toLowerCase();
+  // 兼容 TEXT 列把数字写成 "3.0"（数字按 REAL 绑定 + TEXT 亲和）
+  if (/^[0-9]+(?:\.0*)?$/.test(s)) return toRole(Number(s));
+  switch (s) {
+    case "intern":
+      return ROLE_INTERN;
+    case "lead":
+      return ROLE_LEAD;
+    case "supervisor":
+      return ROLE_SUPERVISOR;
+    default:
+      return ROLE_STAFF;
+  }
+}
 
 /** 平台账号（种子数据见 db/users.json，不开放注册） */
 export interface UserAccount {
@@ -29,7 +64,7 @@ export interface UserAccount {
   email: string;
   /** 演示环境统一 123456，明文存库（上线前改加盐哈希） */
   password: string;
-  /** 身份：员工 / 部门主管 */
+  /** 身份编码：0 实习生 / 1 员工 / 2 组长 / 3 主管 */
   role: Role;
   /** 岗位名，如 用户调研实习生 */
   title: string;
@@ -128,6 +163,8 @@ export interface NodeState {
   executors?: NodeExecutor[];
   /** 显式从本节点执行人中排除的邮箱（删除部门派生成员时记入） */
   removedExecutors?: string[];
+  /** 新建管线的初始空白节点：执行角色只认显式添加名单，且不自动生成需求工单 */
+  blank?: boolean;
 }
 
 /** 节点历史评审记录：一次 AI 评审 = 一条。平台可追溯「谁在何时评了什么」 */
@@ -612,15 +649,12 @@ export interface Department {
   id: string;
   /** 部门名（改名即全站生效） */
   name: string;
-  /** ISO 创建时间 */
-  createdAt: string;
 }
 
 interface DepartmentRow {
   ord: number;
   id: string;
   name: string;
-  created_at: string;
 }
 
 /** 进程内编号↔名称缓存（新增部门后置空重建） */
@@ -656,12 +690,7 @@ function departmentIdOf(name: string): string {
     n: number;
   };
   const id = `dept-${String(maxNo + 1).padStart(2, "0")}`;
-  c.prepare("INSERT INTO departments (ord, id, name, created_at) VALUES (?,?,?,?)").run(
-    ordRow.n,
-    id,
-    v,
-    new Date().toISOString()
-  );
+  c.prepare("INSERT INTO departments (ord, id, name) VALUES (?,?,?)").run(ordRow.n, id, v);
   deptIndex = null;
   return id;
 }
@@ -676,7 +705,7 @@ function departmentNameOf(idOrName: string): string {
 /** 读取全部部门（按登记顺序） */
 export function loadDepartments(): Department[] {
   return (db().prepare("SELECT * FROM departments ORDER BY ord").all() as DepartmentRow[]).map(
-    (r) => ({ id: r.id, name: r.name, createdAt: r.created_at })
+    (r) => ({ id: r.id, name: r.name })
   );
 }
 
@@ -685,7 +714,7 @@ export function loadDepartments(): Department[] {
 interface UserRow {
   email: string;
   password: string;
-  role: string;
+  role: string | number;
   name: string | null;
   title: string | null;
   department: string | null;
@@ -699,7 +728,7 @@ function rowToUser(r: UserRow): UserAccount {
   const u: UserAccount = {
     email: r.email,
     password: r.password,
-    role: r.role as Role,
+    role: toRole(r.role),
     title: r.title ?? "",
     department: departmentNameOf(r.department ?? ""),
   };
@@ -730,6 +759,7 @@ interface NodeRow {
   output_dir: string | null;
   executors: string | null;
   removed_executors: string | null;
+  blank: number | null;
 }
 
 function rowToNode(r: NodeRow): NodeState {
@@ -760,6 +790,7 @@ function rowToNode(r: NodeRow): NodeState {
     );
   const removedExecutors = parseJsonArray<string>(r.removed_executors);
   if (removedExecutors) n.removedExecutors = removedExecutors;
+  if (r.blank === 1) n.blank = true;
   return n;
 }
 
@@ -769,7 +800,7 @@ interface ReviewRow {
   actor: string;
   email: string;
   department: string;
-  role: string;
+  role: string | number;
   generated_at: string;
   passed: number;
   blockers: number;
@@ -785,7 +816,7 @@ function rowToReview(r: ReviewRow): ReviewRecord {
     actor: r.actor,
     email: r.email,
     department: departmentNameOf(r.department),
-    role: r.role as Role,
+    role: toRole(r.role),
     generatedAt: r.generated_at,
     passed: r.passed === 1,
     blockers: r.blockers,
@@ -948,7 +979,7 @@ function userParams(u: UserAccount, ord: number): Record<string, unknown> {
     ord,
     email: u.email,
     password: u.password,
-    role: u.role,
+    role: toRole(u.role),
     name: u.name ?? null,
     title: u.title,
     department: departmentIdOf(u.department),
@@ -986,6 +1017,7 @@ function nodeParams(n: NodeState, ord: number): Record<string, unknown> {
         )
       : null,
     removedExecutors: n.removedExecutors ? JSON.stringify(n.removedExecutors) : null,
+    blank: n.blank ? 1 : 0,
   };
 }
 
@@ -997,7 +1029,7 @@ function reviewParams(r: ReviewRecord, ord: number): Record<string, unknown> {
     actor: r.actor,
     email: r.email,
     department: departmentIdOf(r.department),
-    role: r.role,
+    role: String(toRole(r.role)),
     generatedAt: r.generatedAt,
     passed: r.passed ? 1 : 0,
     blockers: r.blockers,
@@ -1462,6 +1494,8 @@ export function createPipeline(name: string, repoId?: string): PipelineRecord {
     ...t,
     id: `${id}-${String(i + 1).padStart(2, "0")}`,
     pipelineId: id,
+    // 新管线的节点从空白开始：不带部门派生执行角色，也不自动生成需求工单
+    blank: true,
   }));
   saveNodes(id, nodes);
   return rec;
@@ -1517,7 +1551,7 @@ export function saveNodes(pipelineId: string, nodes: NodeState[]): void {
   const c = db();
   const del = c.prepare("DELETE FROM ai_flows.nodes WHERE pipeline_id = ?");
   const ins = c.prepare(
-    "INSERT INTO ai_flows.nodes (ord,id,pipeline_id,department,step,ready,status,runner,requirement_text,uploads,artifacts,progress,progress_label,rejection,last_result,report_url,output_dir,executors,removed_executors) VALUES (@ord,@id,@pipelineId,@department,@step,@ready,@status,@runner,@requirementText,@uploads,@artifacts,@progress,@progressLabel,@rejection,@lastResult,@reportUrl,@outputDir,@executors,@removedExecutors)"
+    "INSERT INTO ai_flows.nodes (ord,id,pipeline_id,department,step,ready,status,runner,requirement_text,uploads,artifacts,progress,progress_label,rejection,last_result,report_url,output_dir,executors,removed_executors,blank) VALUES (@ord,@id,@pipelineId,@department,@step,@ready,@status,@runner,@requirementText,@uploads,@artifacts,@progress,@progressLabel,@rejection,@lastResult,@reportUrl,@outputDir,@executors,@removedExecutors,@blank)"
   );
   c.transaction(() => {
     del.run(pipelineId);
@@ -1576,6 +1610,27 @@ export function updateReviewMeta(
   if (!sets.length) return;
   vals.push(id);
   db().prepare(`UPDATE chat_reviews.reviews SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
+}
+
+/** 删除一条评审记录（报告 id 为空的老记录无从匹配，返回 false） */
+export function deleteReview(id: string): boolean {
+  if (!id) return false;
+  return db().prepare("DELETE FROM chat_reviews.reviews WHERE id = ?").run(id).changes > 0;
+}
+
+/** 主管指定评审记录的触发者：姓名/邮箱/部门/身份一次性覆盖（部门名在边界翻成编号） */
+export function updateReviewActor(
+  id: string,
+  actor: { actor: string; email: string; department: string; role: Role }
+): boolean {
+  if (!id) return false;
+  return (
+    db()
+      .prepare(
+        "UPDATE chat_reviews.reviews SET actor = ?, email = ?, department = ?, role = ? WHERE id = ?"
+      )
+      .run(actor.actor, actor.email, departmentIdOf(actor.department), String(actor.role), id).changes > 0
+  );
 }
 
 // ============ 工单 ============

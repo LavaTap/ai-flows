@@ -8,10 +8,13 @@
   if (!boot) return;
 
   var user = boot.user;
+  /* 管线管理（新建 / 重命名 / 删除 / 选绑仓库）仅主管（role=3）可用 */
+  var isSupervisor = !!user && user.role === 3;
   var members = boot.members || [];
   var nodes = boot.nodes; /* 顺序与页面 data-idx 0..3 对应 */
   var busyIds = []; /* 后台执行中的节点 id（来自 /api/nodes） */
-  var ROLE_TEXT = { staff: "员工", supervisor: "主管" };
+  /* 身份编码：0 实习生 / 1 员工 / 2 组长 / 3 主管（组长仅身份标签，权限同员工） */
+  var ROLE_TEXT = { 0: "实习生", 1: "员工", 2: "组长", 3: "主管" };
   var STATUS_TEXT = { todo: "待执行", running: "执行中", in_review: "待验收", done: "已执行" };
   var STATUS_CLS = { todo: "st-todo", running: "st-running", in_review: "st-review", done: "st-done" };
   /* 平台可选部门（来自服务端部门表注入；主管在成员管理中据此下拉分配） */
@@ -174,6 +177,7 @@
     "border:1px solid var(--glass-line);background:var(--glass-fill);",
     "font:500 12px/18px var(--font-mono);color:var(--led);text-decoration:none;}",
     ".d-ticket a:hover{border-color:var(--led);}",
+    ".d-ticket .d-ticket-empty{font:400 12px/18px var(--font-sans);color:var(--muted);opacity:.75;}",
     /* 弹窗（挂在 body，脱离缩放容器） */
     ".ai-modal{position:fixed;inset:0;background:rgba(20,20,20,.35);backdrop-filter:blur(3px);z-index:900;",
     "display:flex;align-items:center;justify-content:center;}",
@@ -301,6 +305,7 @@
   }
   function post(url, body) { return request("POST", url, body); }
   function put(url, body) { return request("PUT", url, body); }
+  function del(url) { return request("DELETE", url); }
 
   /* 登录失效统一跳登录页 */
   function handleAuth(res) {
@@ -346,19 +351,36 @@
       span.textContent = p.name;
       li.appendChild(span);
 
-      /* 重命名按钮 */
-      var renameBtn = document.createElement("button");
-      renameBtn.type = "button";
-      renameBtn.className = "pi-rename";
-      renameBtn.title = "重命名";
-      renameBtn.setAttribute("aria-label", "重命名管线");
-      renameBtn.textContent = "✎";
-      renameBtn.addEventListener("click", function (e) {
-        e.stopPropagation();
-        e.preventDefault();
-        handleRename(p);
-      });
-      li.appendChild(renameBtn);
+      /* 重命名 / 删除：仅主管可管理管线 */
+      if (isSupervisor) {
+        var renameBtn = document.createElement("button");
+        renameBtn.type = "button";
+        renameBtn.className = "pi-rename";
+        renameBtn.title = "重命名";
+        renameBtn.setAttribute("aria-label", "重命名管线");
+        renameBtn.textContent = "✎";
+        renameBtn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          e.preventDefault();
+          handleRename(p);
+        });
+        li.appendChild(renameBtn);
+
+        if (pipelines.length > 1) {
+          var delBtn = document.createElement("button");
+          delBtn.type = "button";
+          delBtn.className = "pi-del";
+          delBtn.title = "删除管线";
+          delBtn.setAttribute("aria-label", "删除管线");
+          delBtn.textContent = "✕";
+          delBtn.addEventListener("click", function (e) {
+            e.stopPropagation();
+            e.preventDefault();
+            handleDelete(p);
+          });
+          li.appendChild(delBtn);
+        }
+      }
 
       /* 点击切换到该管线（不同管线各自一套节点） */
       li.addEventListener("click", function () {
@@ -417,10 +439,34 @@
     }).catch(function () { alert("网络异常"); });
   }
 
+  /** 删除管线（仅主管，至少保留一条）：当前管线被删则跳到剩下的第一条 */
+  function handleDelete(p) {
+    if (!confirm('确定删除管线「' + p.name + '」？该管线的全部节点会一并删除。')) return;
+    del("/api/pipelines/" + encodeURIComponent(p.id)).then(function (res) {
+      if (!handleAuth(res)) return;
+      if (!res.ok) {
+        alert((res.data && res.data.error) || "删除失败");
+        return;
+      }
+      if (p.id === activePipelineId) {
+        var rest = pipelines.filter(function (x) { return x.id !== p.id; });
+        location.href = rest.length
+          ? "/pipeline?p=" + encodeURIComponent(rest[0].id)
+          : "/pipeline";
+        return;
+      }
+      pipelines = pipelines.filter(function (x) { return x.id !== p.id; });
+      renderSidebar();
+    }).catch(function () { alert("网络异常"); });
+  }
+
   /* 初始化侧栏 */
   (function initSidebar() {
     renderSidebar();
     updateTitle();
+    var addBox = document.querySelector(".sidebar-add");
+    /* 新增管线仅主管可见 */
+    if (!isSupervisor && addBox) addBox.style.display = "none";
     var addBtn = document.getElementById("addPipelineBtn");
     var input = document.getElementById("newPipelineInput");
     if (addBtn) addBtn.addEventListener("click", handleAddPipeline);
@@ -462,7 +508,7 @@
       var name = document.createElement("span");
       name.className = "rname";
       name.id = "userName";
-      name.textContent = (user.name ? user.name + " · " : "") + user.title + " · " + ROLE_TEXT[user.role];
+      name.textContent = (user.name ? user.name + " · " : "") + user.title + " · " + (ROLE_TEXT[user.role] || "");
       chip.appendChild(avatar);
       chip.appendChild(name);
       chip.title = user.email;
@@ -477,7 +523,7 @@
     if (!node) return;
     var old = panel.querySelector(".d-roles");
     if (old) old.remove();
-    var isSuper = boot && boot.user && boot.user.role === "supervisor";
+    var isSuper = boot && boot.user && boot.user.role === 3;
     /* 执行人由服务端算好（部门成员 ∪ 显式添加 − 显式排除） */
     var team = (node.executorList || members.filter(function (m) { return m.department === node.department; })).slice();
     var box = document.createElement("div");
@@ -761,6 +807,98 @@
     panel.appendChild(ms.el);
     panel.ms = ms;
     return panel;
+  }
+
+  /* ────────────────────────────── 负责部门 ────────────────────────────── */
+
+  /** 详情里的负责部门：值取自节点；主管可点「设置」就地改（改完角色卡片与需求工单部门一起跟随） */
+  function renderDepartment(idx, panel) {
+    var node = nodes[idx];
+    if (!node) return;
+    var val = panel.querySelector(".d-dept-val");
+    if (val) val.textContent = node.department || "—";
+    var old = panel.querySelector(".d-dept-edit");
+    if (old) old.remove();
+    var isSuper = boot && boot.user && boot.user.role === 3;
+    if (!isSuper) return;
+    var host = panel.querySelector(".d-dept");
+    if (!host) return;
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "d-dept-edit";
+    btn.textContent = "设置";
+    btn.title = "设置负责部门（仅主管）";
+    btn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      toggleDeptEditor(idx, panel, btn);
+    });
+    host.appendChild(btn);
+  }
+
+  /** 负责部门就地编辑：部门下拉 + 保存 / 取消（保存走 PUT /api/nodes/<id>/department） */
+  function toggleDeptEditor(idx, panel, btn) {
+    var node = nodes[idx];
+    var host = panel.querySelector(".d-dept");
+    if (!node || !host) return;
+    var form = host.querySelector(".d-dept-form");
+    if (form) {
+      form.remove();
+      btn.style.display = "";
+      return;
+    }
+    btn.style.display = "none";
+    form = document.createElement("span");
+    form.className = "d-dept-form";
+
+    var sel = document.createElement("select");
+    sel.className = "d-dept-select";
+    var options = DEPARTMENTS.length ? DEPARTMENTS : [node.department];
+    options.forEach(function (name) {
+      var opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      if (name === node.department) opt.selected = true;
+      sel.appendChild(opt);
+    });
+
+    var save = document.createElement("button");
+    save.type = "button";
+    save.className = "d-dept-save";
+    save.textContent = "保存";
+    save.addEventListener("click", function (e) {
+      e.stopPropagation();
+      save.disabled = true;
+      put("/api/nodes/" + encodeURIComponent(node.id) + "/department", { department: sel.value }).then(function (res) {
+        if (!handleAuth(res)) return;
+        save.disabled = false;
+        if (!res.ok) {
+          alert((res.data && res.data.error) || "设置失败");
+          return;
+        }
+        if (res.data && res.data.node) nodes[idx] = res.data.node;
+        form.remove();
+        if (detailIdx >= 0) renderActions(detailIdx);
+      }).catch(function () {
+        save.disabled = false;
+        alert("网络异常");
+      });
+    });
+
+    var cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "d-dept-cancel";
+    cancel.textContent = "取消";
+    cancel.addEventListener("click", function (e) {
+      e.stopPropagation();
+      form.remove();
+      btn.style.display = "";
+    });
+
+    form.appendChild(sel);
+    form.appendChild(save);
+    form.appendChild(cancel);
+    host.appendChild(form);
+    sel.focus();
   }
 
   /* ────────────────────────────── 弹窗 ────────────────────────────── */
@@ -1231,7 +1369,7 @@
   function openAccountManager() {
     var m = openModal();
     m.panel.classList.add("acc-panel");
-    var isSuper = user.role === "supervisor";
+    var isSuper = user.role === 3;
 
     var h = document.createElement("h3");
     h.textContent = "账号管理";
@@ -1276,7 +1414,7 @@
       id.className = "acc-id";
       var nm = document.createElement("div");
       nm.className = "acc-name";
-      nm.textContent = (u.name || u.email.split("@")[0]) + (u.role === "supervisor" ? "（主管）" : "（员工）");
+      nm.textContent = (u.name || u.email.split("@")[0]) + "（" + (ROLE_TEXT[u.role] || "员工") + "）";
       var meta = document.createElement("div");
       meta.className = "acc-meta";
       var info = document.createElement("span");
@@ -1426,7 +1564,7 @@
         var mn = document.createElement("div");
         mn.className = "acc-mn";
         mn.textContent = x.email + "　";
-        if (x.role === "supervisor") {
+        if (x.role === 3) {
           var bd = document.createElement("span");
           bd.className = "acc-badge super";
           bd.textContent = "主管";
@@ -1434,7 +1572,7 @@
         } else {
           var bd2 = document.createElement("span");
           bd2.className = "acc-badge staff";
-          bd2.textContent = "员工";
+          bd2.textContent = ROLE_TEXT[x.role] || "员工";
           mn.appendChild(bd2);
         }
         var edit = document.createElement("div");
@@ -1553,6 +1691,7 @@
 
     /* 角色卡片（先于动作区渲染） */
     renderRoles(idx, panel);
+    renderDepartment(idx, panel);
 
     var old = panel.querySelector(".d-actions");
     if (old) old.remove();
@@ -1590,6 +1729,12 @@
       tkLink.textContent = node.ticketId;
       tkLink.title = "打开该节点的需求工单";
       tkRow.appendChild(tkLink);
+    } else {
+      var tkEmpty = document.createElement("span");
+      tkEmpty.className = "d-ticket-empty";
+      tkEmpty.textContent = "暂无需求工单";
+      tkEmpty.title = "新管线的节点从空白开始，点「编辑」新建或挂上已有工单";
+      tkRow.appendChild(tkEmpty);
     }
     if (node.canEdit) {
       var tkEdit = document.createElement("button");

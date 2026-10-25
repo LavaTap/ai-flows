@@ -2,7 +2,6 @@
 (function () {
   var boot = window.__ACCOUNT_REPOS__ || {};
   var user = boot.user || {};
-  var isSuper = !!boot.isSupervisor;
   var repos = Array.isArray(boot.repos) ? boot.repos.slice() : [];
   var pipelines = Array.isArray(boot.pipelines) ? boot.pipelines : [];
   var editingId = null;
@@ -41,10 +40,6 @@
 
   /* ────────────── 顶栏 ────────────── */
   function initTopbar() {
-    if (isSuper) {
-      var teamLink = byId("teamLink");
-      if (teamLink) teamLink.style.display = "";
-    }
     var chip = document.querySelector(".user-chip");
     if (chip) {
       var av = chip.querySelector(".avatar");

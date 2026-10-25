@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert";
 import { resolve } from "node:path";
-import { filterReviewsByUser, canEditRequirement, safeRepoPath, parseGithubRepo, canAccessTicket, filterTicketsByUser, isTicketStatus, collectTicketImages, decodePathSegment, summarizeTokenUsage, matchRepoByPath, classifyRemoteProbe } from "./platform.js";
-import type { ReviewRecord, UserAccount, NodeState, TicketRecord, RepoRecord } from "./db.js";
+import { filterReviewsByUser, canEditRequirement, safeRepoPath, parseGithubRepo, canAccessTicket, filterTicketsByUser, isTicketStatus, collectTicketImages, decodePathSegment, summarizeTokenUsage, matchRepoByPath, classifyRemoteProbe, githubActorOf } from "./platform.js";
+import type { ReviewRecord, UserAccount, NodeState, TicketRecord, RepoRecord, Role } from "./db.js";
+import { ROLE_LEAD, ROLE_STAFF, ROLE_SUPERVISOR } from "./db.js";
 
-function user(role: "staff" | "supervisor", department: string): UserAccount {
+function user(role: Role, department: string): UserAccount {
   return {
     email: "t@ai-flows.com",
     password: "123456",
@@ -21,7 +22,7 @@ function rec(department: string, source: "platform" | "external" = "platform"): 
     actor: "测试",
     email: "",
     department,
-    role: "staff",
+    role: ROLE_STAFF,
     generatedAt: "",
     passed: true,
     blockers: 0,
@@ -32,27 +33,66 @@ function rec(department: string, source: "platform" | "external" = "platform"): 
 
 test("should return all records when user is supervisor", () => {
   const records = [rec("产品调研"), rec("程序中台"), rec("AI产品")];
-  const out = filterReviewsByUser(records, user("supervisor", "产品"));
+  const out = filterReviewsByUser(records, user(ROLE_SUPERVISOR, "产品"));
   assert.strictEqual(out.length, 3);
 });
 
 test("should return only own-department records for staff", () => {
   const records = [rec("产品调研"), rec("程序中台"), rec("AI产品")];
-  const out = filterReviewsByUser(records, user("staff", "程序中台"));
+  const out = filterReviewsByUser(records, user(ROLE_STAFF, "程序中台"));
   assert.strictEqual(out.length, 1);
   assert.strictEqual(out[0].department, "程序中台");
 });
 
 test("should keep external records assigned to 程序中台 visible to that department staff", () => {
   const records = [rec("程序中台", "external"), rec("产品调研")];
-  const out = filterReviewsByUser(records, user("staff", "程序中台"));
+  const out = filterReviewsByUser(records, user(ROLE_STAFF, "程序中台"));
   assert.strictEqual(out.length, 1);
   assert.strictEqual(out[0].source, "external");
 });
 
 test("should return empty for staff of department with no records", () => {
-  const out = filterReviewsByUser([rec("产品调研")], user("staff", "产品运营"));
+  const out = filterReviewsByUser([rec("产品调研")], user(ROLE_STAFF, "产品运营"));
   assert.strictEqual(out.length, 0);
+});
+
+function member(email: string, name: string, github?: string): UserAccount {
+  return {
+    email,
+    password: "123456",
+    role: ROLE_STAFF,
+    title: "测试",
+    department: "程序中台",
+    name,
+    github,
+  };
+}
+
+test("should match commit author by bound github username ignoring case", () => {
+  const users = [member("zhangli@ai-flows.com", "张丽", "LavaTap")];
+  const hit = githubActorOf({ name: "lavatap", email: "someone@example.com" }, users);
+  assert.strictEqual(hit?.email, "zhangli@ai-flows.com");
+});
+
+test("should match github noreply email username when author name differs", () => {
+  const users = [member("zhangli@ai-flows.com", "张丽", "LavaTap")];
+  const hit = githubActorOf(
+    { name: "Zhang Li", email: "12345+LavaTap@users.noreply.github.com" },
+    users
+  );
+  assert.strictEqual(hit?.email, "zhangli@ai-flows.com");
+});
+
+test("should fall back to email prefix when nobody bound that github username", () => {
+  const users = [member("wangxinyi@ai-flows.com", "王鑫易")];
+  const hit = githubActorOf({ name: "wxy", email: "wangxinyi@corp.local" }, users);
+  assert.strictEqual(hit?.email, "wangxinyi@ai-flows.com");
+});
+
+test("should return null when commit author matches no employee", () => {
+  const users = [member("wangxinyi@ai-flows.com", "王鑫易", "wxy")];
+  assert.strictEqual(githubActorOf({ name: "nobody", email: "nobody@example.com" }, users), null);
+  assert.strictEqual(githubActorOf(null, users), null);
 });
 
 function node(department: string): NodeState {
@@ -61,9 +101,18 @@ function node(department: string): NodeState {
 
 test("should allow requirement edit for own-department staff and supervisor only", () => {
   const n = node("产品调研");
-  assert.strictEqual(canEditRequirement(user("staff", "产品调研"), n), true);
-  assert.strictEqual(canEditRequirement(user("staff", "程序中台"), n), false);
-  assert.strictEqual(canEditRequirement(user("supervisor", "产品"), n), true);
+  assert.strictEqual(canEditRequirement(user(ROLE_STAFF, "产品调研"), n), true);
+  assert.strictEqual(canEditRequirement(user(ROLE_STAFF, "程序中台"), n), false);
+  assert.strictEqual(canEditRequirement(user(ROLE_SUPERVISOR, "产品"), n), true);
+});
+
+test("should treat team lead as staff (label only) in permission checks", () => {
+  const n = node("产品调研");
+  // 组长权限同员工：只能动本部门，不能批准，跨部门评审记录不可见
+  assert.strictEqual(canEditRequirement(user(ROLE_LEAD, "产品调研"), n), true);
+  assert.strictEqual(canEditRequirement(user(ROLE_LEAD, "程序中台"), n), false);
+  const records = [rec("产品调研"), rec("程序中台")];
+  assert.strictEqual(filterReviewsByUser(records, user(ROLE_LEAD, "程序中台")).length, 1);
 });
 
 test("should resolve paths inside repo root and reject traversal outside", () => {
@@ -170,16 +219,16 @@ function ticket(department: string): TicketRecord {
 }
 
 test("should let own-department staff and supervisor access a ticket", () => {
-  assert.strictEqual(canAccessTicket(user("staff", "程序中台"), ticket("程序中台")), true);
-  assert.strictEqual(canAccessTicket(user("staff", "平台运营部"), ticket("程序中台")), false);
-  assert.strictEqual(canAccessTicket(user("supervisor", "产品"), ticket("程序中台")), true);
+  assert.strictEqual(canAccessTicket(user(ROLE_STAFF, "程序中台"), ticket("程序中台")), true);
+  assert.strictEqual(canAccessTicket(user(ROLE_STAFF, "平台运营部"), ticket("程序中台")), false);
+  assert.strictEqual(canAccessTicket(user(ROLE_SUPERVISOR, "产品"), ticket("程序中台")), true);
 });
 
 test("should filter tickets by department for staff and keep all for supervisor", () => {
   const list = [ticket("程序中台"), ticket("平台运营部")];
-  assert.strictEqual(filterTicketsByUser(list, user("staff", "平台运营部")).length, 1);
-  assert.strictEqual(filterTicketsByUser(list, user("staff", "用户研究部")).length, 0);
-  assert.strictEqual(filterTicketsByUser(list, user("supervisor", "平台运营部")).length, 2);
+  assert.strictEqual(filterTicketsByUser(list, user(ROLE_STAFF, "平台运营部")).length, 1);
+  assert.strictEqual(filterTicketsByUser(list, user(ROLE_STAFF, "用户研究部")).length, 0);
+  assert.strictEqual(filterTicketsByUser(list, user(ROLE_SUPERVISOR, "平台运营部")).length, 2);
 });
 
 test("should accept only known ticket statuses", () => {

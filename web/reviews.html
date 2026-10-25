@@ -6,6 +6,7 @@
   <title>代码评审 · AI-FLOWS 平台</title>
   <link rel="stylesheet" href="/ai-pipeline.css">
   <script src="/user-menu.js" defer></script>
+  <script src="/member-search.js" defer></script>
   <style>
     /* 代码评审记录页：顶栏 + 居中内容区，按当前管线绑定仓库列出评审记录 */
     body { background: var(--paper); }
@@ -54,6 +55,20 @@
     .rev-counts { text-align: right; font: 500 12px/18px var(--font-mono); color: var(--muted); white-space: nowrap; }
     .rev-counts b { color: var(--ink); }
     .rev-counts .blk { color: var(--block); }
+
+    /* 主管操作列：删除记录 / 指定触发者 */
+    .review-list.has-acts .review-row { grid-template-columns: 62px 1fr 132px 118px 96px 104px; }
+    .rev-acts { display: flex; gap: 6px; justify-content: flex-end; }
+    .rev-act { padding: 3px 8px; border-radius: 6px; border: 1px solid var(--glass-line);
+      background: var(--glass-fill); color: var(--ink-soft); font: 500 11.5px/16px var(--font-sans);
+      cursor: pointer; transition: all .14s ease; }
+    .rev-act:hover { border-color: var(--led); color: var(--led); }
+    .rev-act.del:hover { border-color: var(--block); color: var(--block); }
+    .rev-act:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* 指定触发者的浮层：复用员工搜索面板 */
+    .rev-owner-pop { position: fixed; z-index: 60; width: 300px; padding: 8px; border-radius: 12px;
+      border: 1px solid var(--glass-line); background: var(--surface); box-shadow: 0 12px 32px rgba(15,23,42,.18); }
 
     .reviews-empty { padding: 56px 12px; text-align: center; font: 400 13px/22px var(--font-sans); color: var(--muted-2); }
 

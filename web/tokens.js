@@ -4,7 +4,6 @@
    展示本人「今天 / 近 7 天 / 近 30 天 / 累计」token 消耗，并展示全团队每名成员的消耗量（所有登录用户可见）。 */
 (function () {
   var boot = window.__TOKENS__ || {};
-  var isSuper = !!boot.isSupervisor;
 
   function byId(id) { return document.getElementById(id); }
 
@@ -96,8 +95,6 @@
   }
 
   function init() {
-    var teamLink = byId("teamLink");
-    if (isSuper && teamLink) teamLink.style.display = "";
     load();
   }
 

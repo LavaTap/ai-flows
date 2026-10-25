@@ -41,17 +41,16 @@ const MAIN_SCHEMA_SQL = `
 /* 部门表：全站唯一部门来源。所有含部门的表只存编号（id，形如 dept-01），
    展示时由 db.ts 统一解析成 name，从而部门改名无需改任何业务行。 */
 CREATE TABLE IF NOT EXISTS departments (
-  ord        INTEGER NOT NULL,
-  id         TEXT PRIMARY KEY,
-  name       TEXT NOT NULL UNIQUE,
-  created_at TEXT NOT NULL
+  ord  INTEGER NOT NULL,
+  id   TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE
 );
 
 CREATE TABLE IF NOT EXISTS users (
   ord            INTEGER NOT NULL,
   email          TEXT PRIMARY KEY,
   password       TEXT NOT NULL,
-  role           TEXT NOT NULL,
+  role           INTEGER NOT NULL,
   name           TEXT,
   title          TEXT,
   department     TEXT,
@@ -164,7 +163,8 @@ CREATE TABLE IF NOT EXISTS ai_flows.nodes (
   report_url       TEXT,
   output_dir       TEXT,
   executors        TEXT,
-  removed_executors TEXT
+  removed_executors TEXT,
+  blank            INTEGER NOT NULL DEFAULT 0
 );
 
 /* 节点按管线归属的索引放在 getDb() 里、补列之后建：
@@ -519,13 +519,11 @@ function ensureDepartments(c: Database.Database): void {
     n: number;
   };
   let nextOrd = ordRow.n;
-  const insert = c.prepare(
-    "INSERT INTO departments (ord, id, name, created_at) VALUES (?,?,?,?)"
-  );
+  const insert = c.prepare("INSERT INTO departments (ord, id, name) VALUES (?,?,?)");
   const add = (name: string): void => {
     if (!name || byName.has(name)) return;
     nextNo += 1;
-    insert.run(nextOrd++, departmentId(nextNo), name, new Date().toISOString());
+    insert.run(nextOrd++, departmentId(nextNo), name);
     byName.set(name, departmentId(nextNo));
   };
   if (rows.length === 0) for (const s of DEPARTMENT_SEED) add(s);
@@ -631,6 +629,37 @@ function ensureColumn(
   }
 }
 
+/** 幂等删列：老库的 departments 带 created_at，新表结构已去掉该字段 */
+function dropColumnIfExists(
+  c: Database.Database,
+  schema: string,
+  table: string,
+  column: string
+): void {
+  const cols = c.prepare(`PRAGMA ${schema}.table_info(${table})`).all() as { name: string }[];
+  if (cols.some((x) => x.name === column)) {
+    c.exec(`ALTER TABLE ${schema}.${table} DROP COLUMN ${column}`);
+  }
+}
+
+/** 老库身份列迁移：users.role 原为 TEXT（staff / supervisor），改成 INTEGER 存 0~3 编码
+ *  （0 实习生 / 1 员工 / 2 组长 / 3 主管）。已是 INTEGER 的库直接跳过，幂等。 */
+function normalizeUserRoleColumn(c: Database.Database): void {
+  const cols = c.prepare("PRAGMA main.table_info(users)").all() as { name: string; type: string }[];
+  const role = cols.find((x) => x.name === "role");
+  if (!role || role.type.toUpperCase() === "INTEGER") return;
+  c.transaction(() => {
+    c.exec("ALTER TABLE users ADD COLUMN role_code INTEGER NOT NULL DEFAULT 1");
+    // 字符串身份一次性翻译成编码；未知值一律按员工处理（与 db.ts 的 toRole 一致）
+    c.exec(`UPDATE users SET role_code = CASE role
+      WHEN 'intern' THEN 0 WHEN 'staff' THEN 1 WHEN 'lead' THEN 2 WHEN 'supervisor' THEN 3
+      WHEN '0' THEN 0 WHEN '1' THEN 1 WHEN '2' THEN 2 WHEN '3' THEN 3
+      ELSE 1 END`);
+    c.exec("ALTER TABLE users DROP COLUMN role");
+    c.exec("ALTER TABLE users RENAME COLUMN role_code TO role");
+  })();
+}
+
 /** 取全局唯一 SQLite 连接（首次调用建目录、开账号域主库、ATTACH 五个子库、开 WAL、建表）
  *  六库布局：main=users.sqlite；ai_flows=ai-flows.sqlite；tickets=ai-tickets.sqlite；
  *  kb=ai-kb.sqlite；chat_reviews=ai-chat-reviews.sqlite；art=ai-art.sqlite。 */
@@ -659,6 +688,8 @@ export function getDb(): Database.Database {
   // 老库补列（节点执行人：显式添加名单 / 显式排除名单）
   ensureColumn(c, AI_FLOWS_SCHEMA, "nodes", "executors", "executors TEXT");
   ensureColumn(c, AI_FLOWS_SCHEMA, "nodes", "removed_executors", "removed_executors TEXT");
+  // 老库补列（新建管线的空白节点标记：不派生部门执行角色、不自动建需求工单）
+  ensureColumn(c, AI_FLOWS_SCHEMA, "nodes", "blank", "blank INTEGER NOT NULL DEFAULT 0");
   // 老库补列（节点归属管线；老节点留空，由 db.ts 启动时挂到默认管线）
   ensureColumn(c, AI_FLOWS_SCHEMA, "nodes", "pipeline_id", "pipeline_id TEXT");
   // 补列之后再建索引（见 AI_FLOWS_SCHEMA_SQL 注释：老库缺列时不能先建）
@@ -673,10 +704,14 @@ export function getDb(): Database.Database {
   ensureColumn(c, CHAT_REVIEWS_SCHEMA, "chat_messages", "refs", "refs TEXT");
   // 老库补列（消息内 AI 调用 skill 的记录：灰字提示与产出文件）
   ensureColumn(c, CHAT_REVIEWS_SCHEMA, "chat_messages", "skill_calls", "skill_calls TEXT");
+  // 老库删列（部门表不再保留创建时间）
+  dropColumnIfExists(c, "main", "departments", "created_at");
   // 跨库布局迁移：旧主库（ai-flows.sqlite）里的账号域表 / 知识库表搬去各自的库
   migrateLegacyLayout(c);
   // 单库拆多库的历史残留兜底
   migrateLegacyTables(c);
+  // 老库身份列改成数字编码（0 实习生 / 1 员工 / 2 组长 / 3 主管）；放在账号表落位之后
+  normalizeUserRoleColumn(c);
   // 部门表：种子 + 存量部门名，并把各表里的部门名就地编号化
   ensureDepartments(c);
   normalizeDepartmentColumns(c);

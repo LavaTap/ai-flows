@@ -803,96 +803,146 @@ body { padding-top: 56px; }
   cursor: pointer;
 }
 
+/* 用户下拉面板：简约风 —— 顶部资料卡 + 菜单项，与退出登录风格统一 */
 .user-panel {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
   z-index: 60;
-  min-width: 236px;
-  padding: 12px;
+  width: 260px;
+  padding: 6px;
   border: 1px solid var(--glass-line);
   border-radius: 12px;
   background: var(--paper);
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.10), 0 2px 6px rgba(15, 23, 42, 0.05);
+  overflow: hidden;
 }
 
 .user-panel[hidden] {
   display: none;
 }
 
+/* 顶部资料卡：简约风格 */
 .user-panel-head {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin: -4px;
-  padding: 4px;
-  border-radius: 8px;
+  gap: 10px;
+  padding: 10px 10px 12px;
   cursor: pointer;
+  transition: background .15s ease;
+  border-bottom: 1px solid var(--glass-line);
+  margin-bottom: 4px;
 }
 
 .user-panel-head:hover {
-  background: var(--glass-fill);
+  background: var(--paper-2);
 }
 
 .user-panel-head:focus-visible {
-  outline: 2px solid var(--led);
-  outline-offset: 1px;
+  outline: none;
+  background: var(--paper-2);
 }
 
 .user-panel-head .avatar {
-  width: 44px;
-  height: 44px;
-  flex: 0 0 44px;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
   border-radius: 50%;
-  font-size: 18px;
+  font-size: 16px;
+  font-weight: 700;
   background: var(--paper-2);
-  border: 1px solid var(--glass-line);
   overflow: hidden;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  color: #fff;
 }
 
 .user-panel-meta {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   min-width: 0;
+  flex: 1;
 }
 
 .user-panel-meta strong {
-  font: 600 14px/20px var(--font-sans);
+  font: 600 13px/18px var(--font-sans);
   color: var(--ink);
-}
-
-.user-panel-email {
-  font: 400 11.5px/16px var(--font-mono);
-  color: var(--ink-soft);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.user-panel-sep {
-  height: 1px;
-  margin: 10px -12px;
-  background: var(--glass-line);
+.user-panel-email {
+  font: 400 11.5px/16px var(--font-mono);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-panel-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.user-panel-sub .dept-name {
+  font: 500 11px/15px var(--font-sans);
+  color: var(--ink-soft);
+}
+
+.user-panel-sub .role-badge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font: 600 10px/15px var(--font-sans);
+  letter-spacing: .3px;
+}
+
+.user-panel-sub .role-badge.supervisor {
+  background: var(--led-soft);
+  color: var(--led);
+}
+
+.user-panel-sub .role-badge.staff,
+.user-panel-sub .role-badge.lead {
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.user-panel-sub .role-badge.intern {
+  background: var(--paper-2);
+  color: var(--muted);
+}
+
+/* 菜单项分组：简约分隔，无分组标题 */
+.user-panel-group {
+  padding: 4px 0;
+}
+
+.user-panel-group + .user-panel-group {
+  border-top: 1px solid var(--glass-line);
+  padding-top: 4px;
 }
 
 .user-panel-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   padding: 8px 10px;
   border-radius: 8px;
-  font: 500 12.5px/18px var(--font-sans);
-  color: var(--copy);
+  font: 500 13px/18px var(--font-sans);
+  color: var(--ink-soft);
   text-decoration: none;
   background: none;
   border: none;
   width: 100%;
   text-align: left;
   cursor: pointer;
+  transition: background .12s ease, color .12s ease;
 }
 
 .user-panel-item:hover {
@@ -900,14 +950,39 @@ body { padding-top: 56px; }
   color: var(--led);
 }
 
+.user-panel-item.active {
+  background: var(--led-soft);
+  color: var(--led);
+  font-weight: 600;
+}
+
+.user-panel-item .item-arrow {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted-2);
+  transition: transform .12s ease;
+}
+
+.user-panel-item:hover .item-arrow {
+  color: var(--led);
+  transform: translateX(2px);
+}
+
+.user-panel-logout {
+  color: var(--block);
+}
+
 .user-panel-logout:hover {
-  background: rgba(173, 49, 77, 0.08);
+  background: rgba(239, 68, 68, 0.08);
   color: var(--block);
 }
 
 .user-panel-ico {
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1;
+  width: 16px;
+  text-align: center;
+  flex: none;
 }
 
 /* ============ 主体布局：侧栏 + 管线区 ============ */
@@ -1055,6 +1130,29 @@ body { padding-top: 56px; }
 .pi-rename:hover {
   color: var(--led);
 }
+
+/* 删除管线（仅主管可见）：样式与重命名一致，hover 变红 */
+.pi-del {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: var(--muted-2);
+  cursor: pointer;
+  font: 400 12px/1 var(--font-sans);
+  padding: 2px 4px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 150ms ease, color 150ms ease;
+}
+
+.pipeline-item:hover .pi-del {
+  opacity: 1;
+}
+
+.pi-del:hover {
+  color: var(--block);
+}
+
 
 .sidebar-add {
   display: flex;
@@ -1224,6 +1322,82 @@ body { padding-top: 56px; }
   color: var(--ink-soft);
   font-weight: 500;
   margin-right: 4px;
+}
+
+/* 负责部门：值 + 主管「设置」（就地切部门下拉） */
+.d-dept {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.d-dept-val {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.d-dept-edit {
+  padding: 2px 7px;
+  border: 1px solid var(--glass-line);
+  border-radius: 6px;
+  background: var(--glass-fill);
+  color: var(--muted);
+  font: 500 11px/16px var(--font-sans);
+  cursor: pointer;
+}
+
+.d-dept-edit:hover {
+  color: var(--led);
+  border-color: var(--led);
+}
+
+.d-dept-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.d-dept-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 2px 20px 2px 8px;
+  border: 1px solid var(--glass-line);
+  border-radius: 8px;
+  background:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M2.5 4.5L6 8l3.5-3.5' fill='none' stroke='%239aa3b8' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>")
+      no-repeat right 6px center / 12px 12px,
+    var(--glass-fill);
+  color: var(--ink);
+  font: 400 12px/18px var(--font-sans);
+  cursor: pointer;
+}
+
+.d-dept-save,
+.d-dept-cancel {
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--glass-line);
+  background: var(--glass-fill);
+  font: 500 11px/16px var(--font-sans);
+  cursor: pointer;
+}
+
+.d-dept-save {
+  color: var(--led);
+  border-color: var(--led);
+}
+
+.d-dept-save:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.d-dept-cancel {
+  color: var(--muted);
+}
+
+.d-dept-cancel:hover {
+  color: var(--ink);
 }
 
 /* 标签 */

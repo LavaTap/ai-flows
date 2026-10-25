@@ -3,7 +3,11 @@
    资料源：先取各页注入的 boot 全局里的 user（__ACCOUNT__ / __PIPELINE__ / ...），
    随后一律再向 /api/me 拉一次真实登录态兜底——页面只要放了 user-chip，就必须反映登录状态。 */
 (function () {
-  var BOOT_KEYS = ["__ACCOUNT__", "__PIPELINE__", "__TICKETS__", "__GHAUDIT__", "__CHAT__", "__TEAM__", "__HOME__", "__PROFILE__", "__MESSAGES__", "__KB__", "__LOGS__"];
+  var BOOT_KEYS = ["__ACCOUNT__", "__PIPELINE__", "__REVIEWS__", "__TICKETS__", "__GHAUDIT__", "__CHAT__", "__TEAM__", "__HOME__", "__PROFILE__", "__MESSAGES__", "__KB__", "__LOGS__", "__DEPARTMENTS__"];
+
+  /* 身份编码：0 实习生 / 1 员工 / 2 组长 / 3 主管（组长仅身份标签，权限同员工） */
+  var ROLE_TEXT = { 0: "实习生", 1: "员工", 2: "组长", 3: "主管" };
+  var ROLE_CLS = { 0: "intern", 1: "staff", 2: "lead", 3: "supervisor" };
 
   function bootUser() {
     for (var i = 0; i < BOOT_KEYS.length; i++) {
@@ -57,7 +61,7 @@
     }
   }
 
-  /** 顶栏 chip：仅当页面自己没填（空 / 「未登录」）时接管，保证登录态一致、又不覆盖各页更丰富的标签 */
+  /** 顶栏 chip：仅当页面自己没填（空 / 「未登录」）时接管，保证登录态一致 */
   function fillChip(u) {
     var chip = document.getElementById("userChip");
     if (!chip) return;
@@ -71,24 +75,112 @@
     if (av && !av.innerHTML && !(av.textContent || "").trim()) paintAvatar(av, u);
   }
 
-  /** 面板：放大头像 + 姓名 + 邮箱，并把顶部资料区指向该员工个人主页 */
-  function fillPanel(u) {
+  /** 重绘整个下拉面板：资料卡 + 分组菜单项
+   *  结构：资料卡 → 账号分组（个人主页 / 设置 / 部门详情[仅主管]） → 退出登录分组 */
+  function buildPanel(u) {
     var panel = document.getElementById("userPanel");
     if (!panel) return;
-    var av = panel.querySelector(".user-panel-head .avatar") || panel.querySelector(".avatar");
-    var nameEl = document.getElementById("userPanelName");
-    var emailEl = document.getElementById("userPanelEmail");
-    paintAvatar(av, u);
-    if (nameEl) nameEl.textContent = displayName(u);
-    if (emailEl) emailEl.textContent = u.email || "";
+
+    var roleText = ROLE_TEXT[u.role] || "";
+    var roleCls = ROLE_CLS[u.role] || "staff";
+    var deptName = u.department || "";
+    var isSupervisor = u.role === 3;
+
+    var html =
+      // 资料卡
+      '<div class="user-panel-head" data-href="' + profileHref(u) + '" role="link" tabindex="0" title="查看个人主页">' +
+        '<span class="avatar" aria-hidden="true"></span>' +
+        '<div class="user-panel-meta">' +
+          '<strong>' + escapeHtml(displayName(u)) + '</strong>' +
+          '<span class="user-panel-email">' + escapeHtml(u.email || "") + '</span>' +
+          (deptName || roleText
+            ? '<div class="user-panel-sub">' +
+                (deptName ? '<span class="dept-name">' + escapeHtml(deptName) + '</span>' : '') +
+                (roleText ? '<span class="role-badge ' + roleCls + '">' + roleText + '</span>' : '') +
+              '</div>'
+            : '') +
+        '</div>' +
+      '</div>' +
+
+      // 账号分组
+      '<div class="user-panel-group">' +
+        '<a class="user-panel-item" href="' + profileHref(u) + '">' +
+          '<span class="user-panel-ico" aria-hidden="true">👤</span><span>个人主页</span>' +
+          '<span class="item-arrow">›</span>' +
+        '</a>' +
+        '<a class="user-panel-item" href="/account">' +
+          '<span class="user-panel-ico" aria-hidden="true">⚙</span><span>设置</span>' +
+          '<span class="item-arrow">›</span>' +
+        '</a>' +
+        (isSupervisor
+          ? '<a class="user-panel-item" href="/team">' +
+              '<span class="user-panel-ico" aria-hidden="true">👥</span><span>团队管理</span>' +
+              '<span class="item-arrow">›</span>' +
+            '</a>' +
+            '<a class="user-panel-item" href="/departments">' +
+              '<span class="user-panel-ico" aria-hidden="true">🏢</span><span>部门详情</span>' +
+              '<span class="item-arrow">›</span>' +
+            '</a>'
+          : '') +
+        '<a class="user-panel-item" href="/tokens">' +
+          '<span class="user-panel-ico" aria-hidden="true">📊</span><span>Token 面板</span>' +
+          '<span class="item-arrow">›</span>' +
+        '</a>' +
+      '</div>' +
+
+      // 退出分组
+      '<div class="user-panel-group">' +
+        '<button class="user-panel-item user-panel-logout" type="button">' +
+          '<span class="user-panel-ico" aria-hidden="true">⏻</span><span>退出登录</span>' +
+        '</button>' +
+      '</div>';
+
+    panel.innerHTML = html;
+
+    // 头像着色
+    var headAv = panel.querySelector(".user-panel-head .avatar");
+    if (headAv) paintAvatar(headAv, u);
+
+    // 资料卡点击 → 个人主页
     var head = panel.querySelector(".user-panel-head");
-    if (head) head.setAttribute("data-href", profileHref(u));
+    if (head) {
+      head.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var href = head.getAttribute("data-href");
+        if (href) location.href = href;
+      });
+      head.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          var href = head.getAttribute("data-href");
+          if (href) location.href = href;
+        }
+      });
+    }
+
+    // 退出登录
+    var logoutBtn = panel.querySelector(".user-panel-logout");
+    if (logoutBtn) {
+      logoutBtn.addEventListener("click", function () {
+        fetch("/api/logout", { method: "POST" }).finally(function () {
+          location.href = "/login";
+        });
+      });
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
   }
 
   function applyUser(u) {
     if (!u) return;
     fillChip(u);
-    fillPanel(u);
+    buildPanel(u);
   }
 
   /** 拉一次真实登录态：页面注入缺失或过期时也能把 chip 校准成登录用户 */
@@ -130,38 +222,6 @@
 
     applyUser(bootUser());
     syncMe();
-
-    /* 面板顶部资料区：整块可点，进该员工个人主页 */
-    var head = panel.querySelector(".user-panel-head");
-    if (head) {
-      head.setAttribute("role", "link");
-      head.setAttribute("tabindex", "0");
-      head.title = "查看个人主页";
-      function goProfile() {
-        var href = head.getAttribute("data-href");
-        if (href) location.href = href;
-      }
-      head.addEventListener("click", function (e) {
-        e.stopPropagation();
-        goProfile();
-      });
-      head.addEventListener("keydown", function (e) {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          goProfile();
-        }
-      });
-    }
-
-    /* 退出登录 */
-    var logoutItem = panel.querySelector(".user-panel-logout");
-    if (logoutItem) {
-      logoutItem.addEventListener("click", function () {
-        fetch("/api/logout", { method: "POST" }).finally(function () {
-          location.href = "/login";
-        });
-      });
-    }
   }
 
   if (document.readyState === "loading") {
@@ -191,8 +251,7 @@
     if (!iso) return "";
     var d = new Date(iso);
     if (isNaN(d.getTime())) return "";
-    var now = new Date();
-    var diff = (now - d) / 1000;
+    var diff = (new Date() - d) / 1000;
     if (diff < 60) return "刚刚";
     if (diff < 3600) return Math.floor(diff / 60) + " 分钟前";
     if (diff < 86400) return Math.floor(diff / 3600) + " 小时前";
@@ -299,7 +358,6 @@
         li.appendChild(body);
 
         li.addEventListener("click", function () {
-          // 标记已读并跳转
           if (!m.read && m.id) {
             fetch("/api/messages/" + encodeURIComponent(m.id) + "/read", { method: "POST" })
               .catch(function () {});

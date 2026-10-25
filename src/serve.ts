@@ -1,4 +1,4 @@
-import { createServer, type Server, type IncomingMessage } from "node:http";
+import { createServer, request as httpRequest, type Server, type IncomingMessage, type ServerResponse } from "node:http";
 import { readdirSync, readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, dirname, basename, resolve } from "node:path";
 import { spawn } from "node:child_process";
@@ -14,6 +14,36 @@ export const REPORTS_DIR = ".ai-review-reports";
 
 /** 报告服务默认端口（与平台服务 4311 错开） */
 export const DEFAULT_REPORT_PORT = 4310;
+
+/** 平台服务端口：报告页与平台同主机不同端口，会话 cookie 可带，但会话在平台进程内存里，
+ *  故报告页的 /api/*（登录态、消息、头像）统一反代到平台侧取数。 */
+const PLATFORM_PORT = Number(process.env.AI_FLOWS_PORT ?? 4311);
+
+/** 把 /api/* 请求原样转发到平台服务（含 cookie / body），失败回 502 让页面降级成「未登录」 */
+function proxyToPlatform(req: IncomingMessage, res: ServerResponse): void {
+  const upstream = httpRequest(
+    {
+      host: "127.0.0.1",
+      port: PLATFORM_PORT,
+      path: req.url ?? "/",
+      method: req.method,
+      headers: req.headers,
+    },
+    (up) => {
+      res.statusCode = up.statusCode ?? 502;
+      for (const [k, v] of Object.entries(up.headers)) {
+        if (v !== undefined) res.setHeader(k, v);
+      }
+      up.pipe(res);
+    }
+  );
+  upstream.on("error", () => {
+    res.statusCode = 502;
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.end(JSON.stringify({ error: "平台服务不可用" }));
+  });
+  req.pipe(upstream);
+}
 
 function esc(s: string): string {
   return String(s)
@@ -232,6 +262,11 @@ export async function startReportServer(
       res.end(JSON.stringify({ ok: true, roots: listRoots() }));
       return;
     }
+    // 平台接口反代：报告页顶栏取登录态 / 消息铃铛走这里（同源请求，cookie 自动带上）
+    if (path.startsWith("/api/")) {
+      proxyToPlatform(req, res);
+      return;
+    }
     // 注册报告目录：各仓库评审后把自己的 .ai-review-reports 登记进来（幂等）
     if (path === "/roots" && req.method === "POST") {
       res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -334,8 +369,17 @@ export async function startReportServer(
         return;
       }
     }
-    res.statusCode = 404;
-    res.end("not found");
+    // 报告服务只负责报告页；其余页面（登录页 / 账号 / 全部评审报告 / 消息…）都在平台服务上。
+    // 退出登录后跳 /login、页头导航点 /reviews 之类都会走到这里，一律 302 回平台，
+    // 避免在 4310 上落到 404。找不到的报告仍按 404 处理。
+    if (path.startsWith("/reports/")) {
+      res.statusCode = 404;
+      res.end("report not found");
+      return;
+    }
+    res.statusCode = 302;
+    res.setHeader("Location", `http://${u.hostname}:${PLATFORM_PORT}${u.pathname}${u.search}`);
+    res.end();
   });
 
   const port = await new Promise<number>((resolve, reject) => {

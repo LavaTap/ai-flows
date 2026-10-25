@@ -2,7 +2,6 @@
 (function () {
   var boot = window.__ACCOUNT_SECURITY__ || {};
   var user = boot.user || {};
-  var isSuper = !!boot.isSupervisor;
   var security = boot.security || {};
   var maxAgeDays = security.maxAgeDays || 10;
   var minLength = security.minLength || 6;
@@ -61,10 +60,6 @@
   }
 
   function initTopbar() {
-    if (isSuper) {
-      var teamLink = byId("teamLink");
-      if (teamLink) teamLink.style.display = "";
-    }
     renderUserChip();
   }
 

@@ -39,10 +39,6 @@
   /* ────────────── 顶栏 ────────────── */
 
   function initTopbar() {
-    if (isSuper) {
-      var teamLink = document.getElementById("teamLink");
-      if (teamLink) teamLink.style.display = "";
-    }
     renderUserChip();
   }
 
@@ -87,13 +83,11 @@
     document.getElementById("titleEl").textContent = user.title || "-";
 
     var badge = document.getElementById("roleBadge");
-    if (user.role === "supervisor") {
-      badge.textContent = "主管";
-      badge.className = "badge supervisor";
-    } else {
-      badge.textContent = "员工";
-      badge.className = "badge staff";
-    }
+    /* 身份编码：0 实习生 / 1 员工 / 2 组长 / 3 主管 */
+    var ROLE_TEXT = { 0: "实习生", 1: "员工", 2: "组长", 3: "主管" };
+    var ROLE_CLS = { 0: "intern", 1: "staff", 2: "lead", 3: "supervisor" };
+    badge.textContent = ROLE_TEXT[user.role] || "员工";
+    badge.className = "badge " + (ROLE_CLS[user.role] || "staff");
   }
 
   /* ────────────── GitHub 只读展示 ────────────── */

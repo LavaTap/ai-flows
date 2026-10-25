@@ -10,7 +10,7 @@
   var HIST_MAX = 20;
 
   var STATUS_LABEL = { open: "待处理", doing: "处理中", resolved: "已解决" };
-  var ROLE_LABEL = { supervisor: "主管", staff: "员工" };
+  var ROLE_LABEL = { 0: "实习生", 1: "员工", 2: "组长", 3: "主管" };
 
   function byId(id) { return document.getElementById(id); }
 

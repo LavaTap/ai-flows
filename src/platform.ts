@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, statSync, unlinkSync } from "node:fs";
 import { join, dirname, basename, resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadNodes, loadAllNodes, loadNodeById, saveNodes, saveNode, loadPipelines, loadPipeline, findPipelineByName, createPipeline, updatePipeline, deletePipeline, loadRepos, loadRepo, appendRepo, updateRepo, deleteRepo, DEFAULT_PIPELINE_ID, authenticate, loadUsers, loadDepartments, loadReviews, appendReview, appendReviews, updateReviewMeta, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, setPassword, ensurePasswordBaseline, loadTickets, appendTicket, updateTicket, deleteTicket, loadPlatformMessages, appendPlatformMessage, markMessageRead, markAllMessagesRead, loadKbArticles, appendKbArticle, updateKbArticle, deleteKbArticle, loadKbComments, findKbComment, appendKbComment, deleteKbComment, countKbLikes, likedKbTargetIds, toggleKbLike, kbLikeNames, type KbComment, TICKET_IMAGES_DIR, AVATARS_DIR, CHAT_UPLOADS_DIR, ART_ASSETS_DIR, loadArtBoards, loadArtBoard, createArtBoard, saveArtBoard, duplicateArtBoard, deleteArtBoard, loadArtAssets, loadArtAsset, appendArtAsset, deleteArtAsset, artStats, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, recordTokenUsage, loadTokenUsage, type TokenUsageRecord, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel, type ChatAttachment, type ChatRef, type ChatSkillCall, type PlatformMessage, type MessageType, type KbArticle, type KbVisibility, type RepoRecord, type PipelineRecord } from "./db.js";
+import { loadNodes, loadAllNodes, loadNodeById, saveNodes, saveNode, loadPipelines, loadPipeline, findPipelineByName, createPipeline, updatePipeline, deletePipeline, loadRepos, loadRepo, appendRepo, updateRepo, deleteRepo, DEFAULT_PIPELINE_ID, authenticate, loadUsers, loadDepartments, loadReviews, appendReview, appendReviews, updateReviewMeta, deleteReview, updateReviewActor, normalizeGithub, setUserGithub, setUserGithubPending, clearUserGithubPending, approveUserGithub, setUserProfile, setPassword, ensurePasswordBaseline, loadTickets, appendTicket, updateTicket, deleteTicket, loadPlatformMessages, appendPlatformMessage, markMessageRead, markAllMessagesRead, loadKbArticles, appendKbArticle, updateKbArticle, deleteKbArticle, loadKbComments, findKbComment, appendKbComment, deleteKbComment, countKbLikes, likedKbTargetIds, toggleKbLike, kbLikeNames, type KbComment, TICKET_IMAGES_DIR, AVATARS_DIR, CHAT_UPLOADS_DIR, ART_ASSETS_DIR, loadArtBoards, loadArtBoard, createArtBoard, saveArtBoard, duplicateArtBoard, deleteArtBoard, loadArtAssets, loadArtAsset, appendArtAsset, deleteArtAsset, artStats, loadChats, appendChat, updateChat, deleteChat, loadChatModels, appendChatModel, updateChatModel, deleteChatModel, setActiveModel, recordTokenUsage, loadTokenUsage, ROLE_STAFF, type TokenUsageRecord, type ReviewRecord, type NodeState, type UserAccount, type TicketRecord, type TicketStatus, type TicketComment, type ChatSession, type ChatMessage, type ChatModel, type ChatAttachment, type ChatRef, type ChatSkillCall, type PlatformMessage, type MessageType, type KbArticle, type KbVisibility, type RepoRecord, type PipelineRecord } from "./db.js";
 import {
   callModelStream,
   callModelOnce,
@@ -28,7 +28,7 @@ import { collectDiff } from "./collector.js";
 import { reviewBatch } from "./reviewer.js";
 import { decideGate } from "./gate.js";
 import { writeReviewReport, buildReportView, fetchRepoTree } from "./reporter.js";
-import { isRepo, currentBranch, lsRemote, headCommit } from "./git.js";
+import { isRepo, currentBranch, lsRemote, headCommit, commitAuthor, commitAuthorBefore } from "./git.js";
 import { ensureReportServer, findReusableReview, REPORTS_DIR } from "./serve.js";
 import { runSkill, sanitizeFilename, listSkills, resolveSkillDocByName, REPO_ROOT, type SkillInfo } from "./skill.js";
 import { runCrawler, runSkillAgent, packZip } from "./crawler.js";
@@ -134,14 +134,19 @@ const SKILL_OUTPUT_SKIP = new Set(["node_modules", "venv", "__pycache__"]);
 /** 会话标题长度上限（用户手工重命名时超出按此截断） */
 const CHAT_TITLE_MAX = 60;
 
+/** 是否主管（role=3）：组长(2)/员工(1)/实习生(0) 权限同员工，组长仅身份标签不同 */
+export function isSupervisor(user: UserAccount): boolean {
+  return user.role === 3;
+}
+
 /** 员工只能执行本部门节点；部门主管不限部门（权限最高） */
 export function canExecute(user: UserAccount, node: NodeState): boolean {
-  return user.role === "supervisor" || user.department === node.department;
+  return isSupervisor(user) || user.department === node.department;
 }
 
 /** 仅部门主管可批准节点（操控并批准所有节点） */
 export function canApprove(user: UserAccount): boolean {
-  return user.role === "supervisor";
+  return isSupervisor(user);
 }
 
 /** 需求文本/附件编辑权限：与本节点执行权限一致（本部门员工 + 主管） */
@@ -285,18 +290,55 @@ const AI_REVIEW_DEPT = "程序中台";
 
 /** 按视角过滤评审记录：主管看全部；员工只看本部门；外部触发记录已归到部门，可随部门可见 */
 export function filterReviewsByUser(reviews: ReviewRecord[], user: UserAccount): ReviewRecord[] {
-  if (user.role === "supervisor") return reviews;
+  if (isSupervisor(user)) return reviews;
   return reviews.filter((r) => r.department === user.department);
+}
+
+/** git 提交作者 → 平台员工：优先匹配员工绑定的 GitHub 用户名（不区分大小写），
+ *  其次匹配 GitHub noreply 邮箱里的用户名 / 邮箱前缀（覆盖未绑 GitHub 的账号）；
+ *  无命中返回 null（调用方回退「外部触发」） */
+export function githubActorOf(
+  author: { name: string; email: string } | null,
+  users: UserAccount[]
+): UserAccount | null {
+  if (!author) return null;
+  const candidates = new Set<string>();
+  const name = (author.name ?? "").trim().toLowerCase();
+  if (name) candidates.add(name);
+  const email = (author.email ?? "").trim().toLowerCase();
+  if (email) {
+    const local = email.split("@")[0];
+    if (local) {
+      candidates.add(local);
+      // GitHub noreply 邮箱本地部分形如 12345+login
+      const plus = local.match(/^\d+\+(.+)$/);
+      if (plus) candidates.add(plus[1]);
+    }
+    const noreply = email.match(/^(?:\d+\+)?([a-z0-9-]+)@users\.noreply\.github\.com$/);
+    if (noreply) candidates.add(noreply[1]);
+  }
+  if (!candidates.size) return null;
+  const byGithub = users.find((u) => {
+    const gh = (u.github ?? "").trim().toLowerCase();
+    return !!gh && candidates.has(gh);
+  });
+  if (byGithub) return byGithub;
+  return (
+    users.find((u) => {
+      const local = (u.email ?? "").split("@")[0].trim().toLowerCase();
+      return !!local && candidates.has(local);
+    }) ?? null
+  );
 }
 
 /** 工单访问权限：本部门员工 + 部门主管（主管全量）。查看 / 改状态 / 评论同权，不另设入口 */
 export function canAccessTicket(user: UserAccount, ticket: { department: string }): boolean {
-  return user.role === "supervisor" || user.department === ticket.department;
+  return isSupervisor(user) || user.department === ticket.department;
 }
 
 /** 按视角过滤工单：主管全量；员工只看本部门提交的工单 */
 export function filterTicketsByUser(tickets: TicketRecord[], user: UserAccount): TicketRecord[] {
-  if (user.role === "supervisor") return tickets;
+  if (isSupervisor(user)) return tickets;
   return tickets.filter((t) => t.department === user.department);
 }
 
@@ -307,7 +349,7 @@ export function isTicketStatus(v: unknown): v is TicketStatus {
 
 /** 知识库可见性：主管全量；撰写人本人始终可见；其余按可见范围（全体 / 指定部门 / 仅自己） */
 export function canViewKb(article: KbArticle, user: UserAccount): boolean {
-  if (user.role === "supervisor") return true;
+  if (isSupervisor(user)) return true;
   if (article.authorEmail === user.email) return true;
   if (article.visibility === "all") return true;
   if (article.visibility === "departments") {
@@ -531,10 +573,12 @@ function newTicketId(): string {
   return `t-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`;
 }
 
-/** 为单个节点补齐需求工单（幂等），返回该节点的需求工单 */
-function ensureNodeRequirementTicket(node: NodeState): TicketRecord {
+/** 为单个节点补齐需求工单（幂等），返回该节点的需求工单；
+ *  空白节点（新建管线的初始节点）不自动建单，返回 null（主管显式建单/挂单后才有） */
+function ensureNodeRequirementTicket(node: NodeState): TicketRecord | null {
   const existing = findRequirementTicket(node.id);
   if (existing) return existing;
+  if (node.blank) return null;
   const now = new Date().toISOString();
   const text = (node.requirementText ?? "").trim();
   const record: TicketRecord = {
@@ -582,12 +626,15 @@ function toNodeView(user: UserAccount, node: NodeState, tickets?: TicketRecord[]
   };
 }
 
-/** 节点执行人集合 = 部门成员 ∪ 显式添加名单 − 显式排除名单（按部门/邮箱去重） */
+/** 节点执行人集合 = 部门成员 ∪ 显式添加名单 − 显式排除名单（按部门/邮箱去重）。
+ *  空白节点（新建管线的初始节点）不派生部门成员，只认显式添加名单。 */
 function nodeExecutors(node: NodeState, users: UserAccount[]): UserAccount[] {
   const removed = new Set(node.removedExecutors ?? []);
   const map = new Map<string, UserAccount>();
-  for (const u of users) {
-    if (u.department === node.department && !removed.has(u.email)) map.set(u.email, u);
+  if (!node.blank) {
+    for (const u of users) {
+      if (u.department === node.department && !removed.has(u.email)) map.set(u.email, u);
+    }
   }
   for (const e of node.executors ?? []) {
     const u = users.find((x) => x.email === e.email);
@@ -919,7 +966,7 @@ function messagesHtml(user: UserAccount): string {
   const list = myMessages(user.email);
   const boot = {
     user: toUserView(user),
-    isSupervisor: user.role === "supervisor",
+    isSupervisor: isSupervisor(user),
     messages: list,
     unread: list.filter((m) => !m.read).length,
   };
@@ -930,7 +977,7 @@ function messagesHtml(user: UserAccount): string {
 /** 渲染日志页：读静态 logs.html，注入登录用户 bootstrap */
 function logsHtml(user: UserAccount): string {
   const raw = readFileSync(join(WEB_DIR, "logs.html"), "utf8");
-  const boot = { user: toUserView(user), isSupervisor: user.role === "supervisor" };
+  const boot = { user: toUserView(user), isSupervisor: isSupervisor(user) };
   const inject = `<script>window.__LOGS__ = ${jsonForScript(boot)};</script>\n<script src="/logs.js" defer></script>`;
   return raw.replace("</body>", `${inject}\n</body>`);
 }
@@ -977,7 +1024,7 @@ export function summarizeTokenUsage(
 /** 渲染 Token 面板页：读静态 tokens.html，注入登录用户 bootstrap */
 function tokensHtml(user: UserAccount): string {
   const raw = readFileSync(join(WEB_DIR, "tokens.html"), "utf8");
-  const boot = { user: toUserView(user), isSupervisor: user.role === "supervisor" };
+  const boot = { user: toUserView(user), isSupervisor: isSupervisor(user) };
   const inject = `<script>window.__TOKENS__ = ${jsonForScript(boot)};</script>\n<script src="/tokens.js" defer></script>`;
   return raw.replace("</body>", `${inject}\n</body>`);
 }
@@ -993,7 +1040,7 @@ function reviewsHtml(user: UserAccount, fallbackRepo: string, pipelineIdRaw: str
   const repo = showAll ? fallbackRepo : pipelineRepoPath(active, fallbackRepo);
   const boot = {
     user: toUserView(user),
-    isSupervisor: user.role === "supervisor",
+    isSupervisor: isSupervisor(user),
     pipelines: pipelines.map((p) => ({ id: p.id, name: p.name })),
     pipelineId: activeId,
     pipelineName: showAll ? "全部" : active?.name ?? "",
@@ -1065,6 +1112,7 @@ const STATIC_FILES: Record<string, { file: string; type: string }> = {
   "/logs.js": { file: "logs.js", type: "text/javascript; charset=utf-8" },
   "/tokens.js": { file: "tokens.js", type: "text/javascript; charset=utf-8" },
   "/reviews.js": { file: "reviews.js", type: "text/javascript; charset=utf-8" },
+  "/departments.js": { file: "departments.js", type: "text/javascript; charset=utf-8" },
 };
 
 /** 读 web/ 下静态文件并响应，不存在返回 false */
@@ -1204,7 +1252,7 @@ function accountHtml(user: UserAccount): string {
   const raw = readFileSync(join(WEB_DIR, "account.html"), "utf8");
   const boot = {
     user: toUserView(user),
-    isSupervisor: user.role === "supervisor",
+    isSupervisor: isSupervisor(user),
   };
   const inject = `<script>window.__ACCOUNT__ = ${jsonForScript(boot)};</script>\n<script src="/account.js" defer></script>`;
   return raw.replace("</body>", `${inject}\n</body>`);
@@ -1236,7 +1284,7 @@ function accountSecurityHtml(user: UserAccount): string {
   const st = passwordStatus(user.passwordChangedAt);
   const boot = {
     user: toUserView(user),
-    isSupervisor: user.role === "supervisor",
+    isSupervisor: isSupervisor(user),
     security: { ...st, maxAgeDays: PASSWORD_MAX_AGE_DAYS, minLength: PASSWORD_MIN_LENGTH },
   };
   const inject = `<script>window.__ACCOUNT_SECURITY__ = ${jsonForScript(boot)};</script>\n<script src="/account-security.js" defer></script>`;
@@ -1248,7 +1296,7 @@ function repoSettingsHtml(user: UserAccount): string {
   const raw = readFileSync(join(WEB_DIR, "account-repo.html"), "utf8");
   const boot = {
     user: toUserView(user),
-    isSupervisor: user.role === "supervisor",
+    isSupervisor: isSupervisor(user),
     pipelines: loadPipelines().map((p) => ({ id: p.id, name: p.name, repoId: p.repoId ?? "" })),
     repos: loadRepos(),
   };
@@ -1262,7 +1310,7 @@ function accountReposHtml(user: UserAccount): string {
   const pipelines = loadPipelines();
   const boot = {
     user: toUserView(user),
-    isSupervisor: user.role === "supervisor",
+    isSupervisor: isSupervisor(user),
     repos: loadRepos(),
     pipelines: pipelines.map((p) => ({ id: p.id, name: p.name, repoId: p.repoId ?? "" })),
   };
@@ -1279,7 +1327,7 @@ function teamHtml(user: UserAccount): string {
     user: toUserView(user),
     members: allUsers.map(toUserView),
     departments,
-    isSupervisor: user.role === "supervisor",
+    isSupervisor: isSupervisor(user),
   };
   const inject = `<script>window.__TEAM__ = ${jsonForScript(boot)};</script>\n<script src="/team.js" defer></script>`;
   return raw.replace("</body>", `${inject}\n</body>`);
@@ -1292,7 +1340,7 @@ function githubAuditHtml(user: UserAccount): string {
   const boot = {
     user: toUserView(user),
     members: allUsers.map(toUserView),
-    isSupervisor: user.role === "supervisor",
+    isSupervisor: isSupervisor(user),
   };
   const inject = `<script>window.__GHAUDIT__ = ${jsonForScript(boot)};</script>\n<script src="/github-audit.js" defer></script>`;
   return raw.replace("</body>", `${inject}\n</body>`);
@@ -1306,7 +1354,7 @@ function ticketsHtml(user: UserAccount): string {
     user: toUserView(user),
     departments: loadDepartments().map((d) => d.name),
     members: allUsers.map(toUserView),
-    isSupervisor: user.role === "supervisor",
+    isSupervisor: isSupervisor(user),
     /** 可见的知识库索引：工单正文里的知识卡片渲染 + 编辑器「知识库」引用选择 */
     kb: filterKbByUser(loadKbArticles(), user).map(toKbCardInfo),
   };
@@ -1325,7 +1373,7 @@ function kbHtml(user: UserAccount): string {
   const likedIds = likedKbTargetIds("article", user.email);
   const boot = {
     user: toUserView(user),
-    isSupervisor: user.role === "supervisor",
+    isSupervisor: isSupervisor(user),
     members: allUsers.map(toUserView),
     departments: loadDepartments().map((d) => d.name),
     articles: articles.map((a) => toKbView(a, user, { likeCount, likedIds })),
@@ -1352,7 +1400,7 @@ function chatHtml(user: UserAccount): string {
     user: toUserView(user),
     models: models.map(toChatModelView),
     activeModelId: activeId,
-    isSupervisor: user.role === "supervisor",
+    isSupervisor: isSupervisor(user),
   };
   const inject = `<script>window.__CHAT__ = ${jsonForScript(boot)};</script>\n<script src="/chat.js" defer></script>`;
   return raw.replace("</body>", `${inject}\n</body>`);
@@ -1363,6 +1411,33 @@ function homeHtml(user: UserAccount): string {
   const raw = readFileSync(join(WEB_DIR, "home.html"), "utf8");
   const boot = { user: toUserView(user) };
   const inject = `<script>window.__HOME__ = ${jsonForScript(boot)};</script>\n<script src="/home.js" defer></script>`;
+  return raw.replace("</body>", `${inject}\n</body>`);
+}
+
+/** 部门详情页：仅主管可见，注入部门列表 + 各部门成员（按 ord 排序） */
+function departmentsHtml(user: UserAccount): string {
+  const raw = readFileSync(join(WEB_DIR, "departments.html"), "utf8");
+  const depts = loadDepartments();
+  const allUsers = loadUsers();
+  const usersByDept: Record<string, UserView[]> = {};
+  for (const d of depts) {
+    usersByDept[d.id] = allUsers
+      .filter((u) => u.department === d.name)
+      .map((u) => toUserView(u))
+      .sort((a, b) => {
+        // 主管在前，依次组长 / 员工 / 实习生；同角色按姓名
+        const roleOrder = (r: UserAccount["role"]) => 3 - r;
+        const d = roleOrder(a.role) - roleOrder(b.role);
+        if (d !== 0) return d;
+        return (a.name || a.email).localeCompare(b.name || b.email, "zh-CN");
+      });
+  }
+  const boot = {
+    user: toUserView(user),
+    departments: depts,
+    usersByDept,
+  };
+  const inject = `<script>window.__DEPARTMENTS__ = ${jsonForScript(boot)};</script>\n<script src="/departments.js" defer></script>`;
   return raw.replace("</body>", `${inject}\n</body>`);
 }
 
@@ -1391,7 +1466,7 @@ function profileHtml(user: UserAccount, target: UserAccount): string {
     user: toUserView(user),
     target: toUserView(target),
     articles: targetArticles,
-    isSupervisor: user.role === "supervisor",
+    isSupervisor: isSupervisor(user),
   };
   const inject = `<script>window.__PROFILE__ = ${jsonForScript(boot)};</script>\n<script src="/profile.js" defer></script>`;
   return raw.replace("</body>", `${inject}\n</body>`);
@@ -1859,6 +1934,8 @@ async function collectExternalReviews(
 
   // 报告 → 记录（保留目录来源，回填 reportUrl 时按 id 定位到所属仓库）
   const ownDir = new Map<string, string>();
+  // 记录 id → 报告所在仓库 + 被评提交 / 生成时间（归属人解析用；只给「新记录 / 无归属老记录」跑 git）
+  const commitOf = new Map<string, { repoPath: string; hash: string; generatedAt: string }>();
   for (const { dir, repoPath } of scanned) {
     const repoName = basename(repoPath);
     let files: string[];
@@ -1873,15 +1950,22 @@ async function collectExternalReviews(
           passed?: boolean;
           generatedAt?: string;
           counts?: { blocker?: number; warning?: number; info?: number };
+          reviewedCommit?: string;
         };
         const id = f.replace(/\.json$/, "");
+        const hash = typeof view.reviewedCommit === "string" ? view.reviewedCommit.trim() : "";
+        commitOf.set(id, {
+          repoPath,
+          hash: /^[0-9a-f]{7,40}$/i.test(hash) ? hash : "",
+          generatedAt: typeof view.generatedAt === "string" ? view.generatedAt : "",
+        });
         records.push({
           id,
           source: "external",
           actor: "外部触发",
           email: "",
           department: AI_REVIEW_DEPT,
-          role: "staff",
+          role: ROLE_STAFF,
           generatedAt: view.generatedAt ?? "",
           passed: !!view.passed,
           blockers: view.counts?.blocker ?? 0,
@@ -1913,7 +1997,32 @@ async function collectExternalReviews(
   // 补录 db 里不存在的记录；已存在但缺 repo / 地址失效的就地回填（修复过往记录）
   if (records.length) {
     const existing = new Map(loadReviews().map((r) => [r.id, r]));
+    // 触发人归属：报告记录的被评提交 → git 作者 → 员工绑定的 GitHub 用户名
+    const users = loadUsers();
+    const actorCache = new Map<string, UserAccount | null>();
+    const actorFor = async (id: string): Promise<UserAccount | null> => {
+      const target = commitOf.get(id);
+      if (!target) return null;
+      if (!target.hash && !target.generatedAt) return null;
+      const key = `${process.platform === "win32" ? target.repoPath.toLowerCase() : target.repoPath}|${target.hash || target.generatedAt}`;
+      if (!actorCache.has(key)) {
+        // 报告记了被评提交就直接读它；老报告没记，就回退到「评审时刻之前的最后一次提交」
+        const author = target.hash
+          ? await commitAuthor(target.repoPath, target.hash)
+          : await commitAuthorBefore(target.repoPath, target.generatedAt);
+        actorCache.set(key, githubActorOf(author, users));
+      }
+      return actorCache.get(key) ?? null;
+    };
     const fresh = records.filter((r) => !existing.has(r.id));
+    for (const r of fresh) {
+      const actor = await actorFor(r.id);
+      if (!actor) continue;
+      r.actor = actor.name || actor.email;
+      r.email = actor.email;
+      r.department = actor.department;
+      r.role = actor.role;
+    }
     if (fresh.length) appendReviews(fresh);
     for (const r of records) {
       const old = existing.get(r.id);
@@ -1926,6 +2035,21 @@ async function collectExternalReviews(
       if (Object.keys(patch).length) {
         updateReviewMeta(r.id, patch);
         Object.assign(old, patch);
+      }
+      // 触发人矫正：历史外部记录无归属（email 为空）且能从提交作者匹配到员工时，
+      // 按员工资料补齐触发者；主管手动指定过归属的记录（email 有值）不再覆盖
+      if (!old.email) {
+        const actor = await actorFor(r.id);
+        if (actor) {
+          const fixed = {
+            actor: actor.name || actor.email,
+            email: actor.email,
+            department: actor.department,
+            role: actor.role,
+          };
+          updateReviewActor(r.id, fixed);
+          Object.assign(old, fixed);
+        }
       }
     }
   }
@@ -2074,7 +2198,7 @@ export async function startPlatformServer(
       }
       sendJson(res, 200, {
         user: toUserView(user),
-        members: user.role === "supervisor" ? loadUsers().map(toUserView) : undefined,
+        members: isSupervisor(user) ? loadUsers().map(toUserView) : undefined,
       });
       return;
     }
@@ -2100,7 +2224,7 @@ export async function startPlatformServer(
         return;
       }
       const updated =
-        user.role === "supervisor"
+        isSupervisor(user)
           ? setUserGithub(user.email, github)
           : setUserGithubPending(user.email, github);
       if (!updated) {
@@ -2276,6 +2400,55 @@ export async function startPlatformServer(
       return;
     }
 
+    // 主管管理单条评审记录：删除 / 指定触发者（归属人）
+    const reviewItem = path.match(/^\/api\/reviews\/([^/\\]+)$/);
+    if (reviewItem) {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      if (!isSupervisor(user)) {
+        sendJson(res, 403, { error: "仅主管可管理评审记录" });
+        return;
+      }
+      const recordId = decodePathSegment(reviewItem[1]);
+      if (!recordId) {
+        sendJson(res, 400, { error: "记录 id 非法" });
+        return;
+      }
+      if (req.method === "DELETE") {
+        const removed = deleteReview(recordId);
+        sendJson(res, removed ? 200 : 404, removed ? { ok: true } : { error: "评审记录不存在" });
+        return;
+      }
+      if (req.method === "PATCH") {
+        let email = "";
+        try {
+          const body = JSON.parse(await readBody(req)) as { email?: unknown };
+          if (typeof body.email === "string") email = body.email.trim();
+        } catch {
+          sendJson(res, 400, { error: "请求体不是合法 JSON" });
+          return;
+        }
+        const target = loadUsers().find((u) => u.email === email);
+        if (!target) {
+          sendJson(res, 400, { error: "指定的员工不存在" });
+          return;
+        }
+        const updated = updateReviewActor(recordId, {
+          actor: target.name || target.email,
+          email: target.email,
+          department: target.department ?? "",
+          role: target.role,
+        });
+        sendJson(res, updated ? 200 : 404, updated ? { ok: true } : { error: "评审记录不存在" });
+        return;
+      }
+      sendJson(res, 405, { error: "方法不支持" });
+      return;
+    }
+
     // 首页（未登录重定向到登录页）
     if (path === "/home" && req.method === "GET") {
       const user = currentUser(req);
@@ -2287,6 +2460,26 @@ export async function startPlatformServer(
       }
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.end(homeHtml(user));
+      return;
+    }
+
+    // 部门详情页（仅主管可见，未登录 → /login，员工 → /home）
+    if (path === "/departments" && req.method === "GET") {
+      const user = currentUser(req);
+      if (!user) {
+        res.statusCode = 302;
+        res.setHeader("Location", "/login");
+        res.end();
+        return;
+      }
+      if (!canApprove(user)) {
+        res.statusCode = 302;
+        res.setHeader("Location", "/home");
+        res.end();
+        return;
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(departmentsHtml(user));
       return;
     }
 
@@ -2613,11 +2806,15 @@ export async function startPlatformServer(
       return;
     }
 
-    // 新增管线（按默认模板补一套独立节点）
+    // 新增管线（仅主管；按默认模板补一套独立节点）
     if (path === "/api/pipelines" && req.method === "POST") {
       const user = currentUser(req);
       if (!user) {
         sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      if (!isSupervisor(user)) {
+        sendJson(res, 403, { error: "仅主管可管理管线" });
         return;
       }
       let name = "";
@@ -2647,12 +2844,16 @@ export async function startPlatformServer(
       return;
     }
 
-    // 编辑 / 删除管线：id 用 [^/\\]+ 限定防路径穿越
+    // 编辑 / 删除管线（仅主管）：id 用 [^/\\]+ 限定防路径穿越
     const plm = path.match(/^\/api\/pipelines\/([^/\\]+)$/);
     if (plm && (req.method === "PUT" || req.method === "DELETE")) {
       const user = currentUser(req);
       if (!user) {
         sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      if (!isSupervisor(user)) {
+        sendJson(res, 403, { error: "仅主管可管理管线" });
         return;
       }
       const cur = loadPipeline(plm[1]);
@@ -2714,7 +2915,7 @@ export async function startPlatformServer(
         res.end();
         return;
       }
-      if (user.role !== "supervisor") {
+      if (!isSupervisor(user)) {
         res.statusCode = 403;
         res.end("仅部门主管可访问团队管理");
         return;
@@ -2990,7 +3191,8 @@ export async function startPlatformServer(
         sendJson(res, 200, {
           ok: true,
           deleted: ticket.id,
-          ticket: toTicketView(fresh, user),
+          // 空白节点删单后不再自动补空白单（ticket 缺省表示暂无挂单）
+          ticket: fresh ? toTicketView(fresh, user) : undefined,
           node: toNodeView(user, reloaded),
         });
         return;
@@ -3084,6 +3286,49 @@ export async function startPlatformServer(
       if (!list.includes(safeName)) list.push(safeName);
       node.uploads = list;
       saveNode(node);
+      sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
+      return;
+    }
+
+    // 设置节点负责部门：仅主管（角色卡片随新部门派生，需求工单部门同步跟随）
+    const ndm = path.match(/^\/api\/nodes\/([^/\\]+)\/department$/);
+    if (ndm && req.method === "PUT") {
+      const user = currentUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "未登录" });
+        return;
+      }
+      if (!canApprove(user)) {
+        sendJson(res, 403, { error: "仅主管可设置负责部门" });
+        return;
+      }
+      const node = loadNodeById(ndm[1]);
+      if (!node) {
+        sendJson(res, 404, { error: "节点不存在" });
+        return;
+      }
+      let dept = "";
+      try {
+        const body = JSON.parse(await readBody(req)) as { department?: unknown };
+        if (typeof body.department === "string") dept = body.department.trim();
+      } catch {
+        sendJson(res, 400, { error: "请求体不是合法 JSON" });
+        return;
+      }
+      const known = new Set(loadDepartments().map((d) => d.name));
+      if (!dept || !known.has(dept)) {
+        sendJson(res, 400, { error: "负责部门必须是平台已存在的部门" });
+        return;
+      }
+      node.department = dept;
+      saveNode(node);
+      const reqTicket = findRequirementTicket(node.id);
+      if (reqTicket) {
+        updateTicket(reqTicket.id, (t) => {
+          t.department = dept;
+          t.updatedAt = new Date().toISOString();
+        });
+      }
       sendJson(res, 200, { ok: true, node: toNodeView(user, node) });
       return;
     }
@@ -3464,7 +3709,7 @@ export async function startPlatformServer(
           title: `[执行] ${node.step}`,
           content:
             `<p>节点「${esc(node.step)}」（${esc(node.department)}）的执行工单，指派给 ${esc(assignee)}。</p>` +
-            `<p>对应需求工单：${esc(reqTicket.id)}</p>`,
+            (reqTicket ? `<p>对应需求工单：${esc(reqTicket.id)}</p>` : ""),
           status: "open",
           department: node.department,
           authorName: user.name?.trim() || user.email.split("@")[0],
