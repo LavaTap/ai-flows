@@ -7,6 +7,7 @@ import {
   FullscreenOutlined,
   RedoOutlined,
   SaveOutlined,
+  ThunderboltOutlined,
   UndoOutlined,
 } from '@ant-design/icons-vue'
 import type { SaveState } from '@/types/board'
@@ -106,6 +107,14 @@ function onEnter(event: KeyboardEvent): void {
     <div class="header-spacer" />
 
     <div class="header-actions">
+      <a-tooltip title="AI 工作台">
+        <router-link to="/ai/draft" class="icon-btn ai-entry">
+          <ThunderboltOutlined />
+        </router-link>
+      </a-tooltip>
+
+      <span class="header-divider" />
+
       <a-tooltip title="撤销 · Ctrl+Z">
         <a-button type="text" size="small" :disabled="!props.canUndo" @click="emit('undo')">
           <template #icon><UndoOutlined /></template>

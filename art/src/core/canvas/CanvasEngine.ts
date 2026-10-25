@@ -14,6 +14,7 @@ import {
 } from 'fabric'
 import { customAlphabet } from 'nanoid'
 import type {
+  AiToolCard,
   ArtboardSize,
   EngineSnapshot,
   LayerInfo,
@@ -105,6 +106,33 @@ function normalizeArtboard(value: unknown): ArtboardSize | null {
   if (!Number.isFinite(width) || !Number.isFinite(height)) return null
   if (width < 16 || height < 16) return null
   return { width: Math.min(20000, Math.round(width)), height: Math.min(20000, Math.round(height)) }
+}
+
+/** 规整画布内 AI 工具面板数据：字段不全的条目直接丢弃 */
+function normalizeAiTools(value: unknown): AiToolCard[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const candidate = item as Partial<AiToolCard>
+    const x = Number(candidate.x)
+    const y = Number(candidate.y)
+    if (
+      typeof candidate.id !== 'string' ||
+      typeof candidate.capability !== 'string' ||
+      !Number.isFinite(x) ||
+      !Number.isFinite(y)
+    ) {
+      return []
+    }
+    const values: Record<string, string | number> = {}
+    const raw = candidate.values
+    if (raw && typeof raw === 'object') {
+      Object.entries(raw as Record<string, unknown>).forEach(([key, entry]) => {
+        if (typeof entry === 'string' || typeof entry === 'number') values[key] = entry
+      })
+    }
+    return [{ id: candidate.id, capability: candidate.capability, x, y, values }]
+  })
 }
 
 function kindOf(object: FabricObject): LayerKind {
@@ -201,6 +229,8 @@ export class CanvasEngine {
   private readonly stateListeners = new Set<(snapshot: EngineSnapshot) => void>()
   private readonly viewportListeners = new Set<(viewport: ViewportState) => void>()
   private readonly contentListeners = new Set<() => void>()
+  /** 画布内 AI 工具面板，仅随画板 JSON 存读，不参与 fabric 渲染 */
+  private aiTools: AiToolCard[] = []
   private counters: Record<string, number> = {}
 
   private history: string[] = []
@@ -274,6 +304,16 @@ export class CanvasEngine {
   onContentChange(listener: () => void): () => void {
     this.contentListeners.add(listener)
     return () => this.contentListeners.delete(listener)
+  }
+
+  /* ------------------------------------------------------------- AI 工具面板 */
+
+  getAiTools(): AiToolCard[] {
+    return this.aiTools.map((card) => ({ ...card, values: { ...card.values } }))
+  }
+
+  setAiTools(cards: AiToolCard[]): void {
+    this.aiTools = cards.map((card) => ({ ...card, values: { ...card.values } }))
   }
 
   /* ------------------------------------------------------------- 查询 */
@@ -575,6 +615,12 @@ export class CanvasEngine {
       (clientX - rect.left - vpt[4]) / zoom,
       (clientY - rect.top - vpt[5]) / zoom,
     )
+  }
+
+  /** 屏幕坐标 → 场景坐标（UI 层做右键菜单定位用） */
+  sceneFromClient(clientX: number, clientY: number): { x: number; y: number } {
+    const point = this.clientToScene(clientX, clientY)
+    return { x: point.x, y: point.y }
   }
 
   /* ------------------------------------------------------------- 绘制 */
@@ -939,7 +985,11 @@ export class CanvasEngine {
   /* ------------------------------------------------------------- 持久化 */
 
   serialize(): unknown {
-    return { ...this.canvas.toJSON(), artboard: this.artboard ? { ...this.artboard } : null }
+    return {
+      ...this.canvas.toJSON(),
+      artboard: this.artboard ? { ...this.artboard } : null,
+      aiTools: this.getAiTools(),
+    }
   }
 
   async load(data: unknown): Promise<void> {
@@ -1042,7 +1092,9 @@ export class CanvasEngine {
 
     if (payload) {
       this.artboard = normalizeArtboard(payload.artboard)
+      this.aiTools = normalizeAiTools(payload.aiTools)
       delete payload.artboard
+      delete payload.aiTools
       if (Array.isArray(payload.objects)) {
         payload.objects = payload.objects.filter((object) => !isArtboardJson(object))
       }
@@ -1050,6 +1102,7 @@ export class CanvasEngine {
     } else {
       this.canvas.clear()
       this.artboard = null
+      this.aiTools = []
     }
     this.syncArtboardRect()
   }
@@ -1140,12 +1193,6 @@ export class CanvasEngine {
       this.handlePointerUp()
     })
 
-    this.canvas.on('mouse:dblclick', (opt) => {
-      if (this.tool === 'select' && !opt.target) {
-        this.addText(opt.scenePoint)
-      }
-    })
-
     this.canvas.on('path:created', (event) => {
       const path = (event as unknown as { path?: FabricObject }).path
       if (!path) return
@@ -1166,6 +1213,8 @@ export class CanvasEngine {
 
   private handlePointerDown(scene: Point, event: Event): void {
     const { x, y } = clientPoint(event)
+    // 右键留给 AI 工具菜单，不参与绘制与框选
+    if (event instanceof MouseEvent && event.button === 2) return
     const middleButton = event instanceof MouseEvent && event.button === 1
 
     if (this.tool === 'hand' || this.spacePressed || middleButton) {

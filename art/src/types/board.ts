@@ -83,6 +83,18 @@ export interface EngineSnapshot {
   canRedo: boolean
 }
 
+/** 画布内 AI 工具面板（随画板 JSON 持久化） */
+export interface AiToolCard {
+  id: string
+  /** AI_CAPABILITIES 里的能力 key */
+  capability: string
+  /** 场景坐标（画布坐标系），面板左上角锚点 */
+  x: number
+  y: number
+  /** 各参数字段的当前值 */
+  values: Record<string, string | number>
+}
+
 export interface BoardMeta {
   id: string
   name: string

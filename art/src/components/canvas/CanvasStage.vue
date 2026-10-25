@@ -102,7 +102,6 @@ onBeforeUnmount(() => {
     @wheel="handleWheel"
     @dragover.prevent
     @drop.prevent="handleDrop"
-    @contextmenu.prevent
   >
     <div class="stage-grid" :style="gridStyle" />
     <canvas ref="canvasElement" />
@@ -110,8 +109,8 @@ onBeforeUnmount(() => {
     <div v-if="empty" class="stage-hint">
       <h3>开始你的第一笔</h3>
       <p>
-        双击空白处添加文字 · 拖入或粘贴图片<br />
-        滚轮缩放 · <kbd>空格</kbd> 拖拽平移 · <kbd>Ctrl</kbd> + <kbd>Z</kbd> 撤销
+        右键唤起 AI 工具 · 拖入或粘贴图片<br />
+        左侧工具栏选「文字」添加文字 · 滚轮缩放 · <kbd>空格</kbd> 拖拽平移
       </p>
     </div>
   </div>

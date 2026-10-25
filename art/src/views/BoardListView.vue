@@ -17,6 +17,8 @@ import {
 } from '@ant-design/icons-vue'
 import { boardApi } from '@/api/board'
 import { fetchMe, type PlatformUser } from '@/api/client'
+import AiToolBar from '@/components/canvas/AiToolBar.vue'
+import type { AiCapability } from '@/core/ai/capabilities'
 import type { BoardMeta } from '@/types/board'
 
 type SortKey = 'updated' | 'name' | 'created'
@@ -38,6 +40,11 @@ const favorites = ref<string[]>(loadFavorites())
 const renameTarget = ref<BoardMeta | null>(null)
 const renameName = ref('')
 const renaming = ref(false)
+
+/** AI 工具条：点击后进入该工具的独立工作台页（#/ai/<key>） */
+function openCapability(next: AiCapability): void {
+  void router.push({ name: 'ai-studio', params: { key: next.key } })
+}
 
 const sortOptions: { label: string; value: SortKey }[] = [
   { label: '最近更新', value: 'updated' },
@@ -209,6 +216,8 @@ async function removeBoard(id: string): Promise<void> {
         <span class="nav-pill active">自由画布</span>
         <router-link to="/assets" class="nav-pill">素材库</router-link>
       </nav>
+
+      <AiToolBar @pick="openCapability" />
 
       <div class="list-head">
         <div>

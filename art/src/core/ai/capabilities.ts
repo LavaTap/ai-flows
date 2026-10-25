@@ -28,14 +28,21 @@ export interface AiCapability {
   fields: CapabilityField[]
 }
 
-/** 编辑器工具条上的 AI 能力清单（参数仅作界面骨架，提交按钮暂不可用） */
+/** AI 工具页上的能力清单：工具条与 /#/ai/<key> 工作台共用这一份定义 */
 export const AI_CAPABILITIES: AiCapability[] = [
   {
     key: 'draft',
     label: '一键成稿',
-    desc: '用一句描述直接生成完整画面。',
+    desc: '用一句描述直接生成完整画面，无需上传参考图。',
     icon: 'FormOutlined',
     fields: [
+      {
+        kind: 'text',
+        key: 'prompt',
+        label: '画面描述',
+        placeholder: '例如：赛博朋克风格的猫，霓虹灯，雨夜街道',
+        default: '',
+      },
       {
         kind: 'select',
         key: 'style',
@@ -84,6 +91,7 @@ export const AI_CAPABILITIES: AiCapability[] = [
     icon: 'SlidersOutlined',
     fields: [
       { kind: 'range', key: 'detail', label: '细节权重', min: 1, max: 5, step: 1, default: 3 },
+      { kind: 'range', key: 'strength', label: '重绘幅度', min: 0, max: 100, step: 5, default: 40 },
     ],
   },
   {
@@ -104,6 +112,7 @@ export const AI_CAPABILITIES: AiCapability[] = [
         default: 'auto',
       },
       { kind: 'range', key: 'feather', label: '边缘羽化', min: 0, max: 10, step: 1, default: 2 },
+      { kind: 'chips', key: 'background', label: '输出背景', options: ['透明', '白底', '黑底'], default: '透明' },
     ],
   },
   {
@@ -121,6 +130,16 @@ export const AI_CAPABILITIES: AiCapability[] = [
           { value: '4', label: '4x' },
         ],
         default: '2',
+      },
+      {
+        kind: 'select',
+        key: 'mode',
+        label: '放大模式',
+        options: [
+          { value: 'lossless', label: '无损放大' },
+          { value: 'repaint', label: '重绘放大' },
+        ],
+        default: 'lossless',
       },
       { kind: 'chips', key: 'denoise', label: '降噪', options: ['开', '关'], default: '开' },
     ],
@@ -153,6 +172,14 @@ export const AI_CAPABILITIES: AiCapability[] = [
         ],
         default: '25',
       },
+      {
+        kind: 'text',
+        key: 'prompt',
+        label: '扩展提示词',
+        placeholder: '描述扩展区域内容（留空自动补全）',
+        default: '',
+      },
+      { kind: 'range', key: 'blend', label: '边缘融合', min: 0, max: 100, step: 5, default: 60 },
     ],
   },
   {

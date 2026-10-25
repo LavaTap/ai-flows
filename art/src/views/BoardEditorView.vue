@@ -3,9 +3,9 @@ import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { FullscreenOutlined, ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons-vue'
-import AiCapabilityDialog from '@/components/canvas/AiCapabilityDialog.vue'
+import AiToolMenu from '@/components/canvas/AiToolMenu.vue'
+import AiToolPanel from '@/components/canvas/AiToolPanel.vue'
 import AiPanel from '@/components/canvas/AiPanel.vue'
-import AiToolBar from '@/components/canvas/AiToolBar.vue'
 import CanvasStage from '@/components/canvas/CanvasStage.vue'
 import EditorHeader from '@/components/canvas/EditorHeader.vue'
 import LayerPanel from '@/components/canvas/LayerPanel.vue'
@@ -19,7 +19,14 @@ import { CanvasEngine, type ViewportState } from '@/core/canvas/CanvasEngine'
 import { MAX_FOLDER_DEPTH } from '@/core/layers/tree'
 import { useBoardHotkeys } from '@/composables/useBoardHotkeys'
 import { useLayerTree } from '@/composables/useLayerTree'
-import type { ArtboardSize, BoardMeta, EngineSnapshot, SaveState, ToolName } from '@/types/board'
+import type {
+  AiToolCard,
+  ArtboardSize,
+  BoardMeta,
+  EngineSnapshot,
+  SaveState,
+  ToolName,
+} from '@/types/board'
 
 const route = useRoute()
 const router = useRouter()
@@ -67,9 +74,18 @@ let selectionFromPanel = false
 const zoomText = ref('100')
 const zoomEditing = ref(false)
 
-/** AI 能力参数面板（骨架，提交按钮禁用） */
-const capability = ref<AiCapability | null>(null)
-const capabilityOpen = ref(false)
+/** 右键唤出的 AI 工具菜单，以及摆放在画布上的 AI 工具参数面板 */
+interface AiMenuState {
+  sceneX: number
+  sceneY: number
+  screenX: number
+  screenY: number
+}
+
+const aiMenu = ref<AiMenuState | null>(null)
+const aiTools = ref<AiToolCard[]>([])
+const stageWrap = ref<HTMLElement | null>(null)
+const createAiToolId = (): string => `ai-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 
 /** 画板尺寸弹窗 */
 interface ArtboardPreset {
@@ -143,6 +159,7 @@ async function bootstrap(instance: CanvasEngine): Promise<void> {
     }
     board.value = record.meta
     await instance.load(record.canvas)
+    aiTools.value = instance.getAiTools()
     layerTree.hydrate(record.tree ?? null)
     if (instance.getArtboard()) instance.fitArtboard()
     else if (record.meta.objectCount > 0) instance.fitContent()
@@ -423,11 +440,72 @@ function commitZoom(): void {
   zoomText.value = String(Math.round(viewport.value.zoom * 100))
 }
 
-/* ------------------------------------------------------------- AI 能力 */
+/* ------------------------------------------------------------- AI 工具 */
 
-function openCapability(next: AiCapability): void {
-  capability.value = next
-  capabilityOpen.value = true
+const AI_MENU_WIDTH = 268
+const AI_MENU_HEIGHT = 320
+
+/** 右键（捕获阶段，避免被 fabric 的 canvas 事件吞掉）：在光标处弹出 AI 工具菜单 */
+function openAiMenu(event: MouseEvent): void {
+  const target = event.target as Element | null
+  // 只有点在画布区域才响应，侧边面板/缩放条上右键不弹菜单
+  if (!target?.closest('.stage')) return
+  event.preventDefault()
+  const instance = engine.value
+  const wrap = stageWrap.value
+  if (!instance || !wrap) return
+  const scene = instance.sceneFromClient(event.clientX, event.clientY)
+  const rect = wrap.getBoundingClientRect()
+  const maxX = Math.max(rect.width - AI_MENU_WIDTH - 8, 8)
+  const maxY = Math.max(rect.height - AI_MENU_HEIGHT - 8, 8)
+  aiMenu.value = {
+    sceneX: scene.x,
+    sceneY: scene.y,
+    screenX: Math.min(Math.max(event.clientX - rect.left, 8), maxX),
+    screenY: Math.min(Math.max(event.clientY - rect.top, 8), maxY),
+  }
+}
+
+function closeAiMenu(): void {
+  aiMenu.value = null
+}
+
+/** 点选能力后把参数面板落到右键位置，并随画板 JSON 保存 */
+function addAiTool(capability: AiCapability): void {
+  const menu = aiMenu.value
+  if (!menu) return
+  const values: Record<string, string | number> = {}
+  capability.fields.forEach((field) => {
+    values[field.key] = field.default
+  })
+  aiTools.value = [
+    ...aiTools.value,
+    { id: createAiToolId(), capability: capability.key, x: menu.sceneX, y: menu.sceneY, values },
+  ]
+  aiMenu.value = null
+  syncAiTools()
+}
+
+function moveAiTool(id: string, x: number, y: number): void {
+  aiTools.value = aiTools.value.map((card) =>
+    card.id === id ? { ...card, x: Math.round(x), y: Math.round(y) } : card,
+  )
+  syncAiTools()
+}
+
+function setAiToolValues(id: string, values: Record<string, string | number>): void {
+  aiTools.value = aiTools.value.map((card) => (card.id === id ? { ...card, values } : card))
+  syncAiTools()
+}
+
+function removeAiTool(id: string): void {
+  aiTools.value = aiTools.value.filter((card) => card.id !== id)
+  syncAiTools()
+}
+
+function syncAiTools(): void {
+  engine.value?.setAiTools(aiTools.value)
+  scheduleSave()
 }
 
 /* ------------------------------------------------------------- 画板尺寸 */
@@ -511,16 +589,41 @@ onBeforeUnmount(() => {
       @fit="engine?.fitContent()"
     />
 
-    <AiToolBar @pick="openCapability" />
-
     <div class="editor-body">
       <ToolRail :tool="snapshot.tool" @update:tool="handleTool" @upload="openFilePicker" />
 
-      <div class="stage-wrap">
+      <div
+        ref="stageWrap"
+        class="stage-wrap"
+        @wheel="closeAiMenu"
+        @contextmenu.capture="openAiMenu"
+      >
         <CanvasStage
           :empty="!loading && snapshot.objectCount === 0 && !hasArtboard"
           @ready="handleReady"
           @image-file="handleStageImage"
+        />
+
+        <div v-if="aiMenu" class="ai-menu-backdrop" @pointerdown="closeAiMenu" />
+
+        <AiToolMenu
+          v-if="aiMenu"
+          :x="aiMenu.screenX"
+          :y="aiMenu.screenY"
+          @pick="addAiTool"
+          @close="closeAiMenu"
+        />
+
+        <AiToolPanel
+          v-for="card in aiTools"
+          :key="card.id"
+          :card="card"
+          :zoom="viewport.zoom"
+          :x="card.x * viewport.zoom + viewport.offsetX"
+          :y="card.y * viewport.zoom + viewport.offsetY"
+          @move="(x, y) => moveAiTool(card.id, x, y)"
+          @values="(values) => setAiToolValues(card.id, values)"
+          @close="removeAiTool(card.id)"
         />
 
         <div v-if="loading" class="stage-loading">
@@ -556,7 +659,7 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <div class="stage-floating-tip">滚轮缩放 · 空格拖拽 · 双击加字</div>
+        <div class="stage-floating-tip">滚轮缩放 · 空格拖拽 · 右键 AI 工具</div>
       </div>
 
       <aside class="side-panel">
@@ -606,8 +709,6 @@ onBeforeUnmount(() => {
       style="display: none"
       @change="handleFileChange"
     />
-
-    <AiCapabilityDialog v-model:open="capabilityOpen" :capability="capability" />
 
     <a-modal
       v-model:open="artboardOpen"

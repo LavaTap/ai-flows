@@ -19,6 +19,15 @@ const router = createRouter({
       name: 'board-editor',
       component: () => import('@/views/BoardEditorView.vue'),
     },
+    {
+      path: '/ai',
+      redirect: '/ai/draft',
+    },
+    {
+      path: '/ai/:key',
+      name: 'ai-studio',
+      component: () => import('@/views/AiStudioView.vue'),
+    },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })
